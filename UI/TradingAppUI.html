@@ -1,0 +1,2687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRADING.OPS // Event-Driven Order Pipeline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* =====================================================
+           THEME SYSTEM — 6 themes selectable from top-right
+           To change the DEFAULT theme: edit the `DEFAULT_THEME`
+           constant in the <script> section near the bottom.
+           Themes: slate (default) | terminal | bloomberg | arctic | solar | ledger
+           ===================================================== */
+        :root,
+        [data-theme="slate"] {
+            /* Theme 1: SLATE — balanced midtone, soft and professional (DEFAULT) */
+            --bg-0: #1c2129;
+            --bg-1: #252b36;
+            --bg-2: #2f3641;
+            --bg-3: #3a424f;
+            --border: #444d5c;
+            --border-bright: #5a6473;
+            --text-0: #e8ebf0;
+            --text-1: #b8c0cc;
+            --text-2: #8993a3;
+            --text-3: #5c6675;
+            --accent: #5dd5c4;
+            --accent-dim: #3ba898;
+            --green: #4ade80;
+            --green-dim: #16a34a;
+            --red: #f87171;
+            --red-dim: #dc2626;
+            --blue: #60a5fa;
+            --blue-dim: #2563eb;
+            --grid-line: rgba(255,255,255,0.02);
+            --ambient-1: rgba(93, 213, 196, 0.05);
+            --ambient-2: rgba(96, 165, 250, 0.04);
+        }
+        [data-theme="terminal"] {
+            /* Theme 2: TERMINAL — original deep dark navy/amber */
+            --bg-0: #0a0e14;
+            --bg-1: #11161e;
+            --bg-2: #161c26;
+            --bg-3: #1f2733;
+            --border: #2a3441;
+            --border-bright: #3d4a5c;
+            --text-0: #e6edf3;
+            --text-1: #9fb1c7;
+            --text-2: #6b7a91;
+            --text-3: #4a5666;
+            --accent: #ffb020;
+            --accent-dim: #b8801a;
+            --green: #00d68f;
+            --green-dim: #008557;
+            --red: #ff4757;
+            --red-dim: #b8323e;
+            --blue: #4fb3ff;
+            --blue-dim: #2a78b8;
+            --grid-line: rgba(255,255,255,0.015);
+            --ambient-1: rgba(255, 176, 32, 0.04);
+            --ambient-2: rgba(79, 179, 255, 0.03);
+        }
+        [data-theme="bloomberg"] {
+            /* Theme 3: BLOOMBERG — classic dark with orange terminal glow */
+            --bg-0: #1a1a1a;
+            --bg-1: #232323;
+            --bg-2: #2a2a2a;
+            --bg-3: #333333;
+            --border: #3d3d3d;
+            --border-bright: #555555;
+            --text-0: #f5f5f5;
+            --text-1: #c8c8c8;
+            --text-2: #888888;
+            --text-3: #555555;
+            --accent: #ff8000;
+            --accent-dim: #b85a00;
+            --green: #00ff66;
+            --green-dim: #009939;
+            --red: #ff3333;
+            --red-dim: #b82020;
+            --blue: #66b3ff;
+            --blue-dim: #3380cc;
+            --grid-line: rgba(255,128,0,0.02);
+            --ambient-1: rgba(255, 128, 0, 0.05);
+            --ambient-2: rgba(255, 51, 51, 0.02);
+        }
+        [data-theme="arctic"] {
+            /* Theme 4: ARCTIC — bright, cool, light theme */
+            --bg-0: #f5f7fa;
+            --bg-1: #ffffff;
+            --bg-2: #eef1f5;
+            --bg-3: #dfe4ec;
+            --border: #d0d7e0;
+            --border-bright: #a8b3c2;
+            --text-0: #1a2332;
+            --text-1: #3d4a5c;
+            --text-2: #6b7a91;
+            --text-3: #9fb1c7;
+            --accent: #0066cc;
+            --accent-dim: #004999;
+            --green: #00875a;
+            --green-dim: #006644;
+            --red: #de350b;
+            --red-dim: #a82800;
+            --blue: #0052cc;
+            --blue-dim: #003d99;
+            --grid-line: rgba(0,0,0,0.03);
+            --ambient-1: rgba(0, 102, 204, 0.04);
+            --ambient-2: rgba(0, 135, 90, 0.03);
+        }
+        [data-theme="solar"] {
+            /* Theme 5: SOLAR — warm cream/sepia, soft & comfortable */
+            --bg-0: #faf6ed;
+            --bg-1: #fdfaf2;
+            --bg-2: #f2ebd9;
+            --bg-3: #e8dec5;
+            --border: #d4c8a8;
+            --border-bright: #a89a78;
+            --text-0: #2d2416;
+            --text-1: #5c4e35;
+            --text-2: #8a7a5c;
+            --text-3: #b8a785;
+            --accent: #b8541a;
+            --accent-dim: #8a3d12;
+            --green: #5c8a2f;
+            --green-dim: #426620;
+            --red: #b8351a;
+            --red-dim: #8a2412;
+            --blue: #2a6b8a;
+            --blue-dim: #1a4d66;
+            --grid-line: rgba(120,80,30,0.03);
+            --ambient-1: rgba(184, 84, 26, 0.05);
+            --ambient-2: rgba(92, 138, 47, 0.03);
+        }
+        [data-theme="ledger"] {
+            /* Theme 6: LEDGER — paper-white, accountant ledger style */
+            --bg-0: #ffffff;
+            --bg-1: #fafafa;
+            --bg-2: #f0f0f0;
+            --bg-3: #e0e0e0;
+            --border: #c8c8c8;
+            --border-bright: #888888;
+            --text-0: #0a0a0a;
+            --text-1: #333333;
+            --text-2: #666666;
+            --text-3: #999999;
+            --accent: #c2185b;
+            --accent-dim: #8a0e3f;
+            --green: #2e7d32;
+            --green-dim: #1b5e20;
+            --red: #c62828;
+            --red-dim: #8a1a1a;
+            --blue: #1565c0;
+            --blue-dim: #0d47a1;
+            --grid-line: rgba(0,0,0,0.025);
+            --ambient-1: rgba(194, 24, 91, 0.03);
+            --ambient-2: rgba(46, 125, 50, 0.02);
+        }
+        :root {
+            --mono: 'JetBrains Mono', 'Consolas', 'Courier New', monospace;
+            --display: 'Bebas Neue', 'Impact', sans-serif;
+            --sans: 'Inter', -apple-system, sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            background: var(--bg-0);
+            color: var(--text-0);
+            font-family: var(--sans);
+            font-size: 14px;
+            line-height: 1.5;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse at top left, var(--ambient-1) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, var(--ambient-2) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+            transition: background 0.3s;
+        }
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(var(--grid-line) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        html, body, .panel, .terminal, .btn, .field input, .field textarea, .field select,
+        .tab, .badge, .row, .metric, .ticker-cell, .endpoint-bar {
+            transition: background-color 0.25s, border-color 0.25s, color 0.25s;
+        }
+        .app { position: relative; z-index: 1; }
+
+        /* ================= HEADER ================= */
+        .topbar {
+            background: var(--bg-1);
+            border-bottom: 1px solid var(--border);
+        }
+        .topbar-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        .brand { display: flex; align-items: baseline; gap: 14px; }
+        .brand-mark {
+            font-family: var(--display);
+            font-size: 28px;
+            letter-spacing: 0.05em;
+            color: var(--text-0);
+            line-height: 1;
+        }
+        .brand-mark .dot { color: var(--accent); }
+        .brand-tag {
+            font-family: var(--mono);
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            border-left: 1px solid var(--border-bright);
+            padding-left: 14px;
+        }
+        .live-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-1);
+            margin-left: auto;
+        }
+        .live-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        .live-dot.offline {
+            background: var(--red);
+            box-shadow: 0 0 8px var(--red);
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .endpoint-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            font-family: var(--mono);
+            font-size: 11px;
+        }
+        .endpoint-bar input {
+            background: transparent;
+            border: none;
+            color: var(--text-0);
+            font-family: var(--mono);
+            font-size: 11px;
+            min-width: 280px;
+            outline: none;
+        }
+        .endpoint-bar .label { color: var(--text-2); font-weight: 500; }
+
+        /* ================= TICKER ================= */
+        .ticker {
+            background: var(--bg-2);
+            border-bottom: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .ticker-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 0;
+        }
+        .ticker-cell {
+            padding: 12px 18px;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .ticker-cell:last-child { border-right: none; }
+        .ticker-label {
+            font-family: var(--mono);
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+        }
+        .ticker-value {
+            font-family: var(--mono);
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-0);
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+        }
+        .ticker-value.green { color: var(--green); }
+        .ticker-value.red { color: var(--red); }
+        .ticker-value.blue { color: var(--blue); }
+        .ticker-value.amber { color: var(--accent); }
+        .ticker-trend {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text-3);
+        }
+
+        /* ================= TABS ================= */
+        .tab-bar {
+            background: var(--bg-1);
+            border-bottom: 1px solid var(--border);
+        }
+        .tab-bar-inner {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            gap: 0;
+        }
+        .tab {
+            background: transparent;
+            border: none;
+            border-right: 1px solid var(--border);
+            color: var(--text-2);
+            padding: 14px 22px;
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.15s;
+        }
+        .tab:hover { color: var(--text-0); background: var(--bg-2); }
+        .tab.active { color: var(--accent); background: var(--bg-0); }
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0; right: 0;
+            height: 2px;
+            background: var(--accent);
+        }
+
+        /* ================= MAIN ================= */
+        .main {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.25s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .grid { display: grid; gap: 20px; }
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
+        .grid-3 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+
+        /* ================= PANEL ================= */
+        .panel {
+            background: var(--bg-1);
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        .panel:hover { border-color: var(--border-bright); }
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-2);
+        }
+        .panel-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-0);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+        }
+        .panel-title-icon { color: var(--accent); font-size: 14px; }
+        .panel-subtitle {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text-2);
+            padding: 8px 18px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0,0,0,0.15);
+        }
+        .panel-body { padding: 18px; }
+
+        /* ================= FORMS ================= */
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-weight: 600;
+        }
+        .field input, .field textarea, .field select {
+            background: var(--bg-0);
+            border: 1px solid var(--border);
+            color: var(--text-0);
+            padding: 9px 12px;
+            font-family: var(--mono);
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .field input:focus, .field textarea:focus, .field select:focus {
+            border-color: var(--accent);
+        }
+        .field textarea { min-height: 64px; resize: vertical; }
+
+        /* ================= BUTTONS ================= */
+        .btn {
+            background: var(--bg-3);
+            border: 1px solid var(--border-bright);
+            color: var(--text-0);
+            padding: 9px 16px;
+            font-family: var(--mono);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:hover { background: var(--bg-2); border-color: var(--accent); color: var(--accent); }
+        .btn:active { transform: translateY(1px); }
+        .btn-primary { background: var(--accent); color: var(--bg-0); border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--bg-0); }
+        .btn-success { background: var(--green-dim); color: var(--text-0); border-color: var(--green-dim); }
+        .btn-success:hover { background: var(--green); border-color: var(--green); color: var(--bg-0); }
+        .btn-danger { background: var(--red-dim); color: var(--text-0); border-color: var(--red-dim); }
+        .btn-danger:hover { background: var(--red); border-color: var(--red); color: white; }
+        .btn-info { background: var(--blue-dim); color: var(--text-0); border-color: var(--blue-dim); }
+        .btn-info:hover { background: var(--blue); border-color: var(--blue); color: var(--bg-0); }
+        .btn-ghost { background: transparent; }
+        .btn-sm { padding: 5px 10px; font-size: 10px; letter-spacing: 0.08em; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
+
+        /* ================= METRICS ================= */
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 1px;
+            background: var(--border);
+            border: 1px solid var(--border);
+            margin: 12px 0;
+        }
+        .metric {
+            background: var(--bg-2);
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .metric-label {
+            font-family: var(--mono);
+            font-size: 9px;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            font-weight: 600;
+        }
+        .metric-value {
+            font-family: var(--mono);
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-0);
+            line-height: 1.1;
+        }
+        .metric-value.green { color: var(--green); }
+        .metric-value.red { color: var(--red); }
+        .metric-value.amber { color: var(--accent); }
+        .metric-value.blue { color: var(--blue); }
+
+        /* ================= TERMINAL ================= */
+        .terminal {
+            background: var(--bg-0);
+            border: 1px solid var(--border);
+            padding: 12px 14px;
+            font-family: var(--mono);
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--text-1);
+            min-height: 120px;
+            max-height: 400px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            position: relative;
+        }
+        [data-theme="terminal"] .terminal,
+        [data-theme="bloomberg"] .terminal { background: #050810; }
+        [data-theme="slate"] .terminal { background: #161a22; }
+        .terminal::before {
+            content: '$ ';
+            color: var(--green);
+            opacity: 0.4;
+        }
+        .terminal.no-prefix::before { content: ''; }
+
+        /* ================= LIST ================= */
+        .list {
+            background: var(--bg-0);
+            border: 1px solid var(--border);
+            max-height: 520px;
+            overflow: auto;
+        }
+        .list-empty {
+            padding: 32px;
+            text-align: center;
+            color: var(--text-3);
+            font-family: var(--mono);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+        }
+        .row {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            border-left: 3px solid transparent;
+            transition: background 0.1s;
+        }
+        .row:hover { background: var(--bg-1); }
+        .row:last-child { border-bottom: none; }
+        .row.processed, .row.acknowledged { border-left-color: var(--green); }
+        .row.rejected, .row.unresolved { border-left-color: var(--red); }
+        .row.pending, .row.unprocessed { border-left-color: var(--accent); }
+        .row.filled { border-left-color: var(--blue); }
+        .row.resolved { border-left-color: var(--text-3); }
+        .row-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+        .row-meta {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text-3);
+            line-height: 1.5;
+            word-break: break-all;
+        }
+        .row-meta b { color: var(--text-1); font-weight: 600; }
+        .row-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        /* ================= BADGES ================= */
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            font-family: var(--mono);
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            border: 1px solid;
+        }
+        .badge-pending, .badge-unprocessed {
+            background: rgba(93, 213, 196, 0.12);
+            color: var(--accent);
+            border-color: var(--accent-dim);
+        }
+        .badge-acknowledged, .badge-processed {
+            background: rgba(74, 222, 128, 0.12);
+            color: var(--green);
+            border-color: var(--green-dim);
+        }
+        .badge-rejected, .badge-unresolved {
+            background: rgba(248, 113, 113, 0.12);
+            color: var(--red);
+            border-color: var(--red-dim);
+        }
+        .badge-filled {
+            background: rgba(96, 165, 250, 0.12);
+            color: var(--blue);
+            border-color: var(--blue-dim);
+        }
+        .badge-resolved {
+            background: rgba(107, 122, 145, 0.12);
+            color: var(--text-1);
+            border-color: var(--text-3);
+        }
+
+        /* ================= NOTES ================= */
+        .note {
+            border-left: 3px solid var(--blue);
+            background: rgba(96, 165, 250, 0.06);
+            padding: 12px 14px;
+            margin-top: 12px;
+            font-size: 12px;
+            color: var(--text-1);
+            line-height: 1.6;
+        }
+        .note.warn { border-color: var(--accent); background: rgba(93, 213, 196, 0.06); }
+        .note.danger { border-color: var(--red); background: rgba(248, 113, 113, 0.06); }
+        .note h4 {
+            font-family: var(--mono);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-0);
+            margin-bottom: 6px;
+            font-weight: 700;
+        }
+        .note ul { margin-left: 18px; }
+        .note li { margin-bottom: 4px; }
+        .note code {
+            font-family: var(--mono);
+            background: var(--bg-3);
+            padding: 1px 5px;
+            border: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--accent);
+        }
+
+        .small { font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+
+        details { margin-top: 8px; font-family: var(--mono); font-size: 11px; }
+        details summary {
+            cursor: pointer;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 10px;
+            padding: 4px 0;
+        }
+        details summary:hover { color: var(--accent); }
+        details pre {
+            background: var(--bg-0);
+            border: 1px solid var(--border);
+            padding: 8px;
+            margin-top: 6px;
+            font-size: 10px;
+            color: var(--text-1);
+            overflow: auto;
+            max-height: 200px;
+        }
+
+        .kv {
+            font-family: var(--mono);
+            font-size: 11px;
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 4px 12px;
+            margin-top: 6px;
+        }
+        .kv .k {
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 9px;
+            padding-top: 2px;
+        }
+        .kv .v { color: var(--text-0); word-break: break-all; }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-1); }
+        ::-webkit-scrollbar-thumb { background: var(--border-bright); }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+        .full-width { grid-column: 1 / -1; }
+        .divider { height: 1px; background: var(--border); margin: 16px 0; }
+        .section-title {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-weight: 700;
+            margin: 16px 0 8px 0;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        @media (max-width: 768px) {
+            .ticker-inner { grid-template-columns: repeat(2, 1fr); }
+            .ticker-cell { border-right: none; border-bottom: 1px solid var(--border); }
+            .form-row { grid-template-columns: 1fr; }
+        }
+
+        /* ================= THEME SELECTOR ================= */
+        .theme-selector { position: relative; font-family: var(--mono); }
+        .theme-trigger {
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            padding: 6px 10px;
+            font-family: var(--mono);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.15s;
+        }
+        .theme-trigger:hover { border-color: var(--accent); color: var(--accent); }
+        .theme-swatch {
+            width: 12px; height: 12px;
+            background: var(--accent);
+            border: 1px solid var(--border-bright);
+        }
+        .theme-menu {
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 0;
+            background: var(--bg-1);
+            border: 1px solid var(--border-bright);
+            min-width: 220px;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        .theme-menu.open { display: block; }
+        .theme-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--text-1);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 600;
+            transition: background 0.1s;
+        }
+        .theme-option:last-child { border-bottom: none; }
+        .theme-option:hover { background: var(--bg-2); color: var(--text-0); }
+        .theme-option.active { color: var(--accent); }
+        .theme-option .swatches { display: flex; gap: 2px; }
+        .theme-option .swatch {
+            width: 10px; height: 18px;
+            border: 1px solid rgba(0,0,0,0.2);
+        }
+        .theme-option .label-row { display: flex; flex-direction: column; gap: 1px; }
+        .theme-option .label-sub {
+            font-size: 9px;
+            color: var(--text-3);
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 400;
+        }
+
+        /* ================= PURGE ZONE ================= */
+        .purge-zone {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 10px;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+        }
+        .purge-summary {
+            display: flex;
+            gap: 12px;
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        .purge-summary span b {
+            color: var(--text-0);
+            font-weight: 700;
+            margin-left: 4px;
+        }
+        .purge-summary span.has-data b { color: var(--accent); }
+        .btn-purge {
+            background: transparent;
+            color: var(--red);
+            border-color: var(--red-dim);
+        }
+        .btn-purge:hover {
+            background: var(--red);
+            color: var(--bg-0);
+            border-color: var(--red);
+        }
+
+        /* ================= ARCHITECTURE DIAGRAM ================= */
+        .arch-diagram {
+            background: var(--bg-0);
+            border: 1px solid var(--border);
+            padding: 24px;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 14px;
+            position: relative;
+        }
+        .arch-node {
+            background: var(--bg-2);
+            border: 1px solid var(--border-bright);
+            padding: 10px 12px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text-0);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .arch-node .arch-kind {
+            font-size: 8px;
+            color: var(--text-3);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-weight: 600;
+        }
+        .arch-node .arch-name {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-0);
+            line-height: 1.2;
+        }
+        .arch-node .arch-detail {
+            font-size: 10px;
+            color: var(--text-2);
+            line-height: 1.4;
+        }
+        .arch-node.api { border-left: 3px solid var(--blue); }
+        .arch-node.queue { border-left: 3px solid var(--accent); background: rgba(93, 213, 196, 0.04); }
+        .arch-node.topic { border-left: 3px solid var(--blue); background: rgba(96, 165, 250, 0.04); }
+        .arch-node.func { border-left: 3px solid var(--green); }
+        .arch-node.timer { border-left: 3px solid var(--accent); }
+        .arch-node.db { border-left: 3px solid var(--text-2); background: var(--bg-3); }
+        .arch-node.consumer { border-left: 3px solid var(--green); background: rgba(74, 222, 128, 0.04); }
+        .arch-node.error { border-left: 3px solid var(--red); background: rgba(248, 113, 113, 0.04); }
+        .arch-row { display: contents; }
+        .arch-arrow {
+            font-family: var(--mono);
+            color: var(--text-2);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 4px;
+        }
+        .arch-arrow.dashed { color: var(--red); }
+        .arch-legend {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            padding: 14px;
+            background: var(--bg-2);
+            border: 1px solid var(--border);
+        }
+        .arch-legend-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text-1);
+            line-height: 1.4;
+        }
+        .arch-legend-dot {
+            width: 12px; height: 12px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <!-- ============= TOAST CONTAINER ============= -->
+    <div id="toastContainer" style="position:fixed; top:20px; right:20px; z-index:1000; display:flex; flex-direction:column; gap:8px; pointer-events:none;"></div>
+
+    <!-- ============= TOP BAR ============= -->
+    <header class="topbar">
+        <div class="topbar-inner">
+            <div class="brand">
+                <div class="brand-mark">TRADING<span class="dot">.</span>OPS</div>
+                <div class="brand-tag">Event-Driven Order Pipeline // v3.0</div>
+            </div>
+            <div class="endpoint-bar">
+                <span class="label">API://</span>
+                <input type="text" id="apiBaseUrl" value="https://localhost:7224" spellcheck="false">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="refreshAllStats(true)">↻ Refresh</button>
+
+            <div class="purge-zone">
+                <div class="purge-summary">
+                    <span id="purgeSumOrders">ORD <b>—</b></span>
+                    <span id="purgeSumOutbox">OBX <b>—</b></span>
+                    <span id="purgeSumDl">DL <b>—</b></span>
+                </div>
+                <button class="btn btn-purge btn-sm" onclick="purgeDatabase()" title="Delete all rows from Orders, OutboxMessages, and DeadLetterLogs">⚠ Purge DB</button>
+            </div>
+
+            <div class="live-indicator">
+                <span class="live-dot" id="liveDot"></span>
+                <span id="connStatus">CONNECTING...</span>
+            </div>
+
+            <div class="theme-selector">
+                <button class="theme-trigger" onclick="toggleThemeMenu()" id="themeTrigger">
+                    <span class="theme-swatch" id="themeSwatch"></span>
+                    <span id="themeName">THEME</span>
+                    <span style="opacity:0.5">▾</span>
+                </button>
+                <div class="theme-menu" id="themeMenu">
+                    <div class="theme-option" data-theme="slate" onclick="setTheme('slate')">
+                        <div class="swatches">
+                            <div class="swatch" style="background:#1c2129"></div>
+                            <div class="swatch" style="background:#5dd5c4"></div>
+                            <div class="swatch" style="background:#4ade80"></div>
+                        </div>
+                        <div class="label-row">
+                            <span>Slate</span>
+                            <span class="label-sub">balanced midtone · soft</span>
+                        </div>
+                    </div>
+                    <div class="theme-option" data-theme="terminal" onclick="setTheme('terminal')">
+                        <div class="swatches">
+                            <div class="swatch" style="background:#0a0e14"></div>
+                            <div class="swatch" style="background:#ffb020"></div>
+                            <div class="swatch" style="background:#00d68f"></div>
+                        </div>
+                        <div class="label-row">
+                            <span>Terminal</span>
+                            <span class="label-sub">deep navy · amber</span>
+                        </div>
+                    </div>
+                    <div class="theme-option" data-theme="bloomberg" onclick="setTheme('bloomberg')">
+                        <div class="swatches">
+                            <div class="swatch" style="background:#1a1a1a"></div>
+                            <div class="swatch" style="background:#ff8000"></div>
+                            <div class="swatch" style="background:#00ff66"></div>
+                        </div>
+                        <div class="label-row">
+                            <span>Bloomberg</span>
+                            <span class="label-sub">classic terminal</span>
+                        </div>
+                    </div>
+                    <div class="theme-option" data-theme="arctic" onclick="setTheme('arctic')">
+                        <div class="swatches">
+                            <div class="swatch" style="background:#f5f7fa"></div>
+                            <div class="swatch" style="background:#0066cc"></div>
+                            <div class="swatch" style="background:#00875a"></div>
+                        </div>
+                        <div class="label-row">
+                            <span>Arctic</span>
+                            <span class="label-sub">bright · cool · light</span>
+                        </div>
+                    </div>
+                    <div class="theme-option" data-theme="solar" onclick="setTheme('solar')">
+                        <div class="swatches">
+                            <div class="swatch" style="background:#faf6ed"></div>
+                            <div class="swatch" style="background:#b8541a"></div>
+                            <div class="swatch" style="background:#5c8a2f"></div>
+                        </div>
+                        <div class="label-row">
+                            <span>Solar</span>
+                            <span class="label-sub">warm cream · sepia</span>
+                        </div>
+                    </div>
+                    <div class="theme-option" data-theme="ledger" onclick="setTheme('ledger')">
+                        <div class="swatches">
+                            <div class="swatch" style="background:#ffffff"></div>
+                            <div class="swatch" style="background:#c2185b"></div>
+                            <div class="swatch" style="background:#2e7d32"></div>
+                        </div>
+                        <div class="label-row">
+                            <span>Ledger</span>
+                            <span class="label-sub">paper · accountant</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ============= TICKER ============= -->
+    <div class="ticker">
+        <div class="ticker-inner">
+            <div class="ticker-cell">
+                <div class="ticker-label">Total Orders</div>
+                <div class="ticker-value" id="gOrders">—</div>
+                <div class="ticker-trend" id="gOrdersTrend">awaiting feed</div>
+            </div>
+            <div class="ticker-cell">
+                <div class="ticker-label">Processed</div>
+                <div class="ticker-value green" id="gOrdersProcessed">—</div>
+                <div class="ticker-trend" id="gOrdersProcessedTrend">awaiting feed</div>
+            </div>
+            <div class="ticker-cell">
+                <div class="ticker-label">Outbox Total</div>
+                <div class="ticker-value blue" id="gOutbox">—</div>
+                <div class="ticker-trend">transactional queue</div>
+            </div>
+            <div class="ticker-cell">
+                <div class="ticker-label">Outbox Pending</div>
+                <div class="ticker-value amber" id="gOutboxUnp">—</div>
+                <div class="ticker-trend">awaiting dispatch</div>
+            </div>
+            <div class="ticker-cell">
+                <div class="ticker-label">Dead Letters</div>
+                <div class="ticker-value red" id="gDl">—</div>
+                <div class="ticker-trend">DLQ persisted</div>
+            </div>
+            <div class="ticker-cell">
+                <div class="ticker-label">DL Unresolved</div>
+                <div class="ticker-value red" id="gDlUnres">—</div>
+                <div class="ticker-trend">requires triage</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============= TABS ============= -->
+    <div class="tab-bar">
+        <div class="tab-bar-inner">
+            <button class="tab active" data-tab="orders">Orders</button>
+            <button class="tab" data-tab="outbox">Outbox</button>
+            <button class="tab" data-tab="deadletter">Dead Letter</button>
+            <button class="tab" data-tab="scenarios">Scenarios</button>
+            <button class="tab" data-tab="architecture">Architecture</button>
+        </div>
+    </div>
+
+    <main class="main">
+
+        <!-- ===================== ORDERS TAB ===================== -->
+        <div class="tab-content active" id="tab-orders">
+            <div class="grid grid-2">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">▶</span>Submit Single Order</div>
+                        <span class="small">POST /api/order</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Quantity</label>
+                                <input type="number" id="orderQty" value="100">
+                            </div>
+                            <div class="field">
+                                <label>Price (USD)</label>
+                                <input type="number" id="orderPrice" value="150.50" step="0.01">
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary" onclick="createOrder()">▶ Submit Order</button>
+                        </div>
+                        <div class="terminal no-prefix" id="singleOrderResponse" style="margin-top:14px;">// awaiting input...</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">⚡</span>Burst Generator</div>
+                        <span class="small">Stress test the pipeline</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Order Count</label>
+                                <input type="number" id="burstCount" value="20" min="1" max="500">
+                            </div>
+                            <div class="field">
+                                <label>Delay (ms)</label>
+                                <input type="number" id="burstDelay" value="50" min="0" max="5000">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Min Qty</label>
+                                <input type="number" id="burstMinQty" value="10">
+                            </div>
+                            <div class="field">
+                                <label>Max Qty</label>
+                                <input type="number" id="burstMaxQty" value="500">
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-success" onclick="burstCreateOrders()">▶ Start Burst</button>
+                            <button class="btn btn-danger" onclick="stopBurst()">■ Stop</button>
+                        </div>
+                        <div class="metric-grid">
+                            <div class="metric"><div class="metric-label">Sent</div><div class="metric-value" id="burstSent">0</div></div>
+                            <div class="metric"><div class="metric-label">Success</div><div class="metric-value green" id="burstSuccess">0</div></div>
+                            <div class="metric"><div class="metric-label">Failed</div><div class="metric-value red" id="burstFailed">0</div></div>
+                            <div class="metric"><div class="metric-label">Req/s</div><div class="metric-value amber" id="burstRate">0</div></div>
+                        </div>
+                        <div class="terminal no-prefix" id="burstResponse">idle.</div>
+                    </div>
+                </div>
+
+                <div class="panel full-width">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">≡</span>Order Book</div>
+                        <div class="btn-group">
+                            <button class="btn btn-sm" onclick="getAllOrders()">Refresh</button>
+                            <button class="btn btn-sm" onclick="toggleAutoRefresh('orders')" id="ordersAutoBtn">Auto 5s</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllOrders()">Delete All</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="metric-grid">
+                            <div class="metric"><div class="metric-label">Total</div><div class="metric-value" id="totalOrders">0</div></div>
+                            <div class="metric"><div class="metric-label">Processed</div><div class="metric-value green" id="processedOrders">0</div></div>
+                            <div class="metric"><div class="metric-label">Acknowledged</div><div class="metric-value blue" id="ackOrders">0</div></div>
+                            <div class="metric"><div class="metric-label">Rejected</div><div class="metric-value red" id="rejectedOrders">0</div></div>
+                        </div>
+                        <div class="list" id="ordersList">
+                            <div class="list-empty">// no orders loaded — click refresh</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel full-width">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">⌕</span>Order Lookup</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="field" style="margin-bottom:10px;">
+                            <label>Order ID (GUID)</label>
+                            <input type="text" id="orderId" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false">
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-info" onclick="getOrderById()">Fetch</button>
+                            <button class="btn btn-danger" onclick="deleteOrderById()">Delete</button>
+                        </div>
+                        <div class="terminal no-prefix" id="orderByIdResponse" style="margin-top:14px;">// awaiting lookup...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== OUTBOX TAB ===================== -->
+        <div class="tab-content" id="tab-outbox">
+            <div class="grid grid-2">
+                <div class="panel full-width">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">▤</span>Outbox Messages</div>
+                        <div class="btn-group">
+                            <button class="btn btn-sm" onclick="getOutbox('all')">All</button>
+                            <button class="btn btn-sm" onclick="getOutbox('unprocessed')">Unprocessed</button>
+                            <button class="btn btn-sm" onclick="getOutbox('processed')">Processed</button>
+                            <button class="btn btn-sm" onclick="toggleAutoRefresh('outbox')" id="outboxAutoBtn">Auto 5s</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllOutbox()">Delete All</button>
+                        </div>
+                    </div>
+                    <div class="panel-subtitle">// Transactional outbox pattern — persisted intents awaiting dispatch by ScheduledOutboxMessageProcessor</div>
+                    <div class="panel-body">
+                        <div class="metric-grid">
+                            <div class="metric"><div class="metric-label">Total</div><div class="metric-value" id="outboxTotal">0</div></div>
+                            <div class="metric"><div class="metric-label">Processed</div><div class="metric-value green" id="outboxProcessed">0</div></div>
+                            <div class="metric"><div class="metric-label">Pending</div><div class="metric-value amber" id="outboxUnprocessed">0</div></div>
+                            <div class="metric"><div class="metric-label">Last 24h</div><div class="metric-value blue" id="outbox24h">0</div></div>
+                        </div>
+                        <div class="list" id="outboxList">
+                            <div class="list-empty">// no messages loaded</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">⌕</span>Outbox Detail</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="field" style="margin-bottom:10px;">
+                            <label>Message ID (GUID)</label>
+                            <input type="text" id="outboxId" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false">
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-info" onclick="getOutboxById()">Fetch</button>
+                            <button class="btn btn-success" onclick="markOutboxProcessed()">Mark Processed</button>
+                            <button class="btn btn-danger" onclick="deleteOutboxById()">Delete</button>
+                        </div>
+                        <div class="terminal no-prefix" id="outboxByIdResponse" style="margin-top:14px;">// awaiting lookup...</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">ℹ</span>How Outbox Works</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="note">
+                            <h4>Three-Phase Processor</h4>
+                            <ul>
+                                <li><b>Quarantine</b> — messages with <code>RetryCount &gt;= 5</code> are moved to <code>QuarantinedOutboxMessages</code>.</li>
+                                <li><b>Dispatch</b> — pending messages are batch-published to <code>create_order_queue</code> with classified retry reasons.</li>
+                                <li><b>Auto-recover</b> — once Service Bus proves healthy, transient-failure quarantined messages are resurrected for one more attempt.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== DEAD LETTER TAB ===================== -->
+        <div class="tab-content" id="tab-deadletter">
+            <div class="grid grid-2">
+                <div class="panel full-width">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">☠</span>Dead Letter Logs</div>
+                        <div class="btn-group">
+                            <button class="btn btn-sm" onclick="getDeadLetters('all')">All</button>
+                            <button class="btn btn-sm" onclick="getDeadLetters('unresolved')">Unresolved</button>
+                            <button class="btn btn-sm" onclick="toggleAutoRefresh('deadletter')" id="dlAutoBtn">Auto 5s</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAllDeadLetters()">Delete All</button>
+                        </div>
+                    </div>
+                    <div class="panel-subtitle">// Messages parked from the DLQ for human triage and root-cause analysis</div>
+                    <div class="panel-body">
+                        <div class="metric-grid">
+                            <div class="metric"><div class="metric-label">Total</div><div class="metric-value" id="dlTotal">0</div></div>
+                            <div class="metric"><div class="metric-label">Unresolved</div><div class="metric-value red" id="dlUnresolved">0</div></div>
+                            <div class="metric"><div class="metric-label">Resolved</div><div class="metric-value green" id="dlResolved">0</div></div>
+                            <div class="metric"><div class="metric-label">Last 24h</div><div class="metric-value blue" id="dl24h">0</div></div>
+                        </div>
+                        <div class="list" id="dlList">
+                            <div class="list-empty">// no dead letters loaded</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">⌕</span>Dead Letter Detail</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="field" style="margin-bottom:10px;">
+                            <label>Dead Letter ID (GUID)</label>
+                            <input type="text" id="dlId" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false">
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-info" onclick="getDeadLetterById()">Fetch</button>
+                            <button class="btn btn-danger" onclick="deleteDeadLetterById()">Delete</button>
+                        </div>
+                        <div class="field" style="margin-top:14px;">
+                            <label>Lookup by Client Order ID</label>
+                            <input type="text" id="dlClientOrderId" placeholder="client order id" spellcheck="false">
+                        </div>
+                        <div class="btn-group" style="margin-top:8px;">
+                            <button class="btn btn-info" onclick="getDeadLetterByClientOrderId()">Lookup</button>
+                        </div>
+
+                        <div class="section-title">Resolve Entry</div>
+                        <div class="field">
+                            <label>Resolution Notes</label>
+                            <textarea id="dlNotes" placeholder="Root cause / corrective action..."></textarea>
+                        </div>
+                        <div class="field" style="margin-top:10px;">
+                            <label>Resolved By</label>
+                            <input type="text" id="dlResolvedBy" value="ops" spellcheck="false">
+                        </div>
+                        <div class="btn-group" style="margin-top:8px;">
+                            <button class="btn btn-success" onclick="resolveDeadLetter()">✓ Mark Resolved</button>
+                        </div>
+
+                        <div class="terminal no-prefix" id="dlByIdResponse" style="margin-top:14px;">// awaiting request...</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">+</span>Inject Dead Letter</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="field">
+                            <label>Client Order ID (GUID)</label>
+                            <input type="text" id="dlNewClientOrderId" placeholder="client order id" spellcheck="false">
+                        </div>
+                        <div class="field" style="margin-top:10px;">
+                            <label>Reason</label>
+                            <input type="text" id="dlNewReason" value="Manual test injection" spellcheck="false">
+                        </div>
+                        <div class="field" style="margin-top:10px;">
+                            <label>Message Body</label>
+                            <textarea id="dlNewBody">{ "test": true }</textarea>
+                        </div>
+                        <div class="btn-group" style="margin-top:10px;">
+                            <button class="btn btn-primary" onclick="createDeadLetter()">▶ Inject</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== SCENARIOS TAB ===================== -->
+        <div class="tab-content" id="tab-scenarios">
+            <div class="grid grid-2">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">①</span>Full Order Lifecycle</div>
+                        <span class="small">PENDING → ACK → FILLED</span>
+                    </div>
+                    <div class="panel-body">
+                        <p class="small" style="margin-bottom:12px;">Submits orders and watches the state machine: <code style="color:var(--accent)">PENDING_ACK</code> → <code style="color:var(--blue)">ACKNOWLEDGED</code> → <code style="color:var(--green)">FILLED</code>. Validates API → DB → Outbox → Service Bus → Consumer → Status Update.</p>
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Order Count</label>
+                                <input type="number" id="scE2ECount" value="5">
+                            </div>
+                            <div class="field">
+                                <label>Total Wait (s)</label>
+                                <input type="number" id="scE2EWait" value="90">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="scenarioFullLifecycle()">▶ Run Scenario</button>
+                        <div class="terminal no-prefix" id="scE2EOut" style="margin-top:12px;">idle.</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">②</span>Pub-Sub Fan-Out</div>
+                        <span class="small">Topic broadcast verification</span>
+                    </div>
+                    <div class="panel-body">
+                        <p class="small" style="margin-bottom:12px;">Submits orders and verifies fan-out across <code style="color:var(--accent)">order_events_topic</code>. Each processed order triggers <strong>3 subscribers</strong> (Risk, Notifications, Audit).</p>
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Order Count</label>
+                                <input type="number" id="scPubSubCount" value="3">
+                            </div>
+                            <div class="field">
+                                <label>Wait (s)</label>
+                                <input type="number" id="scPubSubWait" value="20">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="scenarioPubSubFanOut()">▶ Run Scenario</button>
+                        <div class="terminal no-prefix" id="scPubSubOut" style="margin-top:12px;">idle.</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">③</span>Throughput Benchmark</div>
+                        <span class="small">P50/P95/P99 latency</span>
+                    </div>
+                    <div class="panel-body">
+                        <p class="small" style="margin-bottom:12px;">Fires N parallel requests, samples end-to-end latency (CreatedAt → UpdatedAt). Reports percentiles for backpressure analysis.</p>
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Parallel Orders</label>
+                                <input type="number" id="scParCount" value="30">
+                            </div>
+                            <div class="field">
+                                <label>Sample Wait (s)</label>
+                                <input type="number" id="scParWait" value="30">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="scenarioThroughputBench()">▶ Run Scenario</button>
+                        <div class="terminal no-prefix" id="scParOut" style="margin-top:12px;">idle.</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">④</span>Outbox Drain Test</div>
+                        <span class="small">Backlog processing rate</span>
+                    </div>
+                    <div class="panel-body">
+                        <p class="small" style="margin-bottom:12px;">Creates a backlog, polls outbox stats until drained. Measures the drain rate of <code style="color:var(--accent)">ScheduledOutboxMessageProcessor</code>.</p>
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Order Count</label>
+                                <input type="number" id="scOutboxCount" value="20">
+                            </div>
+                            <div class="field">
+                                <label>Timeout (s)</label>
+                                <input type="number" id="scOutboxTimeout" value="180">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="scenarioOutboxDrain()">▶ Run Scenario</button>
+                        <div class="terminal no-prefix" id="scOutboxOut" style="margin-top:12px;">idle.</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">⑤</span>Idempotency Probe</div>
+                        <span class="small">Atomic UPDATE verification</span>
+                    </div>
+                    <div class="panel-body">
+                        <p class="small" style="margin-bottom:12px;">Verifies the atomic <code style="color:var(--accent)">ExecuteUpdateAsync</code> with <code style="color:var(--accent)">WHERE IsProcessed = 0</code> prevents double-processing.</p>
+                        <div class="form-row">
+                            <div class="field">
+                                <label>Probe Count</label>
+                                <input type="number" id="scIdemCount" value="10">
+                            </div>
+                            <div class="field">
+                                <label>Wait (s)</label>
+                                <input type="number" id="scIdemWait" value="15">
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="scenarioIdempotency()">▶ Run Scenario</button>
+                        <div class="terminal no-prefix" id="scIdemOut" style="margin-top:12px;">idle.</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">⑥</span>Dead Letter Roundtrip</div>
+                        <span class="small">DLQ API surface validation</span>
+                    </div>
+                    <div class="panel-body">
+                        <p class="small" style="margin-bottom:12px;">Injects a synthetic dead letter, fetches by Client Order ID, then resolves it. Validates the DL controller end-to-end.</p>
+                        <button class="btn btn-primary" onclick="scenarioDeadLetterRoundTrip()">▶ Run Scenario</button>
+                        <div class="terminal no-prefix" id="scDlOut" style="margin-top:12px;">idle.</div>
+                    </div>
+                </div>
+
+                <div class="panel full-width">
+                    <div class="panel-header">
+                        <div class="panel-title"><span class="panel-title-icon">⚠</span>Manual Chaos Scenarios</div>
+                        <span class="small">Require external action (kill services, pause queues)</span>
+                    </div>
+                    <div class="panel-body">
+                        <div class="grid grid-3">
+                            <div class="note danger">
+                                <h4>DB Outage During Create</h4>
+                                <ul>
+                                    <li>Stop SQL Server → POST <code>/api/order</code>.</li>
+                                    <li>Expect <code>500</code> with NO orphaned rows.</li>
+                                    <li>Verify Orders &amp; OutboxMessages unchanged (transaction rollback).</li>
+                                </ul>
+                            </div>
+                            <div class="note warn">
+                                <h4>Service Bus Down (Queue)</h4>
+                                <ul>
+                                    <li>Disable queue → submit orders.</li>
+                                    <li>OutboxMessages remain unprocessed; <code>RetryCount</code> climbs.</li>
+                                    <li>After 5 retries → moved to <code>QuarantinedOutboxMessages</code>.</li>
+                                    <li>Re-enable → auto-resurrection kicks in.</li>
+                                </ul>
+                            </div>
+                            <div class="note danger">
+                                <h4>Service Bus Down (Topic)</h4>
+                                <ul>
+                                    <li>Disable topic on Azure → process orders.</li>
+                                    <li><code>OrderExecutionProvider</code> catches the exception, writes to <code>UnpublishedTopicMessages</code>.</li>
+                                    <li><code>ScheduledUnpublishedTopicMessagesProcessor</code> retries publishing directly.</li>
+                                </ul>
+                            </div>
+                            <div class="note warn">
+                                <h4>Consumer Crash Mid-Flow</h4>
+                                <ul>
+                                    <li>Kill <code>OrderExecutionProvider</code> during a burst.</li>
+                                    <li>Service Bus redelivers; atomic <code>WHERE IsProcessed=0</code> prevents duplicate updates.</li>
+                                    <li>Restart consumer — backlog drains cleanly.</li>
+                                </ul>
+                            </div>
+                            <div class="note danger">
+                                <h4>Poison Message → DLQ</h4>
+                                <ul>
+                                    <li>Force consumer to throw on a specific ClientOrderId.</li>
+                                    <li>After max delivery count, message goes to DLQ.</li>
+                                    <li><code>DeadLetterQueueProcessor</code> writes to <strong>DeadLetterLogs</strong>.</li>
+                                    <li>Triage in the Dead Letter tab.</li>
+                                </ul>
+                            </div>
+                            <div class="note">
+                                <h4>Subscriber Isolation</h4>
+                                <ul>
+                                    <li>Kill ONE topic subscriber (e.g., AuditLogProcessor).</li>
+                                    <li>Other subscribers keep receiving events.</li>
+                                    <li>Audit subscription queue accumulates messages.</li>
+                                    <li>Restart subscriber — backlog drains. Pub/sub decoupling proven.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== ARCHITECTURE TAB ===================== -->
+        <div class="tab-content" id="tab-architecture">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title"><span class="panel-title-icon">◆</span>System Architecture // v3.0</div>
+                    <span class="small">Event-driven order pipeline</span>
+                </div>
+                <div class="panel-body">
+
+                    <div class="arch-diagram">
+                        <!-- Row 1: API + DB -->
+                        <div class="arch-node api" style="grid-column: 1 / span 4;">
+                            <span class="arch-kind">[POST] /api/order</span>
+                            <span class="arch-name">TradingApp.API</span>
+                            <span class="arch-detail">CreateOrderAsync — atomic insert of Order + OutboxMessage via transaction.CommitAsync()</span>
+                        </div>
+                        <div class="arch-arrow" style="grid-column: 5 / span 1;">→</div>
+                        <div class="arch-node db" style="grid-column: 6 / span 7;">
+                            <span class="arch-kind">SQL Server</span>
+                            <span class="arch-name">DB · 5 Tables</span>
+                            <span class="arch-detail">Orders · OutboxMessages · QuarantinedOutboxMessages · UnpublishedTopicMessages · DeadLetterLogs</span>
+                        </div>
+
+                        <!-- Row 2: Outbox processor -->
+                        <div class="arch-node timer" style="grid-column: 1 / span 5; margin-top: 8px;">
+                            <span class="arch-kind">[TimerTrigger] · every 1 min</span>
+                            <span class="arch-name">ScheduledOutboxMessageProcessor</span>
+                            <span class="arch-detail">3 phases: QuarantineExhaustedMessages() → ProcessPendingMessages() → AutoRecoverResurrectedMessages()</span>
+                        </div>
+                        <div class="arch-arrow" style="grid-column: 6 / span 1; margin-top: 8px;">→</div>
+                        <div class="arch-node queue" style="grid-column: 7 / span 6; margin-top: 8px;">
+                            <span class="arch-kind">[ServiceBusQueue]</span>
+                            <span class="arch-name">create_order_queue</span>
+                            <span class="arch-detail">Command pattern — competing consumers, exclusive message lock</span>
+                        </div>
+
+                        <!-- Row 3: Consumer -->
+                        <div class="arch-arrow" style="grid-column: 7 / span 6;">↓ idempotent ExecuteUpdateAsync WHERE !IsProcessed</div>
+
+                        <div class="arch-node consumer" style="grid-column: 4 / span 5;">
+                            <span class="arch-kind">[ServiceBusTrigger]</span>
+                            <span class="arch-name">OrderExecutionProvider</span>
+                            <span class="arch-detail">Atomically updates order status (ACKNOWLEDGED/REJECTED), publishes OrderProcessed event to topic</span>
+                        </div>
+                        <div class="arch-arrow" style="grid-column: 9 / span 1;">→</div>
+                        <div class="arch-node topic" style="grid-column: 10 / span 3;">
+                            <span class="arch-kind">[ServiceBusTopic]</span>
+                            <span class="arch-name">order_events_topic</span>
+                            <span class="arch-detail">Fans out to all subscriptions</span>
+                        </div>
+
+                        <!-- Row 4: Error path - dashed -->
+                        <div class="arch-arrow dashed" style="grid-column: 4 / span 5;">↓ on ServiceBusException ⋯</div>
+
+                        <div class="arch-node error" style="grid-column: 1 / span 4;">
+                            <span class="arch-kind">[TimerTrigger] · every 1 min</span>
+                            <span class="arch-name">ScheduledUnpublishedTopicMessagesProcessor</span>
+                            <span class="arch-detail">Reads UnpublishedTopicMessages, retries publishing directly to topic (up to 5 attempts)</span>
+                        </div>
+                        <div class="arch-arrow dashed" style="grid-column: 5 / span 1;">⋯→</div>
+                        <div class="arch-node error" style="grid-column: 6 / span 3;">
+                            <span class="arch-kind">DB Fallback Table</span>
+                            <span class="arch-name">UnpublishedTopicMessages</span>
+                            <span class="arch-detail">Failed topic publishes — preserves exact OrderStatus from processing</span>
+                        </div>
+                        <div class="arch-arrow dashed" style="grid-column: 9 / span 1;">⋯→</div>
+                        <div class="arch-node topic" style="grid-column: 10 / span 3;">
+                            <span class="arch-kind">retry</span>
+                            <span class="arch-name">order_events_topic</span>
+                            <span class="arch-detail">Direct publish bypasses queue</span>
+                        </div>
+
+                        <!-- Row 5: Subscribers -->
+                        <div class="arch-arrow" style="grid-column: 10 / span 3;">↓ fan-out</div>
+
+                        <div class="arch-node func" style="grid-column: 1 / span 4;">
+                            <span class="arch-kind">[ServiceBusTrigger] · subscription: risk-analysis</span>
+                            <span class="arch-name">RiskAnalysisProcessor</span>
+                            <span class="arch-detail">Subscriber 1 — calculates risk score per processed order</span>
+                        </div>
+                        <div class="arch-node func" style="grid-column: 5 / span 4;">
+                            <span class="arch-kind">[ServiceBusTrigger] · subscription: notifications</span>
+                            <span class="arch-name">NotificationsProcessor</span>
+                            <span class="arch-detail">Subscriber 2 — sends notifications (email · teams · slack)</span>
+                        </div>
+                        <div class="arch-node func" style="grid-column: 9 / span 4;">
+                            <span class="arch-kind">[ServiceBusTrigger] · subscription: audit-log</span>
+                            <span class="arch-name">AuditLogProcessor</span>
+                            <span class="arch-detail">Subscriber 3 — writes immutable audit record</span>
+                        </div>
+
+                        <!-- Row 6: DLQ + Status -->
+                        <div class="arch-node error" style="grid-column: 1 / span 6; margin-top: 8px;">
+                            <span class="arch-kind">[ServiceBusTrigger] · create_order_queue/$DeadLetterQueue</span>
+                            <span class="arch-name">DeadLetterQueueProcessor</span>
+                            <span class="arch-detail">Consumes DLQ messages (max delivery exceeded), persists to DeadLetterLogs for operator triage</span>
+                        </div>
+                        <div class="arch-node timer" style="grid-column: 7 / span 6; margin-top: 8px;">
+                            <span class="arch-kind">[TimerTrigger] · every 1 min</span>
+                            <span class="arch-name">ScheduledOrderStatusProcessor</span>
+                            <span class="arch-detail">Flips orderStatus from ACKNOWLEDGED to FILLED on a timer</span>
+                        </div>
+                    </div>
+
+                    <div class="arch-legend">
+                        <div class="arch-legend-item">
+                            <div class="arch-legend-dot" style="background: var(--blue);"></div>
+                            <div><b style="color:var(--text-0)">API entry</b> · the HTTP boundary where orders enter the system</div>
+                        </div>
+                        <div class="arch-legend-item">
+                            <div class="arch-legend-dot" style="background: var(--accent);"></div>
+                            <div><b style="color:var(--text-0)">Queue (command)</b> · exactly one consumer processes each message</div>
+                        </div>
+                        <div class="arch-legend-item">
+                            <div class="arch-legend-dot" style="background: var(--blue);"></div>
+                            <div><b style="color:var(--text-0)">Topic (event)</b> · fans out to all active subscriptions</div>
+                        </div>
+                        <div class="arch-legend-item">
+                            <div class="arch-legend-dot" style="background: var(--green);"></div>
+                            <div><b style="color:var(--text-0)">Consumer / Subscriber</b> · processes messages from a queue/subscription</div>
+                        </div>
+                        <div class="arch-legend-item">
+                            <div class="arch-legend-dot" style="background: var(--accent);"></div>
+                            <div><b style="color:var(--text-0)">Timer trigger</b> · periodic background workers (1 min cadence)</div>
+                        </div>
+                        <div class="arch-legend-item">
+                            <div class="arch-legend-dot" style="background: var(--red);"></div>
+                            <div><b style="color:var(--text-0)">Error path</b> · dashed arrows mark fallback flows triggered by exceptions</div>
+                        </div>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div class="grid grid-3">
+                        <div class="note">
+                            <h4>Outbox Pattern</h4>
+                            <ul>
+                                <li>Order + OutboxMessage written in one DB transaction</li>
+                                <li>No message published without persisted state</li>
+                                <li>Dispatcher drains the outbox on a timer</li>
+                            </ul>
+                        </div>
+                        <div class="note warn">
+                            <h4>Topic Reliability</h4>
+                            <ul>
+                                <li>If topic publish fails → persist to <code>UnpublishedTopicMessages</code></li>
+                                <li>Dedicated retry processor publishes directly to topic</li>
+                                <li>Original OrderStatus preserved — no re-randomization</li>
+                            </ul>
+                        </div>
+                        <div class="note danger">
+                            <h4>Reliability Layers</h4>
+                            <ul>
+                                <li>Outbox quarantine + auto-resurrection (queue side)</li>
+                                <li>UnpublishedTopicMessages retry (topic side)</li>
+                                <li>DeadLetterLogs for poison messages (consumer side)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+<script>
+// =================================================================
+// DEFAULT THEME — change this to set the starting theme.
+// Available themes: 'slate' | 'terminal' | 'bloomberg' | 'arctic' | 'solar' | 'ledger'
+// User selections override this and persist in localStorage.
+// To force the default after changing it, clear localStorage or
+// pick the desired theme from the dropdown once.
+// =================================================================
+const DEFAULT_THEME = 'slate';
+
+const THEME_LABELS = {
+    slate:     { name: 'Slate',     color: '#5dd5c4' },
+    terminal:  { name: 'Terminal',  color: '#ffb020' },
+    bloomberg: { name: 'Bloomberg', color: '#ff8000' },
+    arctic:    { name: 'Arctic',    color: '#0066cc' },
+    solar:     { name: 'Solar',     color: '#b8541a' },
+    ledger:    { name: 'Ledger',    color: '#c2185b' },
+};
+
+// =================================================================
+// STATE
+// =================================================================
+const state = {
+    burstTimer: null,
+    burstSent: 0, burstSuccess: 0, burstFailed: 0, burstStart: 0,
+    autoRefresh: { orders: null, outbox: null, deadletter: null },
+    globalRefreshTimer: null,
+    apiHealthy: false,
+    currentTheme: DEFAULT_THEME,
+};
+
+// =================================================================
+// HELPERS
+// =================================================================
+const baseUrl = () => (document.getElementById('apiBaseUrl').value || 'https://localhost:7224').replace(/\/+$/, '');
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const fmtDate = (d) => d ? new Date(d).toLocaleString() : '—';
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function api(path, opts = {}) {
+    const url = baseUrl() + path;
+    try {
+        const res = await fetch(url, {
+            headers: { 'Content-Type': 'application/json' },
+            ...opts,
+        });
+        let body = null;
+        const text = await res.text();
+        if (text) {
+            try { body = JSON.parse(text); } catch { body = text; }
+        }
+        return { ok: res.ok, status: res.status, body, networkError: false };
+    } catch (err) {
+        return { ok: false, status: 0, body: null, networkError: true, error: err };
+    }
+}
+
+function setOut(id, content, isError = false) {
+    const el = $(id);
+    if (!el) return;
+    el.style.color = isError ? 'var(--red)' : '';
+    el.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+}
+
+function appendOut(id, line, color = '') {
+    const el = $(id);
+    if (!el) return;
+    const span = document.createElement('div');
+    if (color) span.style.color = color;
+    span.textContent = line;
+    el.appendChild(span);
+    el.scrollTop = el.scrollHeight;
+}
+
+function clearOut(id) {
+    const el = $(id);
+    if (el) el.textContent = '';
+}
+
+function setConnStatus(connected, msg) {
+    const dot = $('liveDot');
+    const status = $('connStatus');
+    state.apiHealthy = connected;
+    if (connected) {
+        dot.classList.remove('offline');
+        status.textContent = msg || 'CONNECTED';
+        status.style.color = 'var(--green)';
+    } else {
+        dot.classList.add('offline');
+        status.textContent = msg || 'OFFLINE';
+        status.style.color = 'var(--red)';
+    }
+}
+
+// =================================================================
+// TOAST NOTIFICATIONS (replaces native alerts)
+// =================================================================
+function toast(message, kind = 'info', durationMs = 4000) {
+    const container = $('toastContainer');
+    if (!container) return;
+    const el = document.createElement('div');
+    const colors = {
+        info:    { bg: 'var(--bg-2)', border: 'var(--border-bright)', text: 'var(--text-0)' },
+        success: { bg: 'var(--bg-2)', border: 'var(--green-dim)',     text: 'var(--green)' },
+        warn:    { bg: 'var(--bg-2)', border: 'var(--accent-dim)',    text: 'var(--accent)' },
+        error:   { bg: 'var(--bg-2)', border: 'var(--red-dim)',       text: 'var(--red)' },
+    };
+    const c = colors[kind] || colors.info;
+    el.style.cssText = `
+        background: ${c.bg};
+        border: 1px solid ${c.border};
+        border-left: 3px solid ${c.border};
+        color: ${c.text};
+        padding: 10px 16px;
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        min-width: 240px;
+        max-width: 400px;
+        pointer-events: auto;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        transform: translateX(120%);
+        transition: transform 0.25s ease, opacity 0.25s ease;
+        white-space: pre-line;
+    `;
+    el.textContent = message;
+    container.appendChild(el);
+    // Animate in
+    requestAnimationFrame(() => { el.style.transform = 'translateX(0)'; });
+    // Animate out
+    setTimeout(() => {
+        el.style.transform = 'translateX(120%)';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+    }, durationMs);
+}
+
+// =================================================================
+// THEME SWITCHING
+// =================================================================
+function setTheme(name) {
+    if (!THEME_LABELS[name]) name = DEFAULT_THEME;
+    document.documentElement.setAttribute('data-theme', name);
+    state.currentTheme = name;
+    try { localStorage.setItem('tradingops-theme', name); } catch (e) {}
+    const trig = $('themeName');
+    const swatch = $('themeSwatch');
+    if (trig) trig.textContent = THEME_LABELS[name].name.toUpperCase();
+    if (swatch) swatch.style.background = THEME_LABELS[name].color;
+    document.querySelectorAll('.theme-option').forEach(opt => {
+        opt.classList.toggle('active', opt.dataset.theme === name);
+    });
+    closeThemeMenu();
+}
+
+function toggleThemeMenu() { $('themeMenu').classList.toggle('open'); }
+function closeThemeMenu() { $('themeMenu').classList.remove('open'); }
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.theme-selector')) closeThemeMenu();
+});
+
+// Init theme: localStorage override > DEFAULT_THEME
+(function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem('tradingops-theme'); } catch (e) {}
+    setTheme(saved && THEME_LABELS[saved] ? saved : DEFAULT_THEME);
+})();
+
+// =================================================================
+// TABS
+// =================================================================
+document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        $('tab-' + btn.dataset.tab).classList.add('active');
+    });
+});
+
+// =================================================================
+// GLOBAL STATS
+// =================================================================
+async function refreshAllStats(force = false) {
+    const [orders, outboxStats, dlStats] = await Promise.all([
+        api('/api/order'),
+        api('/api/outboxmessage/stats'),
+        api('/api/deadletter/stats'),
+    ]);
+
+    const anyOk = orders.ok || outboxStats.ok || dlStats.ok;
+    setConnStatus(anyOk, anyOk ? 'CONNECTED' : 'API OFFLINE');
+
+    let ordersCount = 0, outboxCount = 0, dlCount = 0;
+
+    if (orders.ok && Array.isArray(orders.body)) {
+        ordersCount = orders.body.length;
+        $('gOrders').textContent = ordersCount;
+        $('gOrdersProcessed').textContent = orders.body.filter(o => o.isProcessed).length;
+        $('gOrdersTrend').textContent = ordersCount > 0 ? `last: ${fmtDate(orders.body[0].createdAt)}` : 'no orders yet';
+    } else if (!anyOk) {
+        $('gOrders').textContent = '—';
+        $('gOrdersProcessed').textContent = '—';
+        $('gOrdersTrend').textContent = 'awaiting feed';
+    }
+    if (outboxStats.ok && outboxStats.body) {
+        outboxCount = outboxStats.body.totalCount ?? 0;
+        $('gOutbox').textContent = outboxCount;
+        $('gOutboxUnp').textContent = outboxStats.body.unprocessedCount ?? 0;
+    } else if (!anyOk) {
+        $('gOutbox').textContent = '—';
+        $('gOutboxUnp').textContent = '—';
+    }
+    if (dlStats.ok && dlStats.body) {
+        dlCount = dlStats.body.totalCount ?? 0;
+        $('gDl').textContent = dlCount;
+        $('gDlUnres').textContent = dlStats.body.unresolvedCount ?? 0;
+    } else if (!anyOk) {
+        $('gDl').textContent = '—';
+        $('gDlUnres').textContent = '—';
+    }
+
+    updatePurgeSummary(anyOk, ordersCount, outboxCount, dlCount);
+}
+
+function updatePurgeSummary(connected, orders, outbox, dl) {
+    const set = (id, label, count) => {
+        const el = $(id);
+        if (!el) return;
+        if (!connected) {
+            el.innerHTML = `${label} <b>—</b>`;
+            el.classList.remove('has-data');
+        } else {
+            el.innerHTML = `${label} <b>${count}</b>`;
+            el.classList.toggle('has-data', count > 0);
+        }
+    };
+    set('purgeSumOrders', 'ORD', orders);
+    set('purgeSumOutbox', 'OBX', outbox);
+    set('purgeSumDl',     'DL',  dl);
+}
+
+// =================================================================
+// CLEAR ALL UI STATE — used after purge to reset every tab
+// =================================================================
+function clearAllUiState() {
+    // Lists
+    $('ordersList').innerHTML = '<div class="list-empty">// no orders loaded — click refresh</div>';
+    $('outboxList').innerHTML = '<div class="list-empty">// no messages loaded</div>';
+    $('dlList').innerHTML = '<div class="list-empty">// no dead letters loaded</div>';
+
+    // Metric counters under each list
+    ['totalOrders','processedOrders','ackOrders','rejectedOrders',
+     'outboxTotal','outboxProcessed','outboxUnprocessed','outbox24h',
+     'dlTotal','dlUnresolved','dlResolved','dl24h'].forEach(id => {
+        const el = $(id);
+        if (el) el.textContent = '0';
+    });
+
+    // Response terminals — orders tab
+    setOut('singleOrderResponse', '// awaiting input...');
+    setOut('orderByIdResponse', '// awaiting lookup...');
+    $('orderId').value = '';
+
+    // Outbox tab
+    setOut('outboxByIdResponse', '// awaiting lookup...');
+    $('outboxId').value = '';
+
+    // Dead letter tab
+    setOut('dlByIdResponse', '// awaiting request...');
+    $('dlId').value = '';
+    $('dlClientOrderId').value = '';
+    $('dlNotes').value = '';
+    $('dlNewClientOrderId').value = '';
+
+    // Burst stats
+    state.burstSent = 0; state.burstSuccess = 0; state.burstFailed = 0;
+    updateBurstStats();
+    setOut('burstResponse', 'idle.');
+
+    // Scenario terminals
+    ['scE2EOut','scPubSubOut','scParOut','scOutboxOut','scIdemOut','scDlOut'].forEach(id => {
+        setOut(id, 'idle.');
+    });
+}
+
+// =================================================================
+// ORDERS
+// =================================================================
+async function createOrder() {
+    const payload = {
+        quantity: parseInt($('orderQty').value, 10),
+        price: parseFloat($('orderPrice').value),
+    };
+    setOut('singleOrderResponse', '→ submitting...');
+    const res = await api('/api/order', { method: 'POST', body: JSON.stringify(payload) });
+    if (res.networkError) {
+        setOut('singleOrderResponse', `✗ API unreachable\n${baseUrl()}/api/order`, true);
+        toast('API unreachable — start TradingApp.API', 'error');
+        return;
+    }
+    setOut('singleOrderResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+    if (res.ok) {
+        toast(`Order submitted: ${res.body?.clientOrderId?.slice(0,8) || 'OK'}…`, 'success');
+        refreshAllStats();
+    }
+}
+
+async function getAllOrders() {
+    const list = $('ordersList');
+    list.innerHTML = '<div class="list-empty">// loading...</div>';
+    const res = await api('/api/order');
+    if (res.networkError) { list.innerHTML = '<div class="list-empty" style="color:var(--red)">// API offline</div>'; return; }
+    if (!res.ok || !Array.isArray(res.body)) { list.innerHTML = '<div class="list-empty" style="color:var(--red)">// error loading</div>'; return; }
+
+    const orders = res.body;
+    $('totalOrders').textContent = orders.length;
+    $('processedOrders').textContent = orders.filter(o => o.isProcessed).length;
+    $('ackOrders').textContent = orders.filter(o => ['ACKNOWLEDGED','FILLED'].includes(String(o.status).toUpperCase())).length;
+    $('rejectedOrders').textContent = orders.filter(o => String(o.status).toUpperCase() === 'REJECTED').length;
+
+    if (orders.length === 0) { list.innerHTML = '<div class="list-empty">// no orders</div>'; return; }
+    const sorted = [...orders].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    list.innerHTML = sorted.slice(0, 50).map(o => {
+        const s = String(o.status || '').toUpperCase();
+        const cls = s === 'ACKNOWLEDGED' ? 'acknowledged'
+                 : s === 'REJECTED' ? 'rejected'
+                 : s === 'FILLED' ? 'filled'
+                 : 'pending';
+        const badgeCls = `badge badge-${cls}`;
+        return `
+        <div class="row ${cls}">
+            <div class="row-head">
+                <span class="${badgeCls}">${s || 'PENDING'}</span>
+                <span class="small">QTY <b style="color:var(--text-0)">${o.quantity}</b> @ <b style="color:var(--accent)">$${o.price}</b></span>
+            </div>
+            <div class="kv">
+                <span class="k">ID</span><span class="v">${esc(o.id)}</span>
+                <span class="k">CLIENT</span><span class="v">${esc(o.clientOrderId)}</span>
+                <span class="k">CREATED</span><span class="v">${fmtDate(o.createdAt)}</span>
+                <span class="k">UPDATED</span><span class="v">${fmtDate(o.updatedAt)}</span>
+                <span class="k">PROCESSED</span><span class="v" style="color:${o.isProcessed?'var(--green)':'var(--accent)'}">${o.isProcessed ? 'TRUE' : 'FALSE'}</span>
+            </div>
+            <div class="row-actions">
+                <button class="btn btn-sm btn-info" onclick="$('orderId').value='${o.id}';getOrderById()">Inspect</button>
+                <button class="btn btn-sm btn-danger" onclick="$('orderId').value='${o.id}';deleteOrderById()">Delete</button>
+            </div>
+        </div>`;
+    }).join('') + (sorted.length > 50 ? `<div class="list-empty">// showing first 50 of ${sorted.length}</div>` : '');
+}
+
+async function getOrderById() {
+    const id = $('orderId').value.trim();
+    if (!id) { setOut('orderByIdResponse', '✗ Enter an Order ID', true); return; }
+    setOut('orderByIdResponse', '→ fetching...');
+    const res = await api('/api/order/' + encodeURIComponent(id));
+    if (res.networkError) { setOut('orderByIdResponse', '✗ API offline', true); return; }
+    setOut('orderByIdResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+}
+
+async function deleteOrderById() {
+    const id = $('orderId').value.trim();
+    if (!id) { setOut('orderByIdResponse', '✗ Enter an Order ID', true); return; }
+    if (!confirm('Delete order ' + id + ' ?')) return;
+    const res = await api('/api/order/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (res.networkError) { setOut('orderByIdResponse', '✗ API offline', true); return; }
+    setOut('orderByIdResponse', `HTTP ${res.status}\n` + (res.body ? JSON.stringify(res.body, null, 2) : 'Deleted.'), !res.ok);
+    if (res.ok) toast('Order deleted', 'success');
+    getAllOrders();
+    refreshAllStats();
+}
+
+async function deleteAllOrders() {
+    if (!confirm('Delete ALL orders? This cannot be undone.')) return;
+    const res = await api('/api/order', { method: 'DELETE' });
+    if (res.networkError) { toast('API offline', 'error'); return; }
+    toast(`All orders deleted (HTTP ${res.status})`, res.ok ? 'success' : 'error');
+    getAllOrders();
+    refreshAllStats();
+}
+
+// =================================================================
+// BURST
+// =================================================================
+async function burstCreateOrders() {
+    stopBurst();
+    const count = parseInt($('burstCount').value, 10);
+    const delay = parseInt($('burstDelay').value, 10);
+    const minQ = parseInt($('burstMinQty').value, 10);
+    const maxQ = parseInt($('burstMaxQty').value, 10);
+    state.burstSent = 0; state.burstSuccess = 0; state.burstFailed = 0;
+    state.burstStart = Date.now();
+    updateBurstStats();
+    clearOut('burstResponse');
+    appendOut('burstResponse', `▶ burst init: ${count} orders @ ${delay}ms`, 'var(--blue)');
+
+    let i = 0;
+    state.burstTimer = setInterval(async () => {
+        if (i >= count) {
+            stopBurst();
+            appendOut('burstResponse', `✓ burst complete: ${state.burstSuccess} success / ${state.burstFailed} failed`, 'var(--green)');
+            toast(`Burst complete: ${state.burstSuccess}/${count}`, state.burstFailed === 0 ? 'success' : 'warn');
+            refreshAllStats();
+            return;
+        }
+        i++;
+        const payload = {
+            quantity: Math.floor(Math.random() * (maxQ - minQ + 1)) + minQ,
+            price: parseFloat((Math.random() * 500 + 50).toFixed(2)),
+        };
+        state.burstSent++; updateBurstStats();
+        const res = await api('/api/order', { method: 'POST', body: JSON.stringify(payload) });
+        if (res.ok) {
+            state.burstSuccess++;
+            appendOut('burstResponse', `✓ #${i}: qty=${payload.quantity} px=$${payload.price} → ${res.body?.clientOrderId || res.body?.id}`, 'var(--green)');
+        } else {
+            state.burstFailed++;
+            appendOut('burstResponse', `✗ #${i}: ${res.networkError ? 'NETWORK_FAIL' : 'HTTP '+res.status}`, 'var(--red)');
+        }
+        updateBurstStats();
+    }, delay);
+}
+
+function stopBurst() {
+    if (state.burstTimer) { clearInterval(state.burstTimer); state.burstTimer = null; }
+}
+
+function updateBurstStats() {
+    $('burstSent').textContent = state.burstSent;
+    $('burstSuccess').textContent = state.burstSuccess;
+    $('burstFailed').textContent = state.burstFailed;
+    const elapsed = (Date.now() - state.burstStart) / 1000;
+    $('burstRate').textContent = elapsed > 0 ? (state.burstSent / elapsed).toFixed(1) : '0';
+}
+
+// =================================================================
+// OUTBOX
+// =================================================================
+async function getOutbox(kind = 'all') {
+    const list = $('outboxList');
+    list.innerHTML = '<div class="list-empty">// loading...</div>';
+    const path = kind === 'all' ? '/api/outboxmessage'
+              : kind === 'unprocessed' ? '/api/outboxmessage/unprocessed'
+              : '/api/outboxmessage/processed';
+    const [res, statsRes] = await Promise.all([api(path), api('/api/outboxmessage/stats')]);
+
+    if (statsRes.ok && statsRes.body) {
+        $('outboxTotal').textContent = statsRes.body.totalCount ?? 0;
+        $('outboxProcessed').textContent = statsRes.body.processedCount ?? 0;
+        $('outboxUnprocessed').textContent = statsRes.body.unprocessedCount ?? 0;
+        $('outbox24h').textContent = statsRes.body.last24Hours ?? 0;
+    }
+
+    if (res.networkError) { list.innerHTML = '<div class="list-empty" style="color:var(--red)">// API offline</div>'; return; }
+    if (!res.ok || !Array.isArray(res.body)) { list.innerHTML = '<div class="list-empty" style="color:var(--red)">// error</div>'; return; }
+    if (res.body.length === 0) { list.innerHTML = '<div class="list-empty">// no messages</div>'; return; }
+
+    const sorted = [...res.body].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    list.innerHTML = sorted.slice(0, 50).map(m => {
+        const cls = m.isProcessed ? 'processed' : 'unprocessed';
+        const badgeCls = `badge badge-${cls}`;
+        return `
+        <div class="row ${cls}">
+            <div class="row-head">
+                <span class="${badgeCls}">${m.isProcessed ? 'PROCESSED' : 'PENDING'}</span>
+                <span class="small">${esc(m.type || 'OutboxMessage')} · retries: <b style="color:${(m.retryCount??0)>0?'var(--accent)':'var(--text-0)'}">${m.retryCount ?? 0}</b></span>
+            </div>
+            <div class="kv">
+                <span class="k">ID</span><span class="v">${esc(m.id)}</span>
+                <span class="k">CREATED</span><span class="v">${fmtDate(m.createdAt)}</span>
+                <span class="k">PROCESSED AT</span><span class="v">${fmtDate(m.processedAt)}</span>
+            </div>
+            <details><summary>▸ payload</summary><pre>${esc(typeof m.payload === 'string' ? m.payload : JSON.stringify(m.payload, null, 2))}</pre></details>
+            <div class="row-actions">
+                <button class="btn btn-sm btn-info" onclick="$('outboxId').value='${m.id}';getOutboxById()">Inspect</button>
+                ${!m.isProcessed ? `<button class="btn btn-sm btn-success" onclick="$('outboxId').value='${m.id}';markOutboxProcessed()">Mark Processed</button>` : ''}
+                <button class="btn btn-sm btn-danger" onclick="$('outboxId').value='${m.id}';deleteOutboxById()">Delete</button>
+            </div>
+        </div>`;
+    }).join('') + (sorted.length > 50 ? `<div class="list-empty">// showing first 50 of ${sorted.length}</div>` : '');
+}
+
+async function getOutboxById() {
+    const id = $('outboxId').value.trim();
+    if (!id) { setOut('outboxByIdResponse', '✗ Enter an ID', true); return; }
+    setOut('outboxByIdResponse', '→ fetching...');
+    const res = await api('/api/outboxmessage/' + encodeURIComponent(id));
+    if (res.networkError) { setOut('outboxByIdResponse', '✗ API offline', true); return; }
+    setOut('outboxByIdResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+}
+
+async function markOutboxProcessed() {
+    const id = $('outboxId').value.trim();
+    if (!id) { setOut('outboxByIdResponse', '✗ Enter an ID', true); return; }
+    const res = await api('/api/outboxmessage/' + encodeURIComponent(id) + '/mark-processed', { method: 'POST' });
+    if (res.networkError) { setOut('outboxByIdResponse', '✗ API offline', true); return; }
+    setOut('outboxByIdResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+    if (res.ok) toast('Outbox message marked processed', 'success');
+    getOutbox('all');
+}
+
+async function deleteOutboxById() {
+    const id = $('outboxId').value.trim();
+    if (!id) { setOut('outboxByIdResponse', '✗ Enter an ID', true); return; }
+    if (!confirm('Delete outbox message ' + id + ' ?')) return;
+    const res = await api('/api/outboxmessage/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (res.networkError) { setOut('outboxByIdResponse', '✗ API offline', true); return; }
+    setOut('outboxByIdResponse', `HTTP ${res.status}\n` + (res.body ? JSON.stringify(res.body, null, 2) : 'Deleted.'), !res.ok);
+    if (res.ok) toast('Outbox message deleted', 'success');
+    getOutbox('all');
+}
+
+async function deleteAllOutbox() {
+    if (!confirm('Delete ALL outbox messages?')) return;
+    const res = await api('/api/outboxmessage', { method: 'DELETE' });
+    if (res.networkError) { toast('API offline', 'error'); return; }
+    toast(`All outbox messages deleted (HTTP ${res.status})`, res.ok ? 'success' : 'error');
+    getOutbox('all'); refreshAllStats();
+}
+
+// =================================================================
+// DEAD LETTER
+// =================================================================
+async function getDeadLetters(kind = 'all') {
+    const list = $('dlList');
+    list.innerHTML = '<div class="list-empty">// loading...</div>';
+    const path = kind === 'unresolved' ? '/api/deadletter/unresolved' : '/api/deadletter';
+    const [res, statsRes] = await Promise.all([api(path), api('/api/deadletter/stats')]);
+
+    if (statsRes.ok && statsRes.body) {
+        $('dlTotal').textContent = statsRes.body.totalCount ?? 0;
+        $('dlUnresolved').textContent = statsRes.body.unresolvedCount ?? 0;
+        $('dlResolved').textContent = statsRes.body.resolvedCount ?? 0;
+        $('dl24h').textContent = statsRes.body.last24Hours ?? 0;
+    }
+
+    if (res.networkError) { list.innerHTML = '<div class="list-empty" style="color:var(--red)">// API offline</div>'; return; }
+    if (!res.ok || !Array.isArray(res.body)) { list.innerHTML = '<div class="list-empty" style="color:var(--red)">// error</div>'; return; }
+    if (res.body.length === 0) { list.innerHTML = '<div class="list-empty">// no dead letters</div>'; return; }
+
+    const sorted = [...res.body].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    list.innerHTML = sorted.slice(0, 50).map(d => {
+        const cls = d.isResolved ? 'resolved' : 'unresolved';
+        const badgeCls = `badge badge-${cls}`;
+        return `
+        <div class="row ${cls}">
+            <div class="row-head">
+                <span class="${badgeCls}">${d.isResolved ? 'RESOLVED' : 'UNRESOLVED'}</span>
+                <span class="small">${esc(d.reason || '—')}</span>
+            </div>
+            <div class="kv">
+                <span class="k">ID</span><span class="v">${esc(d.id)}</span>
+                <span class="k">CLIENT</span><span class="v">${esc(d.clientOrderId)}</span>
+                <span class="k">CREATED</span><span class="v">${fmtDate(d.createdAt)}</span>
+                ${d.isResolved ? `
+                <span class="k">RESOLVED AT</span><span class="v">${fmtDate(d.resolvedAt)}</span>
+                <span class="k">RESOLVED BY</span><span class="v">${esc(d.resolvedBy || '—')}</span>
+                <span class="k">NOTES</span><span class="v">${esc(d.resolutionNotes || '—')}</span>
+                ` : ''}
+            </div>
+            <details><summary>▸ message body</summary><pre>${esc(typeof d.messageBody === 'string' ? d.messageBody : JSON.stringify(d.messageBody, null, 2))}</pre></details>
+            <div class="row-actions">
+                <button class="btn btn-sm btn-info" onclick="$('dlId').value='${d.id}';getDeadLetterById()">Inspect</button>
+                <button class="btn btn-sm btn-danger" onclick="$('dlId').value='${d.id}';deleteDeadLetterById()">Delete</button>
+            </div>
+        </div>`;
+    }).join('') + (sorted.length > 50 ? `<div class="list-empty">// showing first 50 of ${sorted.length}</div>` : '');
+}
+
+async function getDeadLetterById() {
+    const id = $('dlId').value.trim();
+    if (!id) { setOut('dlByIdResponse', '✗ Enter an ID', true); return; }
+    setOut('dlByIdResponse', '→ fetching...');
+    const res = await api('/api/deadletter/' + encodeURIComponent(id));
+    if (res.networkError) { setOut('dlByIdResponse', '✗ API offline', true); return; }
+    setOut('dlByIdResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+}
+
+async function getDeadLetterByClientOrderId() {
+    const id = $('dlClientOrderId').value.trim();
+    if (!id) { setOut('dlByIdResponse', '✗ Enter a client order ID', true); return; }
+    const res = await api('/api/deadletter/by-client-order/' + encodeURIComponent(id));
+    if (res.networkError) { setOut('dlByIdResponse', '✗ API offline', true); return; }
+    setOut('dlByIdResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+}
+
+async function resolveDeadLetter() {
+    const id = $('dlId').value.trim();
+    if (!id) { setOut('dlByIdResponse', '✗ Enter a DL ID', true); return; }
+    const payload = {
+        resolutionNotes: $('dlNotes').value,
+        resolvedBy: $('dlResolvedBy').value,
+    };
+    const res = await api('/api/deadletter/' + encodeURIComponent(id) + '/resolve', { method: 'POST', body: JSON.stringify(payload) });
+    if (res.networkError) { setOut('dlByIdResponse', '✗ API offline', true); return; }
+    setOut('dlByIdResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+    if (res.ok) toast('Dead letter resolved', 'success');
+    getDeadLetters('all');
+}
+
+async function createDeadLetter() {
+    const payload = {
+        clientOrderId: $('dlNewClientOrderId').value.trim(),
+        reason: $('dlNewReason').value,
+        messageBody: $('dlNewBody').value,
+    };
+    const res = await api('/api/deadletter', { method: 'POST', body: JSON.stringify(payload) });
+    if (res.networkError) { setOut('dlByIdResponse', '✗ API offline', true); return; }
+    setOut('dlByIdResponse', `HTTP ${res.status}\n` + JSON.stringify(res.body, null, 2), !res.ok);
+    if (res.ok) {
+        if (res.body?.id) $('dlId').value = res.body.id;
+        toast('Dead letter injected', 'success');
+    }
+    getDeadLetters('all');
+}
+
+async function deleteDeadLetterById() {
+    const id = $('dlId').value.trim();
+    if (!id) { setOut('dlByIdResponse', '✗ Enter a DL ID', true); return; }
+    if (!confirm('Delete dead letter ' + id + ' ?')) return;
+    const res = await api('/api/deadletter/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (res.networkError) { setOut('dlByIdResponse', '✗ API offline', true); return; }
+    setOut('dlByIdResponse', `HTTP ${res.status}\n` + (res.body ? JSON.stringify(res.body, null, 2) : 'Deleted.'), !res.ok);
+    if (res.ok) toast('Dead letter deleted', 'success');
+    getDeadLetters('all');
+}
+
+async function deleteAllDeadLetters() {
+    if (!confirm('Delete ALL dead letters?')) return;
+    const res = await api('/api/deadletter', { method: 'DELETE' });
+    if (res.networkError) { toast('API offline', 'error'); return; }
+    toast(`All dead letters deleted (HTTP ${res.status})`, res.ok ? 'success' : 'error');
+    getDeadLetters('all'); refreshAllStats();
+}
+
+// =================================================================
+// PURGE DATABASE — wipes all 3 tables + clears UI state
+// =================================================================
+async function purgeDatabase() {
+    const ordersCount = parseInt($('gOrders').textContent, 10) || 0;
+    const outboxCount = parseInt($('gOutbox').textContent, 10) || 0;
+    const dlCount     = parseInt($('gDl').textContent, 10) || 0;
+    const total = ordersCount + outboxCount + dlCount;
+
+    if (total === 0) {
+        toast('Nothing to purge — all tables empty', 'info');
+        return;
+    }
+
+    const msg = `PURGE WARNING\n\nDelete ALL rows from:\n` +
+                `  • Orders          (${ordersCount})\n` +
+                `  • OutboxMessages  (${outboxCount})\n` +
+                `  • DeadLetterLogs  (${dlCount})\n\n` +
+                `Total rows to delete: ${total}\n\nProceed?`;
+    if (!confirm(msg)) return;
+
+    const results = await Promise.allSettled([
+        api('/api/order', { method: 'DELETE' }),
+        api('/api/outboxmessage', { method: 'DELETE' }),
+        api('/api/deadletter', { method: 'DELETE' }),
+    ]);
+
+    const labels = ['Orders', 'OutboxMessages', 'DeadLetterLogs'];
+    let allOk = true;
+    results.forEach((r, i) => {
+        if (r.status === 'rejected' || !r.value?.ok) {
+            allOk = false;
+            const detail = r.status === 'rejected' ? 'REJECTED'
+                         : r.value?.networkError ? 'NETWORK FAIL'
+                         : `HTTP ${r.value?.status}`;
+            toast(`${labels[i]}: ${detail}`, 'error');
+        }
+    });
+
+    // Always reset UI state, even if some calls failed
+    clearAllUiState();
+    refreshAllStats();
+
+    if (allOk) toast(`Purged ${total} rows across 3 tables`, 'success');
+}
+
+// =================================================================
+// AUTO REFRESH
+// =================================================================
+function toggleAutoRefresh(kind) {
+    const btn = $(kind === 'orders' ? 'ordersAutoBtn' : kind === 'outbox' ? 'outboxAutoBtn' : 'dlAutoBtn');
+    if (state.autoRefresh[kind]) {
+        clearInterval(state.autoRefresh[kind]);
+        state.autoRefresh[kind] = null;
+        if (btn) { btn.classList.remove('btn-primary'); btn.textContent = 'Auto 5s'; }
+        return;
+    }
+    const fn = kind === 'orders' ? getAllOrders
+            : kind === 'outbox' ? () => getOutbox('all')
+            : () => getDeadLetters('all');
+    fn();
+    state.autoRefresh[kind] = setInterval(fn, 5000);
+    if (btn) { btn.classList.add('btn-primary'); btn.textContent = '■ Auto ON'; }
+}
+
+// =================================================================
+// SCENARIOS
+// =================================================================
+async function scenarioFullLifecycle() {
+    const out = 'scE2EOut'; clearOut(out);
+    const count = parseInt($('scE2ECount').value, 10);
+    const wait = parseInt($('scE2EWait').value, 10);
+
+    appendOut(out, `▶ FULL LIFECYCLE SCENARIO`, 'var(--accent)');
+    appendOut(out, `▶ phase 1/4: baseline snapshot`, 'var(--blue)');
+    const baseStats = await api('/api/outboxmessage/stats');
+    if (baseStats.networkError) { appendOut(out, '✗ API offline — abort', 'var(--red)'); return; }
+    appendOut(out, `  outbox total: ${baseStats.body?.totalCount ?? 0}`);
+
+    appendOut(out, `▶ phase 2/4: creating ${count} orders`, 'var(--blue)');
+    const ids = [];
+    for (let i = 0; i < count; i++) {
+        const r = await api('/api/order', { method: 'POST', body: JSON.stringify({ quantity: 10 + i, price: 100 + i }) });
+        if (r.ok) { ids.push(r.body.id); appendOut(out, `  ✓ ${r.body.id}  status=${r.body.status}`, 'var(--green)'); }
+        else { appendOut(out, `  ✗ HTTP ${r.status}`, 'var(--red)'); }
+    }
+
+    appendOut(out, `▶ phase 3/4: polling for ${wait}s (status changes)`, 'var(--blue)');
+    const start = Date.now();
+    const seen = new Map();
+    while ((Date.now() - start) / 1000 < wait) {
+        for (const id of ids) {
+            const r = await api('/api/order/' + id);
+            if (r.ok) {
+                const cur = `${r.body.status}/${r.body.isProcessed}`;
+                if (seen.get(id) !== cur) {
+                    appendOut(out, `  t=${((Date.now()-start)/1000).toFixed(1)}s  ${id.slice(0,8)}…  → ${r.body.status} processed=${r.body.isProcessed}`);
+                    seen.set(id, cur);
+                }
+            }
+        }
+        let allFilled = true;
+        for (const id of ids) {
+            const last = seen.get(id);
+            if (!last || !last.startsWith('FILLED')) { allFilled = false; break; }
+        }
+        if (allFilled) { appendOut(out, `  → all orders reached FILLED early`, 'var(--green)'); break; }
+        await sleep(3000);
+    }
+
+    appendOut(out, `▶ phase 4/4: results`, 'var(--blue)');
+    let pend = 0, ack = 0, rej = 0, fil = 0, proc = 0;
+    for (const id of ids) {
+        const r = await api('/api/order/' + id);
+        if (!r.ok) continue;
+        const s = String(r.body.status).toUpperCase();
+        if (r.body.isProcessed) proc++;
+        if (s === 'PENDING_ACK') pend++;
+        if (s === 'ACKNOWLEDGED') ack++;
+        if (s === 'REJECTED') rej++;
+        if (s === 'FILLED') fil++;
+    }
+    appendOut(out, `══════════════════════════════════════════`, 'var(--accent)');
+    appendOut(out, `RESULT`, 'var(--accent)');
+    appendOut(out, `  total submitted ........ ${ids.length}`);
+    appendOut(out, `  processed .............. ${proc}`);
+    appendOut(out, `  PENDING_ACK ............ ${pend}`);
+    appendOut(out, `  ACKNOWLEDGED ........... ${ack}`);
+    appendOut(out, `  REJECTED ............... ${rej}`);
+    appendOut(out, `  FILLED ................. ${fil}`);
+    const verdict = (proc === ids.length) ? '✓ PASS' : '⚠ PARTIAL';
+    const color = (proc === ids.length) ? 'var(--green)' : 'var(--accent)';
+    appendOut(out, verdict, color);
+    refreshAllStats();
+}
+
+async function scenarioPubSubFanOut() {
+    const out = 'scPubSubOut'; clearOut(out);
+    const count = parseInt($('scPubSubCount').value, 10);
+    const wait = parseInt($('scPubSubWait').value, 10);
+
+    appendOut(out, `▶ PUB-SUB FAN-OUT SCENARIO`, 'var(--accent)');
+    appendOut(out, `▶ phase 1/3: submit ${count} orders`, 'var(--blue)');
+    const ids = [];
+    for (let i = 0; i < count; i++) {
+        const r = await api('/api/order', { method: 'POST', body: JSON.stringify({ quantity: 100, price: 200 }) });
+        if (r.networkError) { appendOut(out, '✗ API offline — abort', 'var(--red)'); return; }
+        if (r.ok) { ids.push({ id: r.body.id, client: r.body.clientOrderId }); appendOut(out, `  ✓ ${r.body.clientOrderId}`, 'var(--green)'); }
+        else appendOut(out, `  ✗ HTTP ${r.status}`, 'var(--red)');
+    }
+
+    appendOut(out, `▶ phase 2/3: wait ${wait}s for fan-out`, 'var(--blue)');
+    appendOut(out, `  (each order → OrderExecutionProvider → order_events_topic)`, 'var(--text-2)');
+    appendOut(out, `  (each topic msg → RiskAnalysis + Notification + AuditLog)`, 'var(--text-2)');
+    appendOut(out, `  expected total subscriber invocations: ${count * 3}`, 'var(--text-2)');
+    await sleep(wait * 1000);
+
+    appendOut(out, `▶ phase 3/3: verify processing`, 'var(--blue)');
+    let processed = 0;
+    for (const o of ids) {
+        const r = await api('/api/order/' + o.id);
+        if (r.ok && r.body.isProcessed) processed++;
+    }
+    appendOut(out, `══════════════════════════════════════════`, 'var(--accent)');
+    appendOut(out, `RESULT`, 'var(--accent)');
+    appendOut(out, `  orders processed: ${processed}/${ids.length}`);
+    appendOut(out, `  topic events published (expected): ${processed}`);
+    appendOut(out, `  total subscriber fires (expected): ${processed * 3}`);
+    appendOut(out, ``);
+    appendOut(out, `→ NEXT STEPS: check the consoles of`, 'var(--text-2)');
+    appendOut(out, `  - RiskAnalysisProcessor`, 'var(--text-2)');
+    appendOut(out, `  - NotificationsProcessor`, 'var(--text-2)');
+    appendOut(out, `  - AuditLogProcessor`, 'var(--text-2)');
+    appendOut(out, `  each should show ${processed} invocations`, 'var(--text-2)');
+    appendOut(out, processed === ids.length ? '✓ PASS' : '⚠ PARTIAL', processed === ids.length ? 'var(--green)' : 'var(--accent)');
+    refreshAllStats();
+}
+
+async function scenarioThroughputBench() {
+    const out = 'scParOut'; clearOut(out);
+    const count = parseInt($('scParCount').value, 10);
+    const wait = parseInt($('scParWait').value, 10);
+
+    appendOut(out, `▶ THROUGHPUT BENCHMARK`, 'var(--accent)');
+    appendOut(out, `▶ firing ${count} parallel requests`, 'var(--blue)');
+    const start = Date.now();
+    const results = await Promise.all(
+        Array.from({ length: count }, (_, i) => api('/api/order', {
+            method: 'POST',
+            body: JSON.stringify({ quantity: 10 + i, price: 100 + i }),
+        }))
+    );
+    const elapsed = (Date.now() - start) / 1000;
+    const ok = results.filter(r => r.ok).length;
+    const ids = results.filter(r => r.ok).map(r => r.body.id);
+    appendOut(out, `  submission: ${ok}/${count} accepted in ${elapsed.toFixed(2)}s (${(count/elapsed).toFixed(1)} req/s)`, 'var(--green)');
+
+    appendOut(out, `▶ waiting ${wait}s for processing`, 'var(--blue)');
+    await sleep(wait * 1000);
+
+    appendOut(out, `▶ sampling latencies`, 'var(--blue)');
+    let proc = 0;
+    const latencies = [];
+    for (const id of ids) {
+        const r = await api('/api/order/' + id);
+        if (r.ok && r.body.isProcessed) {
+            proc++;
+            latencies.push(new Date(r.body.updatedAt) - new Date(r.body.createdAt));
+        }
+    }
+    appendOut(out, `══════════════════════════════════════════`, 'var(--accent)');
+    appendOut(out, `RESULT`, 'var(--accent)');
+    appendOut(out, `  processed ........ ${proc}/${ok}`);
+    if (latencies.length > 0) {
+        latencies.sort((a,b) => a-b);
+        const p = (q) => latencies[Math.floor(latencies.length * q)] / 1000;
+        const avg = (latencies.reduce((a,b)=>a+b,0) / latencies.length) / 1000;
+        appendOut(out, `  avg latency ...... ${avg.toFixed(2)}s`);
+        appendOut(out, `  p50 latency ...... ${p(0.50).toFixed(2)}s`);
+        appendOut(out, `  p95 latency ...... ${p(0.95).toFixed(2)}s`);
+        appendOut(out, `  p99 latency ...... ${p(0.99).toFixed(2)}s`);
+        appendOut(out, `  max latency ...... ${(Math.max(...latencies)/1000).toFixed(2)}s`);
+    } else {
+        appendOut(out, `  no processed orders — extend wait time`, 'var(--accent)');
+    }
+    refreshAllStats();
+}
+
+async function scenarioOutboxDrain() {
+    const out = 'scOutboxOut'; clearOut(out);
+    const count = parseInt($('scOutboxCount').value, 10);
+    const timeout = parseInt($('scOutboxTimeout').value, 10);
+
+    appendOut(out, `▶ OUTBOX DRAIN SCENARIO`, 'var(--accent)');
+    appendOut(out, `▶ creating ${count} orders`, 'var(--blue)');
+    for (let i = 0; i < count; i++) {
+        const r = await api('/api/order', { method: 'POST', body: JSON.stringify({ quantity: 50, price: 100 }) });
+        if (r.networkError) { appendOut(out, '✗ API offline — abort', 'var(--red)'); return; }
+    }
+    appendOut(out, `  ✓ ${count} orders queued`, 'var(--green)');
+
+    appendOut(out, `▶ polling outbox stats every 2s (max ${timeout}s)`, 'var(--blue)');
+    const start = Date.now();
+    let lastUnp = -1;
+    while ((Date.now() - start) / 1000 < timeout) {
+        const r = await api('/api/outboxmessage/stats');
+        if (r.networkError) { appendOut(out, '✗ API offline', 'var(--red)'); return; }
+        const unp = r.body?.unprocessedCount ?? 0;
+        const total = r.body?.totalCount ?? 0;
+        if (unp !== lastUnp) {
+            appendOut(out, `  t=${((Date.now()-start)/1000).toFixed(1)}s  total=${total}  pending=${unp}`);
+            lastUnp = unp;
+        }
+        if (unp === 0) {
+            appendOut(out, `══════════════════════════════════════════`, 'var(--accent)');
+            appendOut(out, `✓ DRAINED in ${((Date.now()-start)/1000).toFixed(1)}s`, 'var(--green)');
+            refreshAllStats();
+            return;
+        }
+        await sleep(2000);
+    }
+    appendOut(out, `══════════════════════════════════════════`, 'var(--accent)');
+    appendOut(out, `⚠ TIMEOUT — backlog not drained`, 'var(--red)');
+    appendOut(out, `  check ScheduledOutboxMessageProcessor (runs every 60s)`, 'var(--text-2)');
+    refreshAllStats();
+}
+
+async function scenarioIdempotency() {
+    const out = 'scIdemOut'; clearOut(out);
+    const count = parseInt($('scIdemCount').value, 10);
+    const wait = parseInt($('scIdemWait').value, 10);
+
+    appendOut(out, `▶ IDEMPOTENCY PROBE`, 'var(--accent)');
+    appendOut(out, `▶ creating ${count} orders`, 'var(--blue)');
+    const ids = [];
+    for (let i = 0; i < count; i++) {
+        const r = await api('/api/order', { method: 'POST', body: JSON.stringify({ quantity: 75, price: 150 }) });
+        if (r.networkError) { appendOut(out, '✗ API offline — abort', 'var(--red)'); return; }
+        if (r.ok) ids.push(r.body.id);
+    }
+    appendOut(out, `  ✓ ${ids.length} orders created`, 'var(--green)');
+
+    appendOut(out, `▶ waiting ${wait}s for consumer`, 'var(--blue)');
+    await sleep(wait * 1000);
+
+    appendOut(out, `▶ verifying each order updated exactly once`, 'var(--blue)');
+    let single = 0, multi = 0, unproc = 0;
+    for (const id of ids) {
+        const r = await api('/api/order/' + id);
+        if (!r.ok) continue;
+        const created = new Date(r.body.createdAt).getTime();
+        const updated = new Date(r.body.updatedAt).getTime();
+        if (!r.body.isProcessed) { unproc++; continue; }
+        if (updated > created) { single++; }
+        else { multi++; }
+    }
+    appendOut(out, `══════════════════════════════════════════`, 'var(--accent)');
+    appendOut(out, `RESULT`, 'var(--accent)');
+    appendOut(out, `  cleanly processed ......... ${single}`);
+    appendOut(out, `  not yet processed ......... ${unproc}`);
+    appendOut(out, `  suspicious (same ts) ...... ${multi}`);
+    appendOut(out, ``);
+    appendOut(out, `→ TO STRESS THE RACE CONDITION:`, 'var(--text-2)');
+    appendOut(out, `  run OrderExecutionProvider in TWO terminals`, 'var(--text-2)');
+    appendOut(out, `  pointed at the SAME Service Bus and DB`, 'var(--text-2)');
+    appendOut(out, `  one will log "already processed by another instance"`, 'var(--text-2)');
+    appendOut(out, single === ids.length ? '✓ PASS' : '⚠ PARTIAL', single === ids.length ? 'var(--green)' : 'var(--accent)');
+    refreshAllStats();
+}
+
+async function scenarioDeadLetterRoundTrip() {
+    const out = 'scDlOut'; clearOut(out);
+    const fakeClient = crypto.randomUUID();
+
+    appendOut(out, `▶ DEAD LETTER ROUND-TRIP`, 'var(--accent)');
+    appendOut(out, `▶ phase 1/3: injecting synthetic DL`, 'var(--blue)');
+    appendOut(out, `  clientOrderId: ${fakeClient}`);
+    const create = await api('/api/deadletter', { method: 'POST', body: JSON.stringify({
+        clientOrderId: fakeClient, reason: 'scenario test', messageBody: '{"scenario":true}'
+    })});
+    if (create.networkError) { appendOut(out, '✗ API offline', 'var(--red)'); return; }
+    if (!create.ok) { appendOut(out, `✗ inject failed HTTP ${create.status}`, 'var(--red)'); return; }
+    const id = create.body.id;
+    appendOut(out, `  ✓ created id=${id}`, 'var(--green)');
+
+    appendOut(out, `▶ phase 2/3: lookup by clientOrderId`, 'var(--blue)');
+    const lookup = await api('/api/deadletter/by-client-order/' + fakeClient);
+    appendOut(out, `  HTTP ${lookup.status} → ${lookup.body?.id || '—'}`);
+
+    appendOut(out, `▶ phase 3/3: resolving`, 'var(--blue)');
+    const resolved = await api('/api/deadletter/' + id + '/resolve', {
+        method: 'POST', body: JSON.stringify({ resolutionNotes: 'auto-resolved by scenario', resolvedBy: 'scenario-bot' })
+    });
+    appendOut(out, `══════════════════════════════════════════`, 'var(--accent)');
+    if (resolved.ok && resolved.body?.isResolved) {
+        appendOut(out, `✓ PASS — round-trip complete`, 'var(--green)');
+    } else {
+        appendOut(out, `✗ FAIL — HTTP ${resolved.status}`, 'var(--red)');
+    }
+    refreshAllStats();
+}
+
+// =================================================================
+// INIT
+// =================================================================
+window.addEventListener('load', async () => {
+    await refreshAllStats();
+    if (state.apiHealthy) {
+        getAllOrders();
+        toast('Connected — TRADING.OPS ready', 'success', 2500);
+    }
+    state.globalRefreshTimer = setInterval(() => {
+        refreshAllStats();
+    }, 10000);
+});
+</script>
+</body>
+</html>

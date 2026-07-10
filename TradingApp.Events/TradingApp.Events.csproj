@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	<PackageId>TradingApp.Events</PackageId>
+	<Version>1.0.0</Version>
+	<Authors>Miroslav Plancak</Authors>
+	<Description>Shared event/DTO contracts for TradingApp services.</Description>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
+
+<!--SemVer - this is the versioning that makes the contract explicit:
+- PATCH (1.0.x) — internal fix, no shape change.
+- MINOR (1.x.0) — additive, backward-compatible (new optional field on an event).
+- MAJOR (x.0.0) — breaking change (renamed/removed field, changed type) — 
+this is the number that tells every subscriber team "stop and check compatibility before you upgrade."-->

@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/StorageConnectionString/)",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "SqlConnectionString": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/SqlConnectionString/)",
+    "ServiceBusConnection": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/ServiceBusConnectionString/)",
+    "ServiceBusConnectionString": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/ServiceBusConnectionString/)",
+    "APPLICATIONINSIGHTS_CONNECTION_STRING": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/APPLICATIONINSIGHTS-CONNECTION-STRING/)",
+    "TeamsWebhookUrl": "https://tiacgroup.webhook.office.com/webhookb2/0c4f0c17-938e-471d-9879-4ac865b71d54@49be86dd-9813-4843-8478-4a72b72d1946/IncomingWebhook/37408ed6cbf34a829169dd8b2078a09c/4784c735-5ef9-4f6c-a2ad-fbc5b3121768/V2CJQv0UG_nr6qjMKvQVp8sQ7rLuqii-zrnhNq-skLqeQ1"
+  }
+}
