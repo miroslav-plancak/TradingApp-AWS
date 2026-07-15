@@ -15,7 +15,8 @@ while (true)
     {
         QueueUrl = queueUrl,
         MaxNumberOfMessages = 10,
-        WaitTimeSeconds = 20
+        WaitTimeSeconds = 20,
+        MessageAttributeNames = new List<string> { "All" }
     });
 
     foreach (var message in response.Messages ?? new List<Message>())
@@ -30,7 +31,13 @@ while (true)
                       {
                           MessageId = message.MessageId,
                           Body = message.Body,
-                          ReceiptHandle = message.ReceiptHandle
+                          ReceiptHandle = message.ReceiptHandle,
+                          MessageAttributes = message.MessageAttributes?.ToDictionary(
+                              kvp => kvp.Key, kvp=> new SQSEvent.MessageAttribute
+                              {
+                                  DataType = kvp.Value.DataType,
+                                  StringValue = kvp.Value.StringValue
+                              })
                       }
                   }
             };

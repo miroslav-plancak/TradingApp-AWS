@@ -34,6 +34,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderExecutionProcessor", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderExecutionProcessor.LocalHarness", "Functions\OrderExecutionProcessor.LocalHarness\OrderExecutionProcessor.LocalHarness.csproj", "{702B4C7F-5B17-B1A3-A0CD-2EC8A9CD0A46}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOutboxMessageProcessor", "Functions\ScheduledOutboxMessageProcessor\ScheduledOutboxMessageProcessor.csproj", "{41BD5CAB-FEF7-4170-A2BD-3BEAF6742A4A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOutboxMessageProcessor.LocalHarness", "Functions\ScheduledOutboxMessageProcessor.LocalHarness\ScheduledOutboxMessageProcessor.LocalHarness.csproj", "{00028B5A-2935-44A1-8909-4E3994DBACEF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -88,6 +92,14 @@ Global
 		{702B4C7F-5B17-B1A3-A0CD-2EC8A9CD0A46}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{702B4C7F-5B17-B1A3-A0CD-2EC8A9CD0A46}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{702B4C7F-5B17-B1A3-A0CD-2EC8A9CD0A46}.Release|Any CPU.Build.0 = Release|Any CPU
+		{41BD5CAB-FEF7-4170-A2BD-3BEAF6742A4A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{41BD5CAB-FEF7-4170-A2BD-3BEAF6742A4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{41BD5CAB-FEF7-4170-A2BD-3BEAF6742A4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{41BD5CAB-FEF7-4170-A2BD-3BEAF6742A4A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00028B5A-2935-44A1-8909-4E3994DBACEF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00028B5A-2935-44A1-8909-4E3994DBACEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00028B5A-2935-44A1-8909-4E3994DBACEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00028B5A-2935-44A1-8909-4E3994DBACEF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
