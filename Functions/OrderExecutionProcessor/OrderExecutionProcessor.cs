@@ -1,10 +1,14 @@
 ﻿using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.Order;
+using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
 using TradingApp.Domain.Models.Enums;
+using TradingApp.Events.Events;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -13,6 +17,8 @@ namespace OrderExecutionProcessor
     public class OrderExecutionProcessor
     {
         private readonly TradingDbContext _tradingDbContext;
+        private readonly IAmazonSimpleNotificationService _snsClient;
+        private readonly string _orderEventsTopicArn;
 
         public OrderExecutionProcessor()
         {
@@ -21,6 +27,10 @@ namespace OrderExecutionProcessor
                 .UseSqlServer(connectionString)
                 .Options;
             _tradingDbContext = new TradingDbContext(options);
+
+            _snsClient = new AmazonSimpleNotificationServiceClient(Amazon.RegionEndpoint.EUNorth1);
+            _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
+                ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
         }
 
         public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
@@ -33,10 +43,18 @@ namespace OrderExecutionProcessor
 
         private async Task ProcessOrderMessage(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            var correlationId = record.MessageId;
+            SimulateRedirectToDeadLetterQueue(false);
+
+            SQSEvent.MessageAttribute? correlationIdAttribute = null;
+            var hasRealCorrelationId = record.MessageAttributes != null
+                && record.MessageAttributes.TryGetValue("CorrelationId", out correlationIdAttribute)
+                && !string.IsNullOrEmpty(correlationIdAttribute.StringValue);
+
+            var correlationId = hasRealCorrelationId ? correlationIdAttribute!.StringValue : record.MessageId;
 
             context.Logger.LogWarning(
-                $"OrderExecutionStarted | CorrelationId: {correlationId} | MessageId: {record.MessageId}");
+                $"OrderExecutionStarted with {(hasRealCorrelationId ? "real" : "substitute")} " +
+                $"correlationId | CorrelationId: {correlationId} | MessageId: {record.MessageId}");
 
             var payload = JsonSerializer.Deserialize<OrderPayload>(record.Body);
 
@@ -81,9 +99,83 @@ namespace OrderExecutionProcessor
             context.Logger.LogWarning(
                 $"OrderProcessed | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId} | Status: {randomStatus}");
 
-            // TODO: publish to order_events_topic (SNS) once that topic + a publisher exist.
-            // Old Azure logic sent a ServiceBusMessage here with SessionId = clientOrderId;
-            // the SNS equivalent will need MessageGroupId too if that topic ends up FIFO.
+            await PublishOrderProcessedEvent(payload.ClientOrderId, randomStatus, correlationId, context);
+        }
+
+        private async Task PublishOrderProcessedEvent(Guid clientOrderId, OrderStatus status, string correlationId, ILambdaContext context)
+        {
+            try
+            {
+                var eventPayload = new OrderStatusEvent
+                {
+                    ClientOrderId = clientOrderId,
+                    Status = status.ToString(),
+                    EventTime = DateTimeOffset.UtcNow,
+                    Sequence = 1,
+                    CorrelationId = correlationId
+                };
+
+                var messageBody = JsonSerializer.Serialize(eventPayload);
+
+                var request = new PublishRequest
+                {
+                    TopicArn = _orderEventsTopicArn,
+                    Message = messageBody,
+                    Subject = "OrderProcessed",
+                    MessageGroupId = clientOrderId.ToString(),
+                    MessageDeduplicationId = Guid.NewGuid().ToString()
+                };
+
+                context.Logger.LogWarning(
+                    $"PublishingEventToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
+
+                SimulateTopicFailure(false);
+
+                await _snsClient.PublishAsync(request);
+
+                context.Logger.LogWarning(
+                    $"EventPublishedToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
+            }
+            catch (AmazonSimpleNotificationServiceException snsException)
+            {
+                context.Logger.LogError(
+                    $"TopicPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {snsException.Message}");
+
+                _tradingDbContext.UnpublishedTopicMessages.Add(new UnpublishedTopicMessage
+                {
+                    Id = Guid.NewGuid(),
+                    ClientOrderId = clientOrderId,
+                    OrderStatus = status,
+                    ProcessedAt = DateTimeOffset.UtcNow,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    CorrelationId = correlationId
+                });
+
+                await _tradingDbContext.SaveChangesAsync();
+
+                context.Logger.LogWarning(
+                    $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+                    $"EventPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {ex.Message}");
+            }
+
+        }
+
+        private void SimulateTopicFailure(bool isTopicDown)
+        {
+            if (!isTopicDown) return;
+
+            throw new InternalErrorException("SIMULATED: Topic down.");
+        }
+
+        private void SimulateRedirectToDeadLetterQueue(bool active) 
+        {
+            if (!active) return;
+
+            throw new Exception("SIMULATED: Message Redirected to DLQ.");
         }
     }
 }
