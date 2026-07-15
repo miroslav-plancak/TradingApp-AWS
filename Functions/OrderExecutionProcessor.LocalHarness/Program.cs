@@ -22,7 +22,6 @@ while (true)
     {
         try
         {
-            
             var sqsEvent = new SQSEvent
             {
                 Records = new List<SQSEvent.SQSMessage>
