@@ -32,8 +32,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.Events", "Tradin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledUnpublishedTopicMessagesProcessor", "Functions\ScheduledUnpublishedTopicMessagesProcessor\ScheduledUnpublishedTopicMessagesProcessor.csproj", "{863AE64A-A191-4E0D-A7BC-98A9DE2AE4CE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderExecutionProvider", "Functions\OrderExecutionProvider\OrderExecutionProvider.csproj", "{FB8F695E-E856-2107-BDB3-4497887501CD}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderExecutionProcessor", "Functions\OrderExecutionProcessor\OrderExecutionProcessor.csproj", "{C5CEEB2A-03CF-49BB-9835-1E3EAF718FD0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderExecutionProcessor.LocalHarness", "Functions\OrderExecutionProcessor.LocalHarness\OrderExecutionProcessor.LocalHarness.csproj", "{702B4C7F-5B17-B1A3-A0CD-2EC8A9CD0A46}"
@@ -88,10 +86,6 @@ Global
 		{863AE64A-A191-4E0D-A7BC-98A9DE2AE4CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{863AE64A-A191-4E0D-A7BC-98A9DE2AE4CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{863AE64A-A191-4E0D-A7BC-98A9DE2AE4CE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{FB8F695E-E856-2107-BDB3-4497887501CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FB8F695E-E856-2107-BDB3-4497887501CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FB8F695E-E856-2107-BDB3-4497887501CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FB8F695E-E856-2107-BDB3-4497887501CD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C5CEEB2A-03CF-49BB-9835-1E3EAF718FD0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C5CEEB2A-03CF-49BB-9835-1E3EAF718FD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C5CEEB2A-03CF-49BB-9835-1E3EAF718FD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
