@@ -5,15 +5,9 @@ VisualStudioVersion = 17.14.37027.9
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.Domain", "TradingApp.Domain\TradingApp.Domain.csproj", "{183EA21C-DEF5-4698-8B84-3ED58E5AA405}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.Business", "TradingApp.Business\TradingApp.Business.csproj", "{91D1DB70-2CA9-443D-9555-F29FAA3A38EE}"
-	ProjectSection(ProjectDependencies) = postProject
-		{183EA21C-DEF5-4698-8B84-3ED58E5AA405} = {183EA21C-DEF5-4698-8B84-3ED58E5AA405}
-	EndProjectSection
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.API", "TradingApp.API\TradingApp.API.csproj", "{490A8529-A731-41BF-97C8-2BA277F5D7A2}"
 	ProjectSection(ProjectDependencies) = postProject
 		{183EA21C-DEF5-4698-8B84-3ED58E5AA405} = {183EA21C-DEF5-4698-8B84-3ED58E5AA405}
-		{91D1DB70-2CA9-443D-9555-F29FAA3A38EE} = {91D1DB70-2CA9-443D-9555-F29FAA3A38EE}
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOrderStatusProcessor", "Functions\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.csproj", "{B541FD43-4828-435A-98A2-BA7EAFA99F25}"
@@ -36,6 +30,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOutboxMessageProce
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOutboxMessageProcessor.LocalHarness", "Functions\ScheduledOutboxMessageProcessor.LocalHarness\ScheduledOutboxMessageProcessor.LocalHarness.csproj", "{00028B5A-2935-44A1-8909-4E3994DBACEF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeadLetterQueueProcessor", "Functions\DeadLetterQueueProcessor\DeadLetterQueueProcessor.csproj", "{D4B059D3-F0A8-4899-A18E-B32CE93898D3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeadLetterQueueProcessor.LocalHarness", "Functions\DeadLetterQueueProcessor.LocalHarness\DeadLetterQueueProcessor.LocalHarness.csproj", "{D75886D7-393A-4ACB-8F27-C02C326AA3BC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.Business", "TradingApp.Business\TradingApp.Business.csproj", "{C64DB978-0386-921F-0185-39B32388681A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -46,10 +46,6 @@ Global
 		{183EA21C-DEF5-4698-8B84-3ED58E5AA405}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{183EA21C-DEF5-4698-8B84-3ED58E5AA405}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{183EA21C-DEF5-4698-8B84-3ED58E5AA405}.Release|Any CPU.Build.0 = Release|Any CPU
-		{91D1DB70-2CA9-443D-9555-F29FAA3A38EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{91D1DB70-2CA9-443D-9555-F29FAA3A38EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{91D1DB70-2CA9-443D-9555-F29FAA3A38EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{91D1DB70-2CA9-443D-9555-F29FAA3A38EE}.Release|Any CPU.Build.0 = Release|Any CPU
 		{490A8529-A731-41BF-97C8-2BA277F5D7A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{490A8529-A731-41BF-97C8-2BA277F5D7A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{490A8529-A731-41BF-97C8-2BA277F5D7A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -94,6 +90,18 @@ Global
 		{00028B5A-2935-44A1-8909-4E3994DBACEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{00028B5A-2935-44A1-8909-4E3994DBACEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{00028B5A-2935-44A1-8909-4E3994DBACEF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D4B059D3-F0A8-4899-A18E-B32CE93898D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D4B059D3-F0A8-4899-A18E-B32CE93898D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D4B059D3-F0A8-4899-A18E-B32CE93898D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D4B059D3-F0A8-4899-A18E-B32CE93898D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D75886D7-393A-4ACB-8F27-C02C326AA3BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D75886D7-393A-4ACB-8F27-C02C326AA3BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D75886D7-393A-4ACB-8F27-C02C326AA3BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D75886D7-393A-4ACB-8F27-C02C326AA3BC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C64DB978-0386-921F-0185-39B32388681A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C64DB978-0386-921F-0185-39B32388681A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C64DB978-0386-921F-0185-39B32388681A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C64DB978-0386-921F-0185-39B32388681A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
