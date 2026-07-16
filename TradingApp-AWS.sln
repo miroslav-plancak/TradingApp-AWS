@@ -18,8 +18,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.API", "TradingAp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOrderStatusProcessor", "Functions\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.csproj", "{B541FD43-4828-435A-98A2-BA7EAFA99F25}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeadLetterQueueProcessor", "Functions\DeadLetterQueueProcessor\DeadLetterQueueProcessor.csproj", "{805F14C4-0E54-4BA4-8EDA-B082BF9CC7F8}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RiskAnalysisProcessor", "Functions\RiskAnalysisProcessor\RiskAnalysisProcessor.csproj", "{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NotificationProcessor", "Functions\NotificationProcessor\NotificationProcessor.csproj", "{94FC7C4E-242E-4406-AC78-372D8CE68E7A}"
@@ -60,10 +58,6 @@ Global
 		{B541FD43-4828-435A-98A2-BA7EAFA99F25}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B541FD43-4828-435A-98A2-BA7EAFA99F25}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B541FD43-4828-435A-98A2-BA7EAFA99F25}.Release|Any CPU.Build.0 = Release|Any CPU
-		{805F14C4-0E54-4BA4-8EDA-B082BF9CC7F8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{805F14C4-0E54-4BA4-8EDA-B082BF9CC7F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{805F14C4-0E54-4BA4-8EDA-B082BF9CC7F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{805F14C4-0E54-4BA4-8EDA-B082BF9CC7F8}.Release|Any CPU.Build.0 = Release|Any CPU
 		{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}.Release|Any CPU.ActiveCfg = Release|Any CPU
