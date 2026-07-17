@@ -105,7 +105,7 @@ namespace ScheduledOrderStatusProcessor
 
                     await _circuitBreaker.ExecuteAsync(async () =>
                     {
-                        SimulateTopicFailure(false, context);
+                        SimulateTopicFailure(true, context);
                         await _snsClient.PublishAsync(request);
                     });
 
