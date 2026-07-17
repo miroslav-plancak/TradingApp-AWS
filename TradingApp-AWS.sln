@@ -10,8 +10,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.API", "TradingAp
 		{183EA21C-DEF5-4698-8B84-3ED58E5AA405} = {183EA21C-DEF5-4698-8B84-3ED58E5AA405}
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOrderStatusProcessor", "Functions\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.csproj", "{B541FD43-4828-435A-98A2-BA7EAFA99F25}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RiskAnalysisProcessor", "Functions\RiskAnalysisProcessor\RiskAnalysisProcessor.csproj", "{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NotificationProcessor", "Functions\NotificationProcessor\NotificationProcessor.csproj", "{94FC7C4E-242E-4406-AC78-372D8CE68E7A}"
@@ -36,6 +34,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DeadLetterQueueProcessor.Lo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.Business", "TradingApp.Business\TradingApp.Business.csproj", "{C64DB978-0386-921F-0185-39B32388681A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOrderStatusProcessor.LocalHarness", "Functions\ScheduledOrderStatusProcessor.LocalHarness\ScheduledOrderStatusProcessor.LocalHarness.csproj", "{F2990DBD-0791-428E-AEF5-4AB8EC0EBCC4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledOrderStatusProcessor", "Functions\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.csproj", "{F1996404-A032-4874-9D63-52403BD8D36C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -50,10 +52,6 @@ Global
 		{490A8529-A731-41BF-97C8-2BA277F5D7A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{490A8529-A731-41BF-97C8-2BA277F5D7A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{490A8529-A731-41BF-97C8-2BA277F5D7A2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B541FD43-4828-435A-98A2-BA7EAFA99F25}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B541FD43-4828-435A-98A2-BA7EAFA99F25}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B541FD43-4828-435A-98A2-BA7EAFA99F25}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B541FD43-4828-435A-98A2-BA7EAFA99F25}.Release|Any CPU.Build.0 = Release|Any CPU
 		{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7D806D43-80AD-4C0F-B516-4B96C7F75FD2}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -102,6 +100,14 @@ Global
 		{C64DB978-0386-921F-0185-39B32388681A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C64DB978-0386-921F-0185-39B32388681A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C64DB978-0386-921F-0185-39B32388681A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F2990DBD-0791-428E-AEF5-4AB8EC0EBCC4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F2990DBD-0791-428E-AEF5-4AB8EC0EBCC4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F2990DBD-0791-428E-AEF5-4AB8EC0EBCC4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F2990DBD-0791-428E-AEF5-4AB8EC0EBCC4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F1996404-A032-4874-9D63-52403BD8D36C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F1996404-A032-4874-9D63-52403BD8D36C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F1996404-A032-4874-9D63-52403BD8D36C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F1996404-A032-4874-9D63-52403BD8D36C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

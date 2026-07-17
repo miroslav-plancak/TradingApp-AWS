@@ -27,6 +27,7 @@ namespace ScheduledOutboxMessageProcessor
             var options = new DbContextOptionsBuilder<TradingDbContext>()
                 .UseSqlServer(connectionString)
                 .Options;
+
             _tradingDbContext = new TradingDbContext(options);
 
             _sqsClient = new AmazonSQSClient(Amazon.RegionEndpoint.EUNorth1);
@@ -303,9 +304,6 @@ namespace ScheduledOutboxMessageProcessor
         {
             try
             {
-                // WORKAROUND: no direct equivalent of ServiceBusAdministrationClient's
-                // GetQueueRuntimePropertiesAsync - GetQueueAttributesAsync against the queue
-                // we already have the URL for is SQS's closest "is this reachable" check.
                 await _sqsClient.GetQueueAttributesAsync(_createOrderQueueUrl, new List<string> { "QueueArn" });
 
                 context.Logger.LogWarning("QueueReachable | CREATE_ORDER_QUEUE.fifo is accessible.");
