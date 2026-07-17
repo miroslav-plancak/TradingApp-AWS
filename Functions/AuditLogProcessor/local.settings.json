@@ -1,9 +1,0 @@
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/StorageConnectionString/)",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "ServiceBusConnection": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/ServiceBusConnectionString/)",
-    "APPLICATIONINSIGHTS_CONNECTION_STRING": "@Microsoft.KeyVault(SecretUri=https://tradingapp-demo-kv.vault.azure.net/secrets/APPLICATIONINSIGHTS-CONNECTION-STRING/)"
-  }
-}

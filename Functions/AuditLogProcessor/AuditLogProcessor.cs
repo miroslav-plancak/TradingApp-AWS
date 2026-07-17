@@ -1,6 +1,5 @@
-﻿using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
+using Amazon.Lambda.Core;
+using Amazon.Lambda.SQSEvents;
 using System.Text.Json;
 using TradingApp.Events.Events;
 
@@ -8,44 +7,35 @@ namespace AuditLogProcessor
 {
     public class AuditLogProcessor
     {
-        private readonly ILogger<AuditLogProcessor> _logger;
-
-        public AuditLogProcessor(ILogger<AuditLogProcessor> logger)
+        public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
-            _logger = logger;
+            foreach (var record in evnt.Records)
+            {
+                await ProcessRecord(record, context);
+            }
         }
 
-        [Function(nameof(AuditLogProcessor))]
-        public async Task Run
-        (
-            [ServiceBusTrigger(
-            "order_events_topic", 
-            "audit-log", 
-            Connection = "ServiceBusConnection")]
-            ServiceBusReceivedMessage message
-        )
+        private async Task ProcessRecord(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            var correlationId = message.CorrelationId ?? "CorrelationId";
-
-            _logger.LogWarning("AuditLogProcessor started | CorrelationId: {CorrelationId}",
-                        correlationId);
-
-            var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(message.Body.ToString());
+            var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(record.Body);
 
             if (orderEvent == null)
             {
-                _logger.LogWarning("OrderEventNull | CorrelationId: {CorrelationId}", correlationId);
+                context.Logger.LogWarning($"OrderEventNull | MessageId: {record.MessageId}");
                 return;
             }
 
-            _logger.LogWarning("Writing audit log for Order with CorrelationId: {CorrelationId} | ClientOrderId {ClientOrderId}",
-                correlationId, orderEvent.ClientOrderId);
+            var correlationId = orderEvent.CorrelationId;
+
+            context.Logger.LogWarning($"AuditLogProcessor started | CorrelationId: {correlationId}");
+
+            context.Logger.LogWarning(
+                $"Writing audit log for Order with CorrelationId: {correlationId} | ClientOrderId {orderEvent.ClientOrderId}");
 
             await WriteAuditLog(orderEvent);
 
-            _logger.LogWarning("Audit log written for Order with CorrelationId: {CorrelationId} | ClientOrderId {ClientOrderId}",
-                correlationId, orderEvent.ClientOrderId);
-
+            context.Logger.LogWarning(
+                $"Audit log written for Order with CorrelationId: {correlationId} | ClientOrderId {orderEvent.ClientOrderId}");
         }
 
         private async Task WriteAuditLog(OrderStatusEvent orderEvent)
