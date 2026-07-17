@@ -1,45 +1,58 @@
-﻿using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Functions.Worker;
+using Amazon.Lambda.Core;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+using Polly;
 using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
+using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
 
 namespace ScheduledUnpublishedTopicMessagesProcessor
 {
     public class ScheduledUnpublishedTopicMessagesProcessor
     {
-        private readonly ILogger<ScheduledUnpublishedTopicMessagesProcessor> _logger;
         private readonly TradingDbContext _tradingDbContext;
-        private readonly ServiceBusClient _serviceBusClient;
-        private readonly ServiceBusSender _sender;
+        private readonly IAmazonSimpleNotificationService _snsClient;
+        private readonly string _orderEventsTopicArn;
         private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
         private static int _topicFailureCount = 0;
+        private ILambdaContext? _currentContext;
 
-        public ScheduledUnpublishedTopicMessagesProcessor
-            (
-            ILogger<ScheduledUnpublishedTopicMessagesProcessor> logger,
-            TradingDbContext tradingDbContext,
-            IConfiguration configuration,
-            AsyncCircuitBreakerPolicy circuitBreaker
-            )
+        public ScheduledUnpublishedTopicMessagesProcessor()
         {
-            _logger = logger;
-            _tradingDbContext = tradingDbContext;
-            var connectionString = configuration["ServiceBusConnectionString"];
-            _serviceBusClient = new ServiceBusClient(connectionString);
-            _sender = _serviceBusClient.CreateSender("order_events_topic");
-            _circuitBreaker = circuitBreaker;
+            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING")
+                ?? throw new InvalidOperationException("SQL_CONNECTION_STRING environment variable is not set.");
+
+            var options = new DbContextOptionsBuilder<TradingDbContext>()
+                .UseSqlServer(connectionString)
+                .Options;
+            _tradingDbContext = new TradingDbContext(options);
+
+            _snsClient = new AmazonSimpleNotificationServiceClient(Amazon.RegionEndpoint.EUNorth1);
+
+            _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
+                ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
+
+            _circuitBreaker = Policy
+                .Handle<Exception>()
+                .CircuitBreakerAsync(
+                    exceptionsAllowedBeforeBreaking: 3,
+                    durationOfBreak: TimeSpan.FromMinutes(2),
+                    onBreak: (exception, duration) =>
+                        _currentContext?.Logger.LogWarning(
+                            $"CircuitBreaker OPENED | order_events_topic unreachable | Will retry in {duration.TotalSeconds}s | Error: {exception.Message}"),
+                    onReset: () =>
+                        _currentContext?.Logger.LogWarning("CircuitBreaker CLOSED | Topic connectivity restored"),
+                    onHalfOpen: () =>
+                        _currentContext?.Logger.LogWarning("CircuitBreaker HALF-OPEN | Testing topic connectivity..."));
         }
 
-        [Function("ScheduledUnpublishedTopicMessagesProcessor")]
-        public async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer)
+        public async Task FunctionHandler(ILambdaContext context)
         {
-            _logger.LogWarning("ScheduledUnpublishedTopicMessagesProcessor triggered at: {TriggerTime}",
-                DateTimeOffset.UtcNow);
+            _currentContext = context;
+            context.Logger.LogWarning($"ScheduledUnpublishedTopicMessagesProcessor triggered at: {DateTimeOffset.UtcNow}");
 
             var unpublishedMessages = await _tradingDbContext.UnpublishedTopicMessages
                 .Where(x => x.PublishedAt == null && x.RetryCount < 5)
@@ -50,12 +63,11 @@ namespace ScheduledUnpublishedTopicMessagesProcessor
 
             if (unpublishedMessages.Count == 0)
             {
-                _logger.LogWarning("NoUnpublishedMessages | No messages to retry");
+                context.Logger.LogWarning("NoUnpublishedMessages | No messages to retry");
                 return;
             }
 
-            _logger.LogWarning("RetryingUnpublishedMessages | Found {Count} messages to retry",
-                unpublishedMessages.Count);
+            context.Logger.LogWarning($"RetryingUnpublishedMessages | Found {unpublishedMessages.Count} messages to retry");
 
             var successCount = 0;
             var failureCount = 0;
@@ -65,106 +77,97 @@ namespace ScheduledUnpublishedTopicMessagesProcessor
             {
                 try
                 {
-                    _logger.LogWarning(
-                        "RetryingTopicPublish | CorrelationId: {CorrelationId} | UnpublishedId: {UnpublishedId} | ClientOrderId: {ClientOrderId}",
-                        unpublishedMessage.CorrelationId, unpublishedMessage.Id, unpublishedMessage.ClientOrderId);
+                    context.Logger.LogWarning(
+                        $"RetryingTopicPublish | CorrelationId: {unpublishedMessage.CorrelationId} " +
+                        $"| UnpublishedId: {unpublishedMessage.Id} | ClientOrderId: {unpublishedMessage.ClientOrderId}");
 
                     var eventPayload = new OrderStatusEvent
                     {
                         ClientOrderId = unpublishedMessage.ClientOrderId,
                         Status = unpublishedMessage.OrderStatus.ToString(),
                         EventTime = unpublishedMessage.ProcessedAt,
-                        Sequence = 1,
-                        CorrelationId = unpublishedMessage.CorrelationId,
+                        Sequence = unpublishedMessage.OrderStatus == OrderStatus.FILLED ? 2 : 1,
+                        CorrelationId = unpublishedMessage.CorrelationId
                     };
 
                     var messageBody = JsonSerializer.Serialize(eventPayload);
 
-                    var message = new ServiceBusMessage(messageBody)
+                    var request = new PublishRequest
                     {
-                        MessageId = Guid.NewGuid().ToString(),
-                        ContentType = "application/json",
+                        TopicArn = _orderEventsTopicArn,
+                        Message = messageBody,
                         Subject = "OrderProcessed",
-                        SessionId = unpublishedMessage.ClientOrderId.ToString()
+                        MessageGroupId = unpublishedMessage.ClientOrderId.ToString(),
+                        MessageDeduplicationId = Guid.NewGuid().ToString()
                     };
 
                     await _circuitBreaker.ExecuteAsync(async () =>
                     {
-                        SimulateTopicFailure(false);
-                        await _sender.SendMessageAsync(message);
+                        SimulateTopicFailure(false, context);
+                        await _snsClient.PublishAsync(request);
                     });
 
                     unpublishedMessage.PublishedAt = DateTimeOffset.UtcNow;
                     successCount++;
 
-                    _logger.LogWarning(
-                        "TopicPublishRetrySucceeded | CorrelationId: {CorrelationId} | UnpublishedId: {UnpublishedId}",
-                        unpublishedMessage.CorrelationId, unpublishedMessage.Id);
+                    context.Logger.LogWarning(
+                        $"TopicPublishRetrySucceeded | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id}");
                 }
-                catch (BrokenCircuitException) 
+                catch (BrokenCircuitException)
                 {
                     circuitOpened = true;
-
-                    _logger.LogWarning(
-                       "CircuitOpen | Topic circuit open | Stopping retry batch | CorrelationId: {CorrelationId}",
-                       unpublishedMessage.CorrelationId);
+                    context.Logger.LogWarning(
+                        $"CircuitOpen | Topic circuit open | Stopping retry batch | CorrelationId: {unpublishedMessage.CorrelationId}");
                     break;
                 }
-                catch (ServiceBusException sbEx)
+                catch (AmazonSimpleNotificationServiceException snsEx)
                 {
                     unpublishedMessage.RetryCount++;
-                    unpublishedMessage.LastError = sbEx.Message;
+                    unpublishedMessage.LastError = snsEx.Message;
                     failureCount++;
 
-                    _logger.LogError(sbEx,
-                        "TopicPublishRetryFailed | CorrelationId: {CorrelationId} | UnpublishedId: {UnpublishedId} | Error: {Message}",
-                        unpublishedMessage.CorrelationId, unpublishedMessage.Id, sbEx.Message);
+                    context.Logger.LogError(
+                        $"TopicPublishRetryFailed | CorrelationId: {unpublishedMessage.CorrelationId} " +
+                        $"| UnpublishedId: {unpublishedMessage.Id} | Error: {snsEx.Message}");
                 }
                 catch (Exception ex)
                 {
                     unpublishedMessage.RetryCount++;
                     failureCount++;
 
-                    _logger.LogError(ex,
-                        "TopicPublishRetryFailed | CorrelationId: {CorrelationId} | UnpublishedId: {UnpublishedId}",
-                        unpublishedMessage.CorrelationId, unpublishedMessage.Id);
+                    context.Logger.LogError(
+                        $"TopicPublishRetryFailed | CorrelationId: {unpublishedMessage.CorrelationId} " +
+                        $"| UnpublishedId: {unpublishedMessage.Id} | Error: {ex.Message}");
                 }
             }
 
             await _tradingDbContext.SaveChangesAsync();
 
-            GenerateLogBasedOnResults(successCount, failureCount, circuitOpened);
+            GenerateLogBasedOnResults(successCount, failureCount, circuitOpened, context);
         }
 
-        private void GenerateLogBasedOnResults(int successCount, int failureCount, bool circuitOpened)
+        private static void GenerateLogBasedOnResults(int successCount, int failureCount, bool circuitOpened, ILambdaContext context)
         {
             if (circuitOpened)
             {
-                _logger.LogWarning(
-                    "RetryBatchAborted | CircuitOpen | Succeeded: {Success} | Failed: {Failed} | Remaining will retry next cycle",
-                    successCount, failureCount);
+                context.Logger.LogWarning(
+                    $"RetryBatchAborted | CircuitOpen | Succeeded: {successCount} | Failed: {failureCount} | Remaining will retry next cycle");
             }
             else if (failureCount > 0 && successCount == 0)
             {
-                _logger.LogWarning(
-                    "RetryBatchFailed | All messages failed | Failed: {Failed}",
-                    failureCount);
+                context.Logger.LogWarning($"RetryBatchFailed | All messages failed | Failed: {failureCount}");
             }
             else if (failureCount > 0)
             {
-                _logger.LogWarning(
-                    "RetryBatchPartial | Succeeded: {Success} | Failed: {Failed}",
-                    successCount, failureCount);
+                context.Logger.LogWarning($"RetryBatchPartial | Succeeded: {successCount} | Failed: {failureCount}");
             }
             else
             {
-                _logger.LogWarning(
-                    "RetryProcessingComplete | All messages published | Succeeded: {Success}",
-                    successCount);
+                context.Logger.LogWarning($"RetryProcessingComplete | All messages published | Succeeded: {successCount}");
             }
         }
 
-        private void SimulateTopicFailure(bool isTopicDown)
+        private static void SimulateTopicFailure(bool isTopicDown, ILambdaContext context)
         {
             if (!isTopicDown) return;
 
@@ -172,13 +175,10 @@ namespace ScheduledUnpublishedTopicMessagesProcessor
 
             if (_topicFailureCount <= 3)
             {
-                _logger.LogWarning(
-                    "SIMULATION | Simulating topic outage | FailureCount: {Count}",
-                    _topicFailureCount);
+                context.Logger.LogWarning($"SIMULATION | Simulating topic outage | FailureCount: {_topicFailureCount}");
 
-                throw new ServiceBusException(
-                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)",
-                    ServiceBusFailureReason.ServiceCommunicationProblem);
+                throw new InternalErrorException(
+                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)");
             }
         }
     }
