@@ -1,6 +1,5 @@
-﻿using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
+using Amazon.Lambda.Core;
+using Amazon.Lambda.SQSEvents;
 using System.Text.Json;
 using TradingApp.Events.Events;
 
@@ -8,47 +7,35 @@ namespace RiskAnalysisProcessor
 {
     public class RiskAnalysisProcessor
     {
-        private readonly ILogger<RiskAnalysisProcessor> _logger;
-
-        public RiskAnalysisProcessor(ILogger<RiskAnalysisProcessor> logger)
+        public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
-            _logger = logger;
+            foreach (var record in evnt.Records)
+            {
+                await ProcessRecord(record, context);
+            }
         }
 
-        [Function(nameof(RiskAnalysisProcessor))]
-        public async Task Run
-        (
-            [ServiceBusTrigger(
-            "order_events_topic",
-            "risk-analysis", 
-            Connection = "ServiceBusConnection")]
-            ServiceBusReceivedMessage message
-        )
+        private async Task ProcessRecord(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            var correlationId = message.CorrelationId ?? "CorrelationId";
-
-            _logger.LogWarning("RiskAnalysisProcessor started | CorrelationId: {CorrelationId}",
-                        correlationId);
-
-            var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(message.Body.ToString());
+            var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(record.Body);
 
             if (orderEvent == null)
             {
-                _logger.LogWarning("OrderEventNull | CorrelationId: {CorrelationId}", correlationId);
+                context.Logger.LogWarning($"OrderEventNull | MessageId: {record.MessageId}");
                 return;
             }
 
-            _logger.LogWarning("Analyzing risk for Order with CorrelationId: {CorrelationId} | ClientOrderId {ClientOrderId}",
-                correlationId, orderEvent.ClientOrderId);
+            var correlationId = orderEvent.CorrelationId;
+
+            context.Logger.LogWarning($"RiskAnalysisProcessor started | CorrelationId: {correlationId}");
+
+            context.Logger.LogWarning(
+                $"Analyzing risk for Order with CorrelationId: {correlationId} | ClientOrderId {orderEvent.ClientOrderId}");
 
             var riskScore = await CalculateRiskScore(orderEvent);
 
-            _logger.LogWarning(
-                "Risk analysis complete with CorrelationId {CorrelationId} " +
-                "| ClientOrderId: {ClientOrderId} | RiskScore: {RiskScore}",
-                correlationId,
-                orderEvent.ClientOrderId,
-                riskScore);
+            context.Logger.LogWarning(
+                $"Risk analysis complete with CorrelationId {correlationId} | ClientOrderId: {orderEvent.ClientOrderId} | RiskScore: {riskScore}");
         }
 
         private async Task<double> CalculateRiskScore(OrderStatusEvent orderEvent)
