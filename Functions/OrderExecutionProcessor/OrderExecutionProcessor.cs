@@ -43,7 +43,7 @@ namespace OrderExecutionProcessor
 
         private async Task ProcessOrderMessage(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            SimulateRedirectToDeadLetterQueue(true);
+            SimulateRedirectToDeadLetterQueue(false);
 
             SQSEvent.MessageAttribute? correlationIdAttribute = null;
             var hasRealCorrelationId = record.MessageAttributes != null

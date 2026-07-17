@@ -1,8 +1,8 @@
-﻿using Azure.Messaging.ServiceBus;
-using Microsoft.Azure.Functions.Worker;
+using Amazon.Lambda.Core;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+using Polly;
 using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
@@ -14,36 +14,49 @@ namespace ScheduledOrderStatusProcessor
 {
     public class ScheduledOrderStatusProcessor
     {
-        private readonly ILogger<ScheduledOrderStatusProcessor> _logger;
         private readonly TradingDbContext _tradingDbContext;
-        private readonly string _connectionString;
-        private readonly ServiceBusClient _serviceBusClient;
-        private readonly ServiceBusSender _sender;
+        private readonly IAmazonSimpleNotificationService _snsClient;
+        private readonly string _orderEventsTopicArn;
         private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
         private static int _topicFailureCount = 0;
+        private ILambdaContext? _currentContext;
 
-        public ScheduledOrderStatusProcessor
-        (
-            ILogger<ScheduledOrderStatusProcessor> logger,
-            TradingDbContext tradingDbContext,
-            IConfiguration configuration,
-            AsyncCircuitBreakerPolicy circuitBreaker
-        )
+        public ScheduledOrderStatusProcessor()
         {
-            _logger = logger;
-            _tradingDbContext = tradingDbContext;
-            _connectionString = configuration["ServiceBusConnectionString"]!;
-            _serviceBusClient = new ServiceBusClient(_connectionString);
-            _sender = _serviceBusClient.CreateSender("order_events_topic");
-            _circuitBreaker = circuitBreaker;
+            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING")
+                ?? throw new InvalidOperationException("SQL_CONNECTION_STRING environment variable is not set.");
+
+            var options = new DbContextOptionsBuilder<TradingDbContext>()
+                .UseSqlServer(connectionString)
+                .Options;
+            
+            _tradingDbContext = new TradingDbContext(options);
+
+            _snsClient = new AmazonSimpleNotificationServiceClient(Amazon.RegionEndpoint.EUNorth1);
+
+            _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
+                ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
+
+            _circuitBreaker = Policy
+                .Handle<Exception>()
+                .CircuitBreakerAsync(
+                    exceptionsAllowedBeforeBreaking: 3,
+                    durationOfBreak: TimeSpan.FromMinutes(2),
+                    onBreak: (exception, duration) =>
+                        _currentContext?.Logger.LogWarning(
+                            $"CircuitBreaker OPENED | order_events_topic unreachable | Will retry in {duration.TotalSeconds}s | Error: {exception.Message}"),
+                    onReset: () =>
+                        _currentContext?.Logger.LogWarning("CircuitBreaker CLOSED | Topic connectivity restored"),
+                    onHalfOpen: () =>
+                        _currentContext?.Logger.LogWarning("CircuitBreaker HALF-OPEN | Testing topic connectivity..."));
         }
 
-        [Function("ScheduledOrderStatusProcessor")]
-        public async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer)
+        public async Task FunctionHandler(ILambdaContext context)
         {
-            _logger.LogWarning("ScheduledOrderStatusProcessor triggered at: {TriggerTime}",
-                DateTimeOffset.UtcNow);
-            
+            _currentContext = context;
+
+            context.Logger.LogWarning($"ScheduledOrderStatusProcessor triggered at: {DateTimeOffset.UtcNow}");
+
             var orders = await _tradingDbContext.Orders
                 .Where(ao => ao.Status == OrderStatus.ACKNOWLEDGED)
                 .OrderBy(x => x.CreatedAt)
@@ -52,12 +65,11 @@ namespace ScheduledOrderStatusProcessor
 
             if (orders.Count == 0)
             {
-                _logger.LogWarning("NoAcknowledgedOrders | No orders to promote to FILLED");
+                context.Logger.LogWarning("NoAcknowledgedOrders | No orders to promote to FILLED");
                 return;
             }
 
-            _logger.LogWarning("PromotingOrders | Found {Count} ACKNOWLEDGED orders to promote",
-                orders.Count);
+            context.Logger.LogWarning($"PromotingOrders | Found {orders.Count} ACKNOWLEDGED orders to promote");
 
             var successCount = 0;
             var failureCount = 0;
@@ -65,12 +77,11 @@ namespace ScheduledOrderStatusProcessor
 
             foreach (var order in orders)
             {
-                try 
+                try
                 {
-                    _logger.LogWarning(
-                        "PromotingOrder | CorrelationId: {CorrelationId} | OrderId: {OrderId} " +
-                        "| ClientOrderId: {ClientOrderId} | ACKNOWLEDGED => FILLED",
-                    order.CorrelationId, order.Id, order.ClientOrderId);
+                    context.Logger.LogWarning(
+                        $"PromotingOrder | CorrelationId: {order.CorrelationId} | OrderId: {order.Id} " +
+                        $"| ClientOrderId: {order.ClientOrderId} | ACKNOWLEDGED => FILLED");
 
                     var eventPayload = new OrderStatusEvent
                     {
@@ -83,42 +94,40 @@ namespace ScheduledOrderStatusProcessor
 
                     var messageBody = JsonSerializer.Serialize(eventPayload);
 
-                    var message = new ServiceBusMessage(messageBody)
+                    var request = new PublishRequest
                     {
-                        MessageId = Guid.NewGuid().ToString(),
-                        ContentType = "application/json",
-                        Subject = "OrderStatusFilled",
-                        SessionId = order.ClientOrderId.ToString()
+                        TopicArn = _orderEventsTopicArn,
+                        Message = messageBody,
+                        Subject = OrderStatus.FILLED.ToString(),
+                        MessageGroupId = order.ClientOrderId.ToString(),
+                        MessageDeduplicationId = Guid.NewGuid().ToString()
                     };
 
-                    await _circuitBreaker.ExecuteAsync(async () => 
+                    await _circuitBreaker.ExecuteAsync(async () =>
                     {
-                        SimulateTopicFailure(false);
-                        await _sender.SendMessageAsync(message);
+                        SimulateTopicFailure(false, context);
+                        await _snsClient.PublishAsync(request);
                     });
 
                     order.Status = OrderStatus.FILLED;
                     order.UpdatedAt = DateTimeOffset.UtcNow;
                     successCount++;
 
-                    _logger.LogWarning(
-                        "OrderFilledAndPublished | CorrelationId: {CorrelationId} | ClientOrderId: {ClientOrderId}",
-                        order.CorrelationId, order.ClientOrderId);
+                    context.Logger.LogWarning(
+                        $"OrderFilledAndPublished | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
                 }
                 catch (BrokenCircuitException)
                 {
                     circuitOpened = true;
-                    _logger.LogWarning(
-                        "CircuitOpen | Stopping batch | CorrelationId: {CorrelationId} | Order stays ACKNOWLEDGED",
-                        order.CorrelationId);
+                    context.Logger.LogWarning(
+                        $"CircuitOpen | Stopping batch | CorrelationId: {order.CorrelationId} | Order stays ACKNOWLEDGED");
                     break;
                 }
-                catch(ServiceBusException sbEx)
+                catch (AmazonSimpleNotificationServiceException snsEx)
                 {
                     failureCount++;
-                    _logger.LogError(sbEx,
-                            "TopicPublishFailed | CorrelationId: {CorrelationId} | Order stays ACKNOWLEDGED",
-                         order.CorrelationId);
+                    context.Logger.LogError(
+                        $"TopicPublishFailed | CorrelationId: {order.CorrelationId} | Order stays ACKNOWLEDGED | Error: {snsEx.Message}");
 
                     _tradingDbContext.UnpublishedTopicMessages.Add(new UnpublishedTopicMessage
                     {
@@ -133,66 +142,60 @@ namespace ScheduledOrderStatusProcessor
                     order.Status = OrderStatus.FILLED;
                     order.UpdatedAt = DateTimeOffset.UtcNow;
 
-                    _logger.LogWarning(
-                        "SavedToUnpublishedTopicMessages | CorrelationId: {CorrelationId} " +
-                        "| ClientOrderId: {ClientOrderId} | Status{Status}",
-                        order.CorrelationId, order.ClientOrderId, order.Status);
+                    context.Logger.LogWarning(
+                        $"SavedToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} " +
+                        $"| ClientOrderId: {order.ClientOrderId} | Status: {order.Status}");
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     failureCount++;
-                    _logger.LogError(ex,
-                    "UnexpectedError | CorrelationId: {CorrelationId} | Order stays ACKNOWLEDGED",
-                         order.CorrelationId);
+                    context.Logger.LogError(
+                        $"UnexpectedError | CorrelationId: {order.CorrelationId} | Order stays ACKNOWLEDGED | Error: {ex.Message}");
                 }
             }
 
             await _tradingDbContext.SaveChangesAsync();
 
-            GenerateLogBasedOnResults(successCount, failureCount, circuitOpened, orders.Count);
+            GenerateLogBasedOnResults(successCount, failureCount, circuitOpened, orders.Count, context);
         }
 
-        private void GenerateLogBasedOnResults(int successCount, int failureCount, bool circuitOpened, int totalOrderCount)
+        private static void GenerateLogBasedOnResults(int successCount, int failureCount, bool circuitOpened, int totalOrderCount, ILambdaContext context)
         {
             if (circuitOpened && successCount > 0)
             {
-                _logger.LogWarning(
-                    "PromotionBatchPartiallyAborted | CircuitOpen | " +
-                    "Promoted: {Success} orders to FILLED and notified subscribers | " +
-                    "Remaining {Failed} orders stay ACKNOWLEDGED and will be retried next cycle",
-                    successCount, failureCount);
+                context.Logger.LogWarning(
+                    $"PromotionBatchPartiallyAborted | CircuitOpen | " +
+                    $"Promoted: {successCount} orders to FILLED and notified subscribers | " +
+                    $"Remaining {failureCount} orders stay ACKNOWLEDGED and will be retried next cycle");
             }
             else if (circuitOpened)
             {
-                _logger.LogWarning(
-                    "PromotionBatchAborted | CircuitOpen | " +
-                    "No orders promoted | All {Count} orders stay ACKNOWLEDGED",
-                    totalOrderCount); 
+                context.Logger.LogWarning(
+                    $"PromotionBatchAborted | CircuitOpen | " +
+                    $"No orders promoted | All {totalOrderCount} orders stay ACKNOWLEDGED");
             }
             else if (failureCount > 0 && successCount == 0)
             {
-                _logger.LogWarning(
-                    "PromotionBatchFailed | TopicUnreachable | " +
-                    "No orders promoted to FILLED | Failed: {Failed}",
-                    failureCount);
+                context.Logger.LogWarning(
+                    $"PromotionBatchFailed | TopicUnreachable | " +
+                    $"No orders promoted to FILLED | Failed: {failureCount}");
             }
             else if (failureCount > 0)
             {
-                _logger.LogWarning(
-                    "PromotionBatchPartial | " +
-                    "Promoted: {Success} | Failed to notify: {Failed}",
-                    successCount, failureCount);
+                context.Logger.LogWarning(
+                    $"PromotionBatchPartial | " +
+                    $"Promoted: {successCount} | Failed to notify: {failureCount}");
             }
             else
             {
-                _logger.LogWarning(
-                    "PromotionBatchComplete | " +
-                    "Promoted {Success} orders to FILLED | Subscribers notified",
-                    successCount);
+                context.Logger.LogWarning(
+                    $"PromotionBatchComplete | " +
+                    $"Promoted {successCount} orders to FILLED | Subscribers notified");
             }
+            //_tradingDbContext.SaveChangesAsync();
         }
 
-        private void SimulateTopicFailure(bool isTopicDown)
+        private static void SimulateTopicFailure(bool isTopicDown, ILambdaContext context)
         {
             if (!isTopicDown) return;
 
@@ -200,13 +203,11 @@ namespace ScheduledOrderStatusProcessor
 
             if (_topicFailureCount <= 3)
             {
-                _logger.LogWarning(
-                    "SIMULATION | Simulating topic outage | FailureCount: {Count}",
-                    _topicFailureCount);
+                context.Logger.LogWarning(
+                    $"SIMULATION | Simulating topic outage | FailureCount: {_topicFailureCount}");
 
-                throw new ServiceBusException(
-                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)",
-                    ServiceBusFailureReason.ServiceCommunicationProblem);
+                throw new InternalErrorException(
+                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)");
             }
         }
     }
