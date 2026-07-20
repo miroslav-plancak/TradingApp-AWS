@@ -14,6 +14,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\RiskAnalysisProcessor\RiskAnalysisProcessor.csproj" />
+		<ProjectReference Include="..\..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
 	</ItemGroup>
 
 </Project>

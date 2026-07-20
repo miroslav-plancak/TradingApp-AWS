@@ -13,6 +13,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.csproj" />
+		<ProjectReference Include="..\..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
 	</ItemGroup>
 
 </Project>

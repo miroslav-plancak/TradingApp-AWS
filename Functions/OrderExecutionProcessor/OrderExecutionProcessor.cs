@@ -1,4 +1,5 @@
-﻿using Amazon.Lambda.Core;
+﻿using Amazon.Lambda.Annotations;
+using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -20,19 +21,15 @@ namespace OrderExecutionProcessor
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
 
-        public OrderExecutionProcessor()
+        public OrderExecutionProcessor(TradingDbContext tradingDbContext, IAmazonSimpleNotificationService snsClient )
         {
-            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING");
-            var options = new DbContextOptionsBuilder<TradingDbContext>()
-                .UseSqlServer(connectionString)
-                .Options;
-            _tradingDbContext = new TradingDbContext(options);
-
-            _snsClient = new AmazonSimpleNotificationServiceClient(Amazon.RegionEndpoint.EUNorth1);
+            _tradingDbContext = tradingDbContext;
+            _snsClient = snsClient;
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
         }
 
+        [LambdaFunction]
         public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
             foreach (var record in evnt.Records)

@@ -13,6 +13,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\ScheduledOutboxMessageProcessor\ScheduledOutboxMessageProcessor.csproj" />
+		<ProjectReference Include="..\..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
 	</ItemGroup>
 	
 </Project>

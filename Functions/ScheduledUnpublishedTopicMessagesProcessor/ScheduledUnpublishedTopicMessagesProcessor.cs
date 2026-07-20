@@ -1,15 +1,17 @@
+using Amazon.Lambda.Annotations;
 using Amazon.Lambda.Core;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
-using Polly;
 using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
 
-namespace ScheduledUnpublishedTopicMessagesProcessor
+[assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
+
+namespace Handler
 {
     public class ScheduledUnpublishedTopicMessagesProcessor
     {
@@ -18,40 +20,23 @@ namespace ScheduledUnpublishedTopicMessagesProcessor
         private readonly string _orderEventsTopicArn;
         private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
         private static int _topicFailureCount = 0;
-        private ILambdaContext? _currentContext;
 
-        public ScheduledUnpublishedTopicMessagesProcessor()
+        public ScheduledUnpublishedTopicMessagesProcessor(
+            TradingDbContext tradingDbContext,
+            IAmazonSimpleNotificationService snsClient,
+            AsyncCircuitBreakerPolicy circuitBreaker)
         {
-            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING")
-                ?? throw new InvalidOperationException("SQL_CONNECTION_STRING environment variable is not set.");
-
-            var options = new DbContextOptionsBuilder<TradingDbContext>()
-                .UseSqlServer(connectionString)
-                .Options;
-            _tradingDbContext = new TradingDbContext(options);
-
-            _snsClient = new AmazonSimpleNotificationServiceClient(Amazon.RegionEndpoint.EUNorth1);
+            _tradingDbContext = tradingDbContext;
+            _snsClient = snsClient;
+            _circuitBreaker = circuitBreaker;
 
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
-
-            _circuitBreaker = Policy
-                .Handle<Exception>()
-                .CircuitBreakerAsync(
-                    exceptionsAllowedBeforeBreaking: 3,
-                    durationOfBreak: TimeSpan.FromMinutes(2),
-                    onBreak: (exception, duration) =>
-                        _currentContext?.Logger.LogWarning(
-                            $"CircuitBreaker OPENED | order_events_topic unreachable | Will retry in {duration.TotalSeconds}s | Error: {exception.Message}"),
-                    onReset: () =>
-                        _currentContext?.Logger.LogWarning("CircuitBreaker CLOSED | Topic connectivity restored"),
-                    onHalfOpen: () =>
-                        _currentContext?.Logger.LogWarning("CircuitBreaker HALF-OPEN | Testing topic connectivity..."));
         }
 
+        [LambdaFunction]
         public async Task FunctionHandler(ILambdaContext context)
         {
-            _currentContext = context;
             context.Logger.LogWarning($"ScheduledUnpublishedTopicMessagesProcessor triggered at: {DateTimeOffset.UtcNow}");
 
             var unpublishedMessages = await _tradingDbContext.UnpublishedTopicMessages

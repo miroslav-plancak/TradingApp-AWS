@@ -46,6 +46,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledUnpublishedTopicMe
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScheduledUnpublishedTopicMessagesProcessor.LocalHarness", "Functions\ScheduledUnpublishedTopicMessagesProcessor.LocalHarness\ScheduledUnpublishedTopicMessagesProcessor.LocalHarness.csproj", "{EB20C050-9CD8-42EA-A248-D2D96F03F7B0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TradingApp.Infrastructure", "TradingApp.Infrastructure\TradingApp.Infrastructure.csproj", "{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -296,6 +298,18 @@ Global
 		{EB20C050-9CD8-42EA-A248-D2D96F03F7B0}.Release|x64.Build.0 = Release|Any CPU
 		{EB20C050-9CD8-42EA-A248-D2D96F03F7B0}.Release|x86.ActiveCfg = Release|Any CPU
 		{EB20C050-9CD8-42EA-A248-D2D96F03F7B0}.Release|x86.Build.0 = Release|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Debug|x64.Build.0 = Debug|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Debug|x86.Build.0 = Debug|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Release|x64.ActiveCfg = Release|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Release|x64.Build.0 = Release|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Release|x86.ActiveCfg = Release|Any CPU
+		{094809FB-9DA9-50C0-7D97-C52DAD96CFE1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
