@@ -1,12 +1,16 @@
+using Amazon.Lambda.Annotations;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using System.Text.Json;
 using TradingApp.Events.Events;
 
+[assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
+
 namespace RiskAnalysisProcessor
 {
     public class RiskAnalysisProcessor
     {
+        [LambdaFunction]
         public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
             foreach (var record in evnt.Records)

@@ -2,10 +2,18 @@ using Amazon.Lambda.SQSEvents;
 using Amazon.Lambda.TestUtilities;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using TradingApp.Domain;
+
+var services = new ServiceCollection();
+services.AddTradingAppLogging();
+services.AddTradingDbContext();
+services.AddSharedHttpClient();
+var serviceProvider = services.BuildServiceProvider();
 
 var sqsClient = new AmazonSQSClient(Amazon.RegionEndpoint.EUNorth1);
 var queueUrl = "https://sqs.eu-north-1.amazonaws.com/465861110788/notification_queue.fifo";
-var function = new NotificationProcessor.NotificationProcessor();
 
 Console.WriteLine("Listening for order status events on notification_queue.fifo... (Ctrl+C to stop)");
 
@@ -24,6 +32,11 @@ while (true)
     {
         try
         {
+            using var scope = serviceProvider.CreateScope();
+            var function = new NotificationProcessor.NotificationProcessor(
+                scope.ServiceProvider.GetRequiredService<TradingDbContext>(),
+                scope.ServiceProvider.GetRequiredService<HttpClient>());
+
             var sqsEvent = new SQSEvent
             {
                 Records = new List<SQSEvent.SQSMessage>

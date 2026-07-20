@@ -1,13 +1,29 @@
 using Amazon.Lambda.TestUtilities;
+using Amazon.SimpleNotificationService;
+using Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Polly.CircuitBreaker;
+using TradingApp.Domain;
+
+var services = new ServiceCollection();
+services.AddTradingAppLogging();
+services.AddTradingDbContext();
+services.AddSnsClient();
+services.AddCircuitBreakerPolicy("order_events_topic");
+var serviceProvider = services.BuildServiceProvider();
 
 Console.WriteLine("Simulating EventBridge Scheduler - running ScheduledUnpublishedTopicMessagesProcessor every 60s... (Ctrl+C to stop)");
-
-var function = new ScheduledUnpublishedTopicMessagesProcessor.ScheduledUnpublishedTopicMessagesProcessor();
 
 while (true)
 {
     try
     {
+        using var scope = serviceProvider.CreateScope();
+        var function = new Handler.ScheduledUnpublishedTopicMessagesProcessor(
+            scope.ServiceProvider.GetRequiredService<TradingDbContext>(),
+            scope.ServiceProvider.GetRequiredService<IAmazonSimpleNotificationService>(),
+            scope.ServiceProvider.GetRequiredService<AsyncCircuitBreakerPolicy>());
+
         await function.FunctionHandler(new TestLambdaContext());
     }
     catch (Exception ex)

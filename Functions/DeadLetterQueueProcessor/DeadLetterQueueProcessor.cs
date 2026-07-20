@@ -1,11 +1,9 @@
-﻿using Amazon.Lambda.Core;
+﻿using Amazon.Lambda.Annotations;
+using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using TradingApp.Business.Interfaces.Services;
-using TradingApp.Business.Repositories;
-using TradingApp.Business.Services.Regular;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Payloads;
@@ -23,27 +21,20 @@ namespace DeadLetterQueueProcessor
 
         private const string themeColor = "D70000";
 
-        public DeadLetterQueueProcessor()
+        public DeadLetterQueueProcessor(
+           TradingDbContext tradingDbContext,
+           IDeadLetterService deadLetterService,
+           HttpClient httpClient)
         {
-            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING");
-            var options = new DbContextOptionsBuilder<TradingDbContext>()
-                .UseSqlServer(connectionString)
-                .Options;
-            _tradingDbContext = new TradingDbContext(options);
+            _tradingDbContext = tradingDbContext;
+            _deadLetterService = deadLetterService;
+            _httpClient = httpClient;
 
-            _httpClient = new HttpClient();
-
-            _teamsWebhookUrl = Environment.GetEnvironmentVariable("TEAMS_DLQ_WEBHOOK_URL") 
+            _teamsWebhookUrl = Environment.GetEnvironmentVariable("TEAMS_DLQ_WEBHOOK_URL")
                 ?? throw new InvalidOperationException("TEAMS_DLQ_WEBHOOK_URL environment variable is not set.");
-
-            var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
-
-            var deadLetterRepository = new DeadLetterRepository(
-                loggerFactory.CreateLogger<DeadLetterRepository>(), _tradingDbContext);
-
-            _deadLetterService = new DeadLetterService(loggerFactory.CreateLogger<DeadLetterService>(), deadLetterRepository);
         }
 
+        [LambdaFunction]
         public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
             foreach (var record in evnt.Records)
@@ -54,6 +45,9 @@ namespace DeadLetterQueueProcessor
 
         private async Task ProcessDeadLetterMessage(SQSEvent.SQSMessage record, ILambdaContext context)
         {
+            var tradingDBContext = _tradingDbContext.GetHashCode();
+            context.Logger.LogWarning($"TradingDBContext is:{tradingDBContext}");
+
             SQSEvent.MessageAttribute? correlationIdAttribute = null;
             var hasRealCorrelationId = record.MessageAttributes != null
                 && record.MessageAttributes.TryGetValue("CorrelationId", out correlationIdAttribute)

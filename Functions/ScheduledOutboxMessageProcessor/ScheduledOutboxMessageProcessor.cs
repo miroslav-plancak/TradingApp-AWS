@@ -1,15 +1,17 @@
-﻿using Amazon.Lambda.Core;
+﻿using Amazon.Lambda.Annotations;
+using Amazon.Lambda.Core;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.EntityFrameworkCore;
-using Polly;
 using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.QuarantinedOutboxMessage;
 using TradingApp.Domain.Models.Enums;
 
-namespace ScheduledOutboxMessageProcessor
+[assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
+
+namespace Handler
 {
     public class ScheduledOutboxMessageProcessor
     {
@@ -18,41 +20,23 @@ namespace ScheduledOutboxMessageProcessor
         private readonly string _createOrderQueueUrl;
         private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
         private static int _queueFailureCount = 0;
-        private ILambdaContext? _currentContext;
 
-        public ScheduledOutboxMessageProcessor()
+        public ScheduledOutboxMessageProcessor(
+            TradingDbContext tradingDbContext,
+            IAmazonSQS sqsClient,
+            AsyncCircuitBreakerPolicy circuitBreaker)
         {
-            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING");
-
-            var options = new DbContextOptionsBuilder<TradingDbContext>()
-                .UseSqlServer(connectionString)
-                .Options;
-
-            _tradingDbContext = new TradingDbContext(options);
-
-            _sqsClient = new AmazonSQSClient(Amazon.RegionEndpoint.EUNorth1);
+            _tradingDbContext = tradingDbContext;
+            _sqsClient = sqsClient;
+            _circuitBreaker = circuitBreaker;
 
             _createOrderQueueUrl = Environment.GetEnvironmentVariable("CREATE_ORDER_QUEUE_URL")
                 ?? throw new InvalidOperationException("CREATE_ORDER_QUEUE_URL environment variable is not set.");
-
-            _circuitBreaker = Policy
-                .Handle<Exception>()
-                .CircuitBreakerAsync(
-                    exceptionsAllowedBeforeBreaking: 3,
-                    durationOfBreak: TimeSpan.FromMinutes(2),
-                    onBreak: (exception, duration) =>
-                        _currentContext?.Logger.LogWarning(
-                            $"CircuitBreaker OPENED | ServiceBus unreachable | Will retry in {duration.TotalSeconds}s | Error: {exception.Message}"),
-                    onReset: () =>
-                        _currentContext?.Logger.LogWarning("CircuitBreaker CLOSED | Queue connectivity restored"),
-                    onHalfOpen: () =>
-                        _currentContext?.Logger.LogWarning("CircuitBreaker HALF-OPEN | Testing queue connectivity..."));
         }
 
+        [LambdaFunction]
         public async Task FunctionHandler(ILambdaContext context)
         {
-            _currentContext = context;
-
             context.Logger.LogWarning($"ScheduledOutboxMessageProcessor triggered at: {DateTimeOffset.UtcNow}");
 
             await QuarantineExhaustedMessages(context);

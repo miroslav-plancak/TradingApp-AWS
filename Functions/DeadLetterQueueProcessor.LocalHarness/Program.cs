@@ -2,10 +2,19 @@
 using Amazon.Lambda.TestUtilities;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using TradingApp.Business.Interfaces.Services;
+using TradingApp.Domain;
+
+var services = new ServiceCollection();
+services.AddTradingAppLogging();
+services.AddTradingDbContext();
+services.AddDeadLetterServices();
+var serviceProvider = services.BuildServiceProvider();
 
 var sqsClient = new AmazonSQSClient(Amazon.RegionEndpoint.EUNorth1);
 var dlqUrl = "https://sqs.eu-north-1.amazonaws.com/465861110788/CREATE_ORDER_QUEUE-DLQ.fifo";
-var function = new DeadLetterQueueProcessor.DeadLetterQueueProcessor();
 
 Console.WriteLine("Listening for dead-lettered messages on CREATE_ORDER_QUEUE-DLQ.fifo... (Ctrl+C to stop)");
 
@@ -24,6 +33,14 @@ while (true)
     {
         try
         {
+            using var scope = serviceProvider.CreateScope();
+
+            var function = new DeadLetterQueueProcessor.DeadLetterQueueProcessor(
+                scope.ServiceProvider.GetRequiredService<TradingDbContext>(),
+                scope.ServiceProvider.GetRequiredService<IDeadLetterService>(),
+                scope.ServiceProvider.GetRequiredService<HttpClient>()
+                );
+
             var sqsEvent = new SQSEvent
             {
                 Records = new List<SQSEvent.SQSMessage>

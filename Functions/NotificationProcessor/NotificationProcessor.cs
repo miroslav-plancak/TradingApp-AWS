@@ -1,3 +1,4 @@
+using Amazon.Lambda.Annotations;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +8,8 @@ using TradingApp.Domain.Models.Entities.OrderNotificationSequences;
 using TradingApp.Domain.Models.Entities.PendingFilledNotification;
 using TradingApp.Events.Events;
 
+[assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
+
 namespace NotificationProcessor
 {
     public class NotificationProcessor
@@ -15,22 +18,16 @@ namespace NotificationProcessor
         private readonly HttpClient _httpClient;
         private readonly string _teamsWebhookUrl;
 
-        public NotificationProcessor()
+        public NotificationProcessor(TradingDbContext tradingDbContext, HttpClient httpClient)
         {
-            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING")
-                ?? throw new InvalidOperationException("SQL_CONNECTION_STRING environment variable is not set.");
-
-            var options = new DbContextOptionsBuilder<TradingDbContext>()
-                .UseSqlServer(connectionString)
-                .Options;
-            _tradingDbContext = new TradingDbContext(options);
-
-            _httpClient = new HttpClient();
+            _tradingDbContext = tradingDbContext;
+            _httpClient = httpClient;
 
             _teamsWebhookUrl = Environment.GetEnvironmentVariable("TEAMS_NOTIFICATION_WEBHOOK_URL")
                 ?? throw new InvalidOperationException("TEAMS_NOTIFICATION_WEBHOOK_URL environment variable is not set.");
         }
 
+        [LambdaFunction]
         public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
             foreach (var record in evnt.Records)

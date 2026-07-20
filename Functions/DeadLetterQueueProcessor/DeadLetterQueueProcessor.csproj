@@ -8,16 +8,17 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="Amazon.Lambda.Annotations" Version="2.3.0" />
 		<PackageReference Include="Amazon.Lambda.Core" Version="3.1.1" />
 		<PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="3.0.0" />
 		<PackageReference Include="Amazon.Lambda.SQSEvents" Version="3.0.0" />
-			<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.5" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\TradingApp.Domain\TradingApp.Domain.csproj" />
 		<ProjectReference Include="..\..\TradingApp.Business\TradingApp.Business.csproj" />
 		<ProjectReference Include="..\..\TradingApp.Events\TradingApp.Events.csproj" />
+		<ProjectReference Include="..\..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
 	</ItemGroup>
 	
 </Project>
