@@ -1,6 +1,6 @@
 ﻿using Amazon.Lambda.Annotations;
 using Microsoft.Extensions.DependencyInjection;
-using Infrastructure;
+using TradingApp.Infrastructure;
 
 namespace LambdaBootstrap
 {
@@ -12,6 +12,13 @@ namespace LambdaBootstrap
             services.AddTradingAppLogging();
             services.AddTradingDbContext();
             services.AddDeadLetterServices();
+
+            // Overrides the generator's default AddSingleton<DeadLetterQueueProcessor>() (registered
+            // before this method runs) - without this, the Scoped TradingDbContext it depends on gets
+            // captured once at cold start and reused for the life of the execution environment.
+            // global:: is required here - the namespace and class share the same name, so a plain
+            // `using` resolves the bare identifier to the NAMESPACE, not the class (CS0118).
+            services.AddScoped<global::DeadLetterQueueProcessor.DeadLetterQueueProcessor>();
         }
     }
 }

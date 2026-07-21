@@ -1,9 +1,9 @@
 using Amazon.Lambda.TestUtilities;
 using Amazon.SimpleNotificationService;
-using Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Polly.CircuitBreaker;
 using TradingApp.Domain;
+using TradingApp.Infrastructure;
 
 var services = new ServiceCollection();
 services.AddTradingAppLogging();

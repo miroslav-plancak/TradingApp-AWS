@@ -1,6 +1,6 @@
 using Amazon.Lambda.Annotations;
-using Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using TradingApp.Infrastructure;
 
 namespace LambdaBootstrap
 {
