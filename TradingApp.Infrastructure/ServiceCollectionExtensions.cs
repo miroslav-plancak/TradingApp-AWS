@@ -11,7 +11,7 @@ using TradingApp.Business.Repositories;
 using TradingApp.Business.Services.Regular;
 using TradingApp.Domain;
 
-namespace Infrastructure
+namespace TradingApp.Infrastructure
 {
     public static class ServiceCollectionExtensions
     {

@@ -3,9 +3,9 @@ using Amazon.Lambda.TestUtilities;
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using TradingApp.Domain;
+using TradingApp.Infrastructure;
 
 var services = new ServiceCollection();
 services.AddTradingAppLogging();

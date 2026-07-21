@@ -1,6 +1,7 @@
 using Amazon.Lambda.Annotations;
-using Infrastructure;
+using Handler;
 using Microsoft.Extensions.DependencyInjection;
+using TradingApp.Infrastructure;
 
 namespace LambdaBootstrap
 {
@@ -13,6 +14,11 @@ namespace LambdaBootstrap
             services.AddTradingDbContext();
             services.AddSnsClient();
             services.AddCircuitBreakerPolicy("order_events_topic");
+
+            // Overrides the generator's default AddSingleton<ScheduledUnpublishedTopicMessagesProcessor>()
+            // (registered before this method runs) - without this, the Scoped TradingDbContext it
+            // depends on gets captured once at cold start and reused for the life of the execution environment.
+            services.AddScoped<ScheduledUnpublishedTopicMessagesProcessor>();
         }
     }
 }
