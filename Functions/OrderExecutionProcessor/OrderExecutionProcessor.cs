@@ -4,6 +4,7 @@ using Amazon.Lambda.SQSEvents;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
+using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.Order;
@@ -20,13 +21,21 @@ namespace OrderExecutionProcessor
         private readonly TradingDbContext _tradingDbContext;
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
+        private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
 
-        public OrderExecutionProcessor(TradingDbContext tradingDbContext, IAmazonSimpleNotificationService snsClient )
+        private static int _topicFailureCount = 0;
+
+        public OrderExecutionProcessor(
+            TradingDbContext tradingDbContext, 
+            IAmazonSimpleNotificationService snsClient,
+            AsyncCircuitBreakerPolicy circuitBreakerPolicy
+            )
         {
             _tradingDbContext = tradingDbContext;
             _snsClient = snsClient;
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
+            _circuitBreaker = circuitBreakerPolicy;
         }
 
         [LambdaFunction]
@@ -126,12 +135,36 @@ namespace OrderExecutionProcessor
                 context.Logger.LogWarning(
                     $"PublishingEventToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
 
-                SimulateTopicFailure(false);
+                await _circuitBreaker.ExecuteAsync(async () =>
+                {
+                    SimulateTopicFailure(false, context);
 
-                await _snsClient.PublishAsync(request);
+                    await _snsClient.PublishAsync(request);
+
+                });
 
                 context.Logger.LogWarning(
                     $"EventPublishedToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
+            }
+            catch (BrokenCircuitException)
+            {
+                context.Logger.LogWarning(
+                    $"CircuitOpen | CorrelationId: {correlationId} | Order is {status}, event not yet published | Falling back to UnpublishedTopicMessages");
+
+                _tradingDbContext.UnpublishedTopicMessages.Add(new UnpublishedTopicMessage
+                {
+                    Id = Guid.NewGuid(),
+                    ClientOrderId = clientOrderId,
+                    OrderStatus = status,
+                    ProcessedAt = DateTimeOffset.UtcNow,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    CorrelationId = correlationId
+                });
+
+                await _tradingDbContext.SaveChangesAsync();
+
+                context.Logger.LogWarning(
+                    $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
             }
             catch (AmazonSimpleNotificationServiceException snsException)
             {
@@ -161,11 +194,20 @@ namespace OrderExecutionProcessor
 
         }
 
-        private void SimulateTopicFailure(bool isTopicDown)
+        private void SimulateTopicFailure(bool isTopicDown, ILambdaContext context)
         {
             if (!isTopicDown) return;
 
-            throw new InternalErrorException("SIMULATED: Topic down.");
+            _topicFailureCount++;
+
+            if (_topicFailureCount <= 3)
+            {
+                context.Logger.LogWarning(
+                    $"SIMULATION | Simulating topic outage | FailureCount: {_topicFailureCount}");
+
+                throw new InternalErrorException(
+                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)");
+            }
         }
 
         private void SimulateRedirectToDeadLetterQueue(bool active) 
