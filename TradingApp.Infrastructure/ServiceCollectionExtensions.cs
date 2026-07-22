@@ -15,6 +15,12 @@ namespace TradingApp.Infrastructure
 {
     public static class ServiceCollectionExtensions
     {
+        private static string GetSqlConnectionString()
+        {
+            return Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING")
+                        ?? throw new InvalidOperationException("SQL_CONNECTION_STRING environment variable not set.");
+        }
+
         public static IServiceCollection AddTradingAppLogging(this IServiceCollection services)
         {
             services.AddLogging(builder => builder.AddConsole());
@@ -23,10 +29,13 @@ namespace TradingApp.Infrastructure
 
         public static IServiceCollection AddTradingDbContext(this IServiceCollection services)
         {
-            var connectionString = Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING")
-                ?? throw new InvalidOperationException("SQL_CONNECTION_STRING environment variable is not set.");
+            services.AddDbContext<TradingDbContext>(options => options.UseSqlServer(GetSqlConnectionString()));
+            return services;
+        }
 
-            services.AddDbContext<TradingDbContext>(options => options.UseSqlServer(connectionString));
+        public static IServiceCollection AddTradingDbContextFactory(this IServiceCollection services)
+        {
+            services.AddDbContextFactory<TradingDbContext>(options => options.UseSqlServer(GetSqlConnectionString()));
             return services;
         }
 
@@ -80,6 +89,5 @@ namespace TradingApp.Infrastructure
             services.AddSingleton<HttpClient>();
             return services;
         }
-
     }
 }

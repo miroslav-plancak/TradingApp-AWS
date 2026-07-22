@@ -11,7 +11,7 @@ namespace LambdaBootstrap
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddTradingAppLogging();
-            services.AddTradingDbContext();
+            services.AddTradingDbContextFactory();
             services.AddSnsClient();
             services.AddCircuitBreakerPolicy("order_events_topic");
 
