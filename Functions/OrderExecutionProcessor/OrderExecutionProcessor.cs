@@ -151,17 +151,7 @@ namespace OrderExecutionProcessor
                 context.Logger.LogWarning(
                     $"CircuitOpen | CorrelationId: {correlationId} | Order is {status}, event not yet published | Falling back to UnpublishedTopicMessages");
 
-                _tradingDbContext.UnpublishedTopicMessages.Add(new UnpublishedTopicMessage
-                {
-                    Id = Guid.NewGuid(),
-                    ClientOrderId = clientOrderId,
-                    OrderStatus = status,
-                    ProcessedAt = DateTimeOffset.UtcNow,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    CorrelationId = correlationId
-                });
-
-                await _tradingDbContext.SaveChangesAsync();
+                await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
 
                 context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
@@ -171,17 +161,7 @@ namespace OrderExecutionProcessor
                 context.Logger.LogError(
                     $"TopicPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {snsException.Message}");
 
-                _tradingDbContext.UnpublishedTopicMessages.Add(new UnpublishedTopicMessage
-                {
-                    Id = Guid.NewGuid(),
-                    ClientOrderId = clientOrderId,
-                    OrderStatus = status,
-                    ProcessedAt = DateTimeOffset.UtcNow,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    CorrelationId = correlationId
-                });
-
-                await _tradingDbContext.SaveChangesAsync();
+                await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
 
                 context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");

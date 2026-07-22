@@ -250,7 +250,13 @@ namespace Handler
                 catch (BrokenCircuitException)
                 {
                     context.Logger.LogWarning(
-                        $"CircuitOpen | CorrelationId: {order.CorrelationId} | Order is FILLED, event not yet published");
+                        $"CircuitOpen | CorrelationId: {order.CorrelationId} | Order is FILLED, event not yet published | Falling back to UnpublishedTopicMessages");
+
+                    await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
+
+                    context.Logger.LogWarning(
+                        $"SavedToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
+
                     return ProcessedOrderStatusOutcome.CircuitOpen;
                 }
                 catch (AmazonSimpleNotificationServiceException snsEx)
@@ -258,20 +264,11 @@ namespace Handler
                     context.Logger.LogError(
                         $"TopicPublishFailed | CorrelationId: {order.CorrelationId} | Falling back to UnpublishedTopicMessages | Error: {snsEx.Message}");
 
-                    orderrDbContext.UnpublishedTopicMessages.Add(new UnpublishedTopicMessage
-                    {
-                        Id = Guid.NewGuid(),
-                        ClientOrderId = order.ClientOrderId,
-                        OrderStatus = OrderStatus.FILLED,
-                        ProcessedAt = DateTimeOffset.UtcNow,
-                        CreatedAt = DateTimeOffset.UtcNow,
-                        CorrelationId = order.CorrelationId
-                    });
-
-                    await orderrDbContext.SaveChangesAsync();
+                    await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
 
                     context.Logger.LogWarning(
                         $"SavedToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
+
                     return ProcessedOrderStatusOutcome.FilledPublishDeferred;
                 }
                 catch (Exception ex)
