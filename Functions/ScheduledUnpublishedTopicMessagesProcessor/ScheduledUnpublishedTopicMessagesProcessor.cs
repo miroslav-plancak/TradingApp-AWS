@@ -4,8 +4,10 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
 using Polly.CircuitBreaker;
+using System.Diagnostics;
 using System.Text.Json;
 using TradingApp.Domain;
+using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
 
@@ -16,22 +18,34 @@ namespace Handler
     public class ScheduledUnpublishedTopicMessagesProcessor
     {
         private readonly TradingDbContext _tradingDbContext;
+        private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
         private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
+
         private static int _topicFailureCount = 0;
+        private const int MaxDegreeOfParallelism = 5;
 
         public ScheduledUnpublishedTopicMessagesProcessor(
             TradingDbContext tradingDbContext,
+            IDbContextFactory<TradingDbContext> dbContextFactory,
             IAmazonSimpleNotificationService snsClient,
             AsyncCircuitBreakerPolicy circuitBreaker)
         {
             _tradingDbContext = tradingDbContext;
+            _dbContextFactory = dbContextFactory;
             _snsClient = snsClient;
             _circuitBreaker = circuitBreaker;
 
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
+        }
+
+        private enum ProcessUnpublishedMessageOutcome
+        {
+            PublishSuccess,
+            PublishFailed,
+            CircuitOpen
         }
 
         [LambdaFunction]
@@ -53,18 +67,87 @@ namespace Handler
             }
 
             context.Logger.LogWarning($"RetryingUnpublishedMessages | Found {unpublishedMessages.Count} messages to retry");
+            var stopwatch = Stopwatch.StartNew();
 
+            var (successCount, failureCount, circuitOpened) = await PublishUnpublishedMessagesConcurrentlyAsync(unpublishedMessages, context);
+
+            stopwatch.Stop();
+            context.Logger.LogWarning(
+                $"BatchProcessingTime | Mode: Concurrent | {unpublishedMessages.Count} unpublishedMessages | ElapsedTime(ms): {stopwatch.ElapsedMilliseconds}");
+
+            GenerateLogBasedOnResults(successCount, failureCount, circuitOpened, context);
+        }
+        private async Task<(int successCount, int failureCount, bool circuitOpened)> PublishUnpublishedMessagesConcurrentlyAsync(
+            List<UnpublishedTopicMessage> unpublishedMessages, ILambdaContext context)
+        {
             var successCount = 0;
             var failureCount = 0;
-            var circuitOpened = false;
+            var circuitOpenedFlag = 0; // 0 = false, 1 = true - Interlocked/Volatile work on int, not bool
 
-            foreach (var unpublishedMessage in unpublishedMessages)
+            using var semaphore = new SemaphoreSlim(MaxDegreeOfParallelism);
+
+            var tasks = unpublishedMessages.Select(async unpublishedMessage =>
+            {
+                await semaphore.WaitAsync();
+
+                try 
+                { 
+                    if(Volatile.Read(ref circuitOpenedFlag) == 1)
+                    {
+                        context.Logger.LogWarning(
+                           $"SkippedCircuitOpen | CorrelationId: {unpublishedMessage.CorrelationId} | Unpublished message stays unpublished");
+                        Interlocked.Increment(ref failureCount);
+                        return;
+                    }
+
+                    var outcome = await TryPublishUnpublishedMessageAsync(unpublishedMessage, context);
+
+                    switch (outcome)
+                    {
+                        case ProcessUnpublishedMessageOutcome.PublishSuccess:
+                            Interlocked.Increment(ref successCount);
+                            break;
+                        case ProcessUnpublishedMessageOutcome.PublishFailed:
+                            Interlocked.Increment(ref failureCount);
+                            break;
+                        case ProcessUnpublishedMessageOutcome.CircuitOpen:
+                            Interlocked.Exchange(ref circuitOpenedFlag, 1);
+                            break;
+                    }
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+
+            return (successCount, failureCount, circuitOpenedFlag == 1);
+        }
+
+        private async Task<ProcessUnpublishedMessageOutcome> TryPublishUnpublishedMessageAsync(UnpublishedTopicMessage unpublishedMessage, ILambdaContext context)
+        {
+            TradingDbContext unpublishedMessageDbContext;
+
+            try
+            {
+                unpublishedMessageDbContext = await _dbContextFactory.CreateDbContextAsync();
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+                    $"DbContextCreationFailed | CorrelationId: {unpublishedMessage.CorrelationId} | Unpublished message stays unpublished | Error: {ex.Message}");
+                return ProcessUnpublishedMessageOutcome.PublishFailed;
+            }
+
+            await using (unpublishedMessageDbContext)
             {
                 try
                 {
                     context.Logger.LogWarning(
-                        $"RetryingTopicPublish | CorrelationId: {unpublishedMessage.CorrelationId} " +
-                        $"| UnpublishedId: {unpublishedMessage.Id} | ClientOrderId: {unpublishedMessage.ClientOrderId}");
+                          $"Trying to publish unpublishedTopicMessage | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} " +
+                          $"| ClientOrderId: {unpublishedMessage.ClientOrderId}");
 
                     var eventPayload = new OrderStatusEvent
                     {
@@ -92,43 +175,51 @@ namespace Handler
                         await _snsClient.PublishAsync(request);
                     });
 
-                    unpublishedMessage.PublishedAt = DateTimeOffset.UtcNow;
-                    successCount++;
+                    await unpublishedMessageDbContext.UnpublishedTopicMessages
+                            .Where(x => x.Id == unpublishedMessage.Id)
+                            .ExecuteUpdateAsync(x => x
+                                .SetProperty(x => x.PublishedAt, DateTimeOffset.UtcNow));
 
                     context.Logger.LogWarning(
-                        $"TopicPublishRetrySucceeded | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id}");
+                        $"TopicPublishMessageRetrySucceeded | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id}");
+
+                    return ProcessUnpublishedMessageOutcome.PublishSuccess;
                 }
                 catch (BrokenCircuitException)
                 {
-                    circuitOpened = true;
                     context.Logger.LogWarning(
                         $"CircuitOpen | Topic circuit open | Stopping retry batch | CorrelationId: {unpublishedMessage.CorrelationId}");
-                    break;
+
+                    return ProcessUnpublishedMessageOutcome.CircuitOpen;
                 }
                 catch (AmazonSimpleNotificationServiceException snsEx)
                 {
-                    unpublishedMessage.RetryCount++;
-                    unpublishedMessage.LastError = snsEx.Message;
-                    failureCount++;
+                    await unpublishedMessageDbContext.UnpublishedTopicMessages
+                            .Where(x => x.Id == unpublishedMessage.Id)
+                            .ExecuteUpdateAsync(x => x
+                                .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1)
+                                .SetProperty(x => x.LastError, snsEx.Message));
 
                     context.Logger.LogError(
                         $"TopicPublishRetryFailed | CorrelationId: {unpublishedMessage.CorrelationId} " +
                         $"| UnpublishedId: {unpublishedMessage.Id} | Error: {snsEx.Message}");
+
+                    return ProcessUnpublishedMessageOutcome.PublishFailed;
                 }
                 catch (Exception ex)
                 {
-                    unpublishedMessage.RetryCount++;
-                    failureCount++;
+                    await unpublishedMessageDbContext.UnpublishedTopicMessages
+                          .Where(x => x.Id == unpublishedMessage.Id)
+                          .ExecuteUpdateAsync(x => x
+                              .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1));
 
                     context.Logger.LogError(
                         $"TopicPublishRetryFailed | CorrelationId: {unpublishedMessage.CorrelationId} " +
                         $"| UnpublishedId: {unpublishedMessage.Id} | Error: {ex.Message}");
+
+                    return ProcessUnpublishedMessageOutcome.PublishFailed;
                 }
             }
-
-            await _tradingDbContext.SaveChangesAsync();
-
-            GenerateLogBasedOnResults(successCount, failureCount, circuitOpened, context);
         }
 
         private static void GenerateLogBasedOnResults(int successCount, int failureCount, bool circuitOpened, ILambdaContext context)
@@ -156,14 +247,14 @@ namespace Handler
         {
             if (!isTopicDown) return;
 
-            _topicFailureCount++;
+            var failureCount = Interlocked.Increment(ref _topicFailureCount);
 
-            if (_topicFailureCount <= 3)
+            if (failureCount <= 3)
             {
-                context.Logger.LogWarning($"SIMULATION | Simulating topic outage | FailureCount: {_topicFailureCount}");
+                context.Logger.LogWarning($"SIMULATION | Simulating topic outage | FailureCount: {failureCount}");
 
                 throw new InternalErrorException(
-                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)");
+                    $"SIMULATED: Topic connection failed (failure {failureCount} of 3)");
             }
         }
     }

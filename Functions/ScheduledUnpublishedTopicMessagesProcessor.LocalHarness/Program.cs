@@ -1,5 +1,6 @@
 using Amazon.Lambda.TestUtilities;
 using Amazon.SimpleNotificationService;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Polly.CircuitBreaker;
 using TradingApp.Domain;
@@ -8,6 +9,7 @@ using TradingApp.Infrastructure;
 var services = new ServiceCollection();
 services.AddTradingAppLogging();
 services.AddTradingDbContext();
+services.AddTradingDbContextFactory();
 services.AddSnsClient();
 services.AddCircuitBreakerPolicy("order_events_topic");
 var serviceProvider = services.BuildServiceProvider();
@@ -21,6 +23,7 @@ while (true)
         using var scope = serviceProvider.CreateScope();
         var function = new Handler.ScheduledUnpublishedTopicMessagesProcessor(
             scope.ServiceProvider.GetRequiredService<TradingDbContext>(),
+            scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>(),
             scope.ServiceProvider.GetRequiredService<IAmazonSimpleNotificationService>(),
             scope.ServiceProvider.GetRequiredService<AsyncCircuitBreakerPolicy>());
 
