@@ -12,6 +12,7 @@ namespace LambdaBootstrap
         {
             services.AddTradingAppLogging();
             services.AddTradingDbContext();
+            services.AddTradingDbContextFactory();
             services.AddSqsClient();
             services.AddCircuitBreakerPolicy("CREATE_ORDER_QUEUE");
 

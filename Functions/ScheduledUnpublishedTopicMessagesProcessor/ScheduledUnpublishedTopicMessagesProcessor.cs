@@ -176,7 +176,7 @@ namespace Handler
                     });
 
                     await unpublishedMessageDbContext.UnpublishedTopicMessages
-                            .Where(x => x.Id == unpublishedMessage.Id)
+                            .Where(x => x.Id == unpublishedMessage.Id && x.PublishedAt == null)
                             .ExecuteUpdateAsync(x => x
                                 .SetProperty(x => x.PublishedAt, DateTimeOffset.UtcNow));
 

@@ -4,8 +4,10 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.EntityFrameworkCore;
 using Polly.CircuitBreaker;
+using System.Diagnostics;
 using System.Text.Json;
 using TradingApp.Domain;
+using TradingApp.Domain.Models.Entities.OutboxMessage;
 using TradingApp.Domain.Models.Entities.QuarantinedOutboxMessage;
 using TradingApp.Domain.Models.Enums;
 
@@ -16,17 +18,22 @@ namespace Handler
     public class ScheduledOutboxMessageProcessor
     {
         private readonly TradingDbContext _tradingDbContext;
+        private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IAmazonSQS _sqsClient;
         private readonly string _createOrderQueueUrl;
         private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
+
         private static int _queueFailureCount = 0;
+        private const int MaxDegreeOfParallelism = 5;
 
         public ScheduledOutboxMessageProcessor(
             TradingDbContext tradingDbContext,
+            IDbContextFactory<TradingDbContext> dbContextFactory,
             IAmazonSQS sqsClient,
             AsyncCircuitBreakerPolicy circuitBreaker)
         {
             _tradingDbContext = tradingDbContext;
+            _dbContextFactory = dbContextFactory;
             _sqsClient = sqsClient;
             _circuitBreaker = circuitBreaker;
 
@@ -39,74 +46,142 @@ namespace Handler
         {
             context.Logger.LogWarning($"ScheduledOutboxMessageProcessor triggered at: {DateTimeOffset.UtcNow}");
 
-            await QuarantineExhaustedMessages(context);
+            await QuarantineExhaustedMessagesAsync(context);
 
             var isQueueReachable = await IsQueueReachableAsync(context);
 
             if (isQueueReachable)
             {
-                await ProcessPendingMessages(context);
-                await AutoRecoverResurrectedMessages(context);
+                var stopwatch = Stopwatch.StartNew();
+
+                var outboxMessages = await _tradingDbContext.OutboxMessages
+                 .Where(x => x.ProcessedAt == null && x.RetryCount < 5)
+                 .OrderBy(x => x.CreatedAt)
+                 .Take(50)
+                 .ToListAsync();
+
+                if (outboxMessages.Count > 0)
+                {
+                    context.Logger.LogWarning($"ProcessingPhase | Found {outboxMessages.Count} pending messages");
+
+                    var alreadyProcessedClientOrderIds =  await ExtractClientOrderIdsFromAlreadyProcessedOrdersAsync(outboxMessages);
+
+                    var (successCount, failureCount, circuitOpened) = await ProcessOutboxMessagesConcurrentlyAsync(outboxMessages, alreadyProcessedClientOrderIds, context);
+
+                    stopwatch.Stop();
+
+                    context.Logger.LogWarning(
+                   $"BatchProcessingTime | Mode: Concurrent | {outboxMessages.Count} outboxMessages | ElapsedTime(ms): {stopwatch.ElapsedMilliseconds}");
+
+                    GenerateLogBasedOnResults(context, successCount, failureCount, circuitOpened);
+                }
+                else
+                {
+                    context.Logger.LogWarning("No outboxMessages found | nothing to process and send.");
+                }
+               
+                await AutoRecoverResurrectedMessagesAsync(context);
             }
             else
             {
                 context.Logger.LogWarning(
-                    "QueueDown | Skipping ProcessPendingMessages() and AutoRecoverResurrectedMessages() this cycle.");
+                    "QueueDown | Skipping ProcessPendingMessages() and AutoRecoverResurrectedMessagesAsync() this cycle.");
             }
-
-            await _tradingDbContext.SaveChangesAsync();
         }
 
-        private async Task QuarantineExhaustedMessages(ILambdaContext context)
+        private async Task QuarantineExhaustedMessagesAsync(ILambdaContext context)
         {
             var exhaustedOutboxMessages = await _tradingDbContext.OutboxMessages
                 .Where(x => x.ProcessedAt == null && x.RetryCount >= 5)
-                .ToListAsync();
-
-            if (exhaustedOutboxMessages.Count == 0) return;
-
-            context.Logger.LogWarning($"QuarantinePhase | Found {exhaustedOutboxMessages.Count} exhausted messages");
-
-            foreach (var exObMsg in exhaustedOutboxMessages)
-            {
-                Guid? clientOrderId = Guid.TryParse(exObMsg.Payload, out var parsed) ? parsed : null;
-
-                context.Logger.LogWarning(
-                    $"QuarantiningMessage | CorrelationId: {exObMsg.CorrelationId} | OutboxId: {exObMsg.Id} | Reason: {exObMsg.RetryReason} | RetryCount: {exObMsg.RetryCount}");
-
-                _tradingDbContext.QuarantinedOutboxMessages.Add(new QuarantinedOutboxMessage
-                {
-                    Id = Guid.NewGuid(),
-                    OriginalOutboxMessageId = exObMsg.Id,
-                    ClientOrderId = clientOrderId,
-                    Payload = exObMsg.Payload,
-                    Reason = exObMsg.RetryReason,
-                    FinalRetryCount = exObMsg.RetryCount,
-                    QuarantinedAt = DateTimeOffset.UtcNow,
-                    ErrorMessage = exObMsg.LastError,
-                    CorrelationId = exObMsg.CorrelationId
-                });
-
-                exObMsg.ProcessedAt = DateTimeOffset.UtcNow;
-            }
-        }
-
-        private async Task ProcessPendingMessages(ILambdaContext context)
-        {
-            var outboxMessages = await _tradingDbContext.OutboxMessages
-                .Where(x => x.ProcessedAt == null && x.RetryCount < 5)
                 .OrderBy(x => x.CreatedAt)
                 .Take(50)
                 .ToListAsync();
 
-            if (outboxMessages.Count == 0) return;
+            if (exhaustedOutboxMessages.Count == 0)
+            {
+                context.Logger.LogWarning($"QuarantinePhaseSkipped | no exhausted messages found.");
+                return;
+            }
 
-            context.Logger.LogWarning($"ProcessingPhase | Found {outboxMessages.Count} pending messages");
+            context.Logger.LogWarning($"QuarantinePhase | Found {exhaustedOutboxMessages.Count} exhausted messages");
 
+            using var semaphore = new SemaphoreSlim(MaxDegreeOfParallelism);
+
+            var tasks = exhaustedOutboxMessages.Select(async exObMsg =>
+            {
+                await semaphore.WaitAsync();
+
+                try
+                {
+                    await QuarantineExhaustedMessageAsync(exObMsg, context);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+        }
+
+        private async Task QuarantineExhaustedMessageAsync(OutboxMessage exObMsg, ILambdaContext context)
+        {
+            TradingDbContext exObMsgDbContext;
+
+            try
+            {
+                exObMsgDbContext = await _dbContextFactory.CreateDbContextAsync();
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+                    $"DbContextCreationFailed | Error: {ex.Message}");
+                return;
+            }
+
+            await using (exObMsgDbContext)
+            {
+                try
+                {
+                    Guid? clientOrderId = Guid.TryParse(exObMsg.Payload, out var parsed) ? parsed : null;
+
+                    exObMsgDbContext.QuarantinedOutboxMessages.Add(new QuarantinedOutboxMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        OriginalOutboxMessageId = exObMsg.Id,
+                        ClientOrderId = clientOrderId,
+                        Payload = exObMsg.Payload,
+                        Reason = exObMsg.RetryReason,
+                        FinalRetryCount = exObMsg.RetryCount,
+                        QuarantinedAt = DateTimeOffset.UtcNow,
+                        ErrorMessage = exObMsg.LastError,
+                        CorrelationId = exObMsg.CorrelationId
+                    });
+
+                    var outboxStub = new OutboxMessage { Id = exObMsg.Id };
+                    exObMsgDbContext.OutboxMessages.Attach(outboxStub);
+                    exObMsgDbContext.Entry(outboxStub).Property(x => x.ProcessedAt).IsModified = true;
+                    outboxStub.ProcessedAt = DateTimeOffset.UtcNow;
+
+                    await exObMsgDbContext.SaveChangesAsync();
+
+                    context.Logger.LogWarning(
+                        $"QuarantiningMessage | CorrelationId: {exObMsg.CorrelationId} | OutboxId: {exObMsg.Id} | Reason: {exObMsg.RetryReason} | RetryCount: {exObMsg.RetryCount}");
+                }
+                catch (Exception ex)
+                {
+                    context.Logger.LogError(
+                        $"QuarantineWriteFailed | CorrelationId: {exObMsg.CorrelationId} | OutboxId: {exObMsg.Id} | Error: {ex.Message}");
+                }
+            }
+        }
+
+        private async Task<HashSet<Guid>> ExtractClientOrderIdsFromAlreadyProcessedOrdersAsync(List<OutboxMessage> outboxMessages)
+        {
             var clientOrderIds = outboxMessages
-                .Where(x => Guid.TryParse(x.Payload, out _))
-                .Select(x => Guid.Parse(x.Payload))
-                .ToHashSet();
+             .Where(x => Guid.TryParse(x.Payload, out _))
+             .Select(x => Guid.Parse(x.Payload))
+             .ToHashSet();
 
             var alreadyProcessedOrders = new HashSet<Guid>();
 
@@ -120,23 +195,92 @@ namespace Handler
                 alreadyProcessedOrders = new HashSet<Guid>(processedOrders);
             }
 
+            return alreadyProcessedOrders;
+        }
+
+        private async Task<(int successCount, int failureCount, bool circuitOpened)> ProcessOutboxMessagesConcurrentlyAsync(
+        List<OutboxMessage> outboxMessages, HashSet<Guid> alreadyProcessedClientOrderIds, ILambdaContext context
+            )
+        {
             var successCount = 0;
             var failureCount = 0;
-            var circuitOpened = false;
+            var circuitOpenedFlag = 0;
 
-            foreach (var outboxMessage in outboxMessages)
+            using var semaphore = new SemaphoreSlim(MaxDegreeOfParallelism);
+
+            var tasks = outboxMessages.Select(async outboxMessage =>
+            {
+                await semaphore.WaitAsync();
+
+                try
+                {
+                    if (Volatile.Read(ref circuitOpenedFlag) == 1)
+                    {
+                        context.Logger.LogWarning(
+                           $"SkippedCircuitOpen | CorrelationId: {outboxMessage.CorrelationId} | outboxMessage stays unprocessed.");
+                        Interlocked.Increment(ref failureCount);
+                        return;
+                    }
+
+                    var outcome = await ProcessAndSendOutboxMessageAsync(outboxMessage, alreadyProcessedClientOrderIds, context);
+
+                    switch (outcome)
+                    {
+                        case ProcessOutboxMessageOutcome.Sent:
+                            Interlocked.Increment(ref successCount);
+                            break;
+                        case ProcessOutboxMessageOutcome.AlreadyProcessed:
+                            break;
+                        case ProcessOutboxMessageOutcome.Failure:
+                            Interlocked.Increment(ref failureCount);
+                            break;
+                        case ProcessOutboxMessageOutcome.CircuitOpen:
+                            Interlocked.Exchange(ref circuitOpenedFlag, 1);
+                            break;
+                    }
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+
+            return (successCount, failureCount, circuitOpenedFlag == 1);
+        }
+
+        private async Task<ProcessOutboxMessageOutcome> ProcessAndSendOutboxMessageAsync(OutboxMessage outboxMessage, HashSet<Guid> alreadyProcessedClientOrderIds, ILambdaContext context)
+        {
+            TradingDbContext outboxMessageDbContext;
+
+            try
+            {
+                outboxMessageDbContext = await _dbContextFactory.CreateDbContextAsync();
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+                    $"DbContextCreationFailed | CorrelationId: {outboxMessage.CorrelationId} | OutboxMessage stays unprocessed and unsent | Error: {ex.Message}");
+                return ProcessOutboxMessageOutcome.Failure;
+            }
+
+            await using (outboxMessageDbContext)
             {
                 try
                 {
                     if (Guid.TryParse(outboxMessage.Payload, out var clientOrderId))
                     {
-                        if (alreadyProcessedOrders.Contains(clientOrderId))
+                        if (alreadyProcessedClientOrderIds.Contains(clientOrderId))
                         {
                             context.Logger.LogWarning(
                                 $"OrderAlreadyProcessed | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | ClientOrderId: {clientOrderId}");
 
-                            outboxMessage.ProcessedAt = DateTimeOffset.UtcNow;
-                            continue;
+                            await outboxMessageDbContext.OutboxMessages
+                                .Where(x => x.Id == outboxMessage.Id && x.ProcessedAt == null)
+                                .ExecuteUpdateAsync(x => x.SetProperty(x => x.ProcessedAt, DateTimeOffset.UtcNow));
+
+                            return ProcessOutboxMessageOutcome.AlreadyProcessed;
                         }
 
                         context.Logger.LogWarning(
@@ -144,55 +288,67 @@ namespace Handler
 
                         await _circuitBreaker.ExecuteAsync(async () =>
                         {
-                            await NotifySqsCreateOrderQueue(clientOrderId, outboxMessage.CorrelationId);
+                            await NotifySqsCreateOrderQueueAsync(clientOrderId, outboxMessage.CorrelationId);
                         });
 
-                        outboxMessage.ProcessedAt = DateTimeOffset.UtcNow;
-                        successCount++;
+                        await outboxMessageDbContext.OutboxMessages
+                            .Where(x => x.Id == outboxMessage.Id && x.ProcessedAt == null)
+                            .ExecuteUpdateAsync(x => x
+                            .SetProperty(x => x.ProcessedAt, DateTimeOffset.UtcNow));
 
                         context.Logger.LogWarning(
                             $"SentToQueue | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | Queue: CREATE_ORDER_QUEUE.fifo");
+
+                        return ProcessOutboxMessageOutcome.Sent;
                     }
                     else
                     {
                         context.Logger.LogError(
                             $"InvalidPayload | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | Payload: {outboxMessage.Payload}");
 
-                        outboxMessage.RetryCount++;
-                        outboxMessage.RetryReason = OutboxRetryReason.InvalidPayload;
-                        failureCount++;
+                        await outboxMessageDbContext.OutboxMessages
+                            .Where(x => x.Id == outboxMessage.Id)
+                            .ExecuteUpdateAsync(x => x
+                            .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1)
+                            .SetProperty(x => x.RetryReason, OutboxRetryReason.InvalidPayload));
+
+                        return ProcessOutboxMessageOutcome.Failure;
                     }
                 }
                 catch (BrokenCircuitException)
                 {
-                    circuitOpened = true;
-
                     context.Logger.LogWarning(
                         $"CircuitOpen | Stopping batch | CorrelationId: {outboxMessage.CorrelationId} | Remaining messages will retry next cycle");
-                    break;
+                    return ProcessOutboxMessageOutcome.CircuitOpen;
                 }
                 catch (AmazonSQSException sqsException)
                 {
                     context.Logger.LogError(
                         $"QueueError | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | Error: {sqsException.Message}");
 
-                    outboxMessage.RetryCount++;
-                    outboxMessage.RetryReason = OutboxRetryReason.SimpleQueueServiceUnavailable;
-                    outboxMessage.LastError = sqsException.Message;
-                    failureCount++;
+                    await outboxMessageDbContext.OutboxMessages
+                            .Where(x => x.Id == outboxMessage.Id)
+                            .ExecuteUpdateAsync(x => x
+                            .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1)
+                            .SetProperty(x => x.RetryReason, OutboxRetryReason.SimpleQueueServiceUnavailable)
+                            .SetProperty(x => x.LastError, sqsException.Message));
+
+                    return ProcessOutboxMessageOutcome.Failure;
                 }
                 catch (Exception ex)
                 {
                     context.Logger.LogError(
                         $"OutboxProcessingFailed | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | Error: {ex.Message}");
 
-                    outboxMessage.RetryCount++;
-                    outboxMessage.RetryReason = OutboxRetryReason.Unknown;
-                    failureCount++;
+                    await outboxMessageDbContext.OutboxMessages
+                        .Where(x => x.Id == outboxMessage.Id)
+                        .ExecuteUpdateAsync(x => x
+                        .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1)
+                        .SetProperty(x => x.RetryReason, OutboxRetryReason.Unknown));
+
+                    return ProcessOutboxMessageOutcome.Failure;
                 }
             }
-
-            GenerateLogBasedOnResults(context, successCount, failureCount, circuitOpened);
         }
 
         private void GenerateLogBasedOnResults(ILambdaContext context, int successCount, int failureCount, bool circuitOpened)
@@ -217,7 +373,7 @@ namespace Handler
             }
         }
 
-        private async Task AutoRecoverResurrectedMessages(ILambdaContext context)
+        private async Task AutoRecoverResurrectedMessagesAsync(ILambdaContext context)
         {
             var resurrectCandidates = await _tradingDbContext.QuarantinedOutboxMessages
                 .Where(q => !q.IsResurrected
@@ -225,7 +381,11 @@ namespace Handler
                          && q.Reason == OutboxRetryReason.SimpleQueueServiceUnavailable)
                 .ToListAsync();
 
-            if (resurrectCandidates.Count == 0) return;
+            if (resurrectCandidates.Count == 0)
+            {
+                context.Logger.LogWarning($"AutoRecoveryPhaseSkipped | no resurrection candidates found.");
+                return;
+            }
 
             context.Logger.LogWarning($"AutoRecoveryPhase | Found {resurrectCandidates.Count} resurrection candidates");
 
@@ -233,31 +393,152 @@ namespace Handler
                 .Select(c => c.OriginalOutboxMessageId)
                 .ToHashSet();
 
-            var originalMessages = await _tradingDbContext.OutboxMessages
+            var existingOriginalMessageIds = await _tradingDbContext.OutboxMessages
                 .Where(x => originalMessageIds.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id);
+                .Select(x => x.Id)
+                .ToHashSetAsync();
 
-            foreach (var candidate in resurrectCandidates)
+            using var semaphore = new SemaphoreSlim(MaxDegreeOfParallelism);
+
+            var tasks = resurrectCandidates.Select(async candidate =>
             {
-                if (originalMessages.TryGetValue(candidate.OriginalOutboxMessageId, out var originalOutboxMessage))
+                if (!existingOriginalMessageIds.Contains(candidate.OriginalOutboxMessageId))
                 {
-                    context.Logger.LogWarning(
-                        $"ResurrectingMessage | CorrelationId: {candidate.CorrelationId} | OutboxId: {originalOutboxMessage.Id} | QuarantinedId: {candidate.Id}");
-
-                    originalOutboxMessage.ProcessedAt = null;
-                    originalOutboxMessage.RetryCount = 4;
-                    originalOutboxMessage.RetryReason = OutboxRetryReason.None;
-
-                    candidate.IsResurrected = true;
-                    candidate.ResurrectedAt = DateTimeOffset.UtcNow;
-                    candidate.ResolutionNotes = "Auto-resurrected: Queue connectivity restored";
+                    await MarkCandidateDiscardedAsync(candidate, context);
+                    return;
                 }
-            }
+
+                await semaphore.WaitAsync();
+
+                try
+                {
+                    await AutoRecoverResurrectedMessageAsync(candidate, context);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
 
             context.Logger.LogWarning($"AutoRecoveryComplete | Resurrected {resurrectCandidates.Count} messages");
         }
 
-        private async Task NotifySqsCreateOrderQueue(Guid clientOrderId, string correlationId)
+        private async Task AutoRecoverResurrectedMessageAsync(QuarantinedOutboxMessage candidate, ILambdaContext context)
+        {
+            TradingDbContext candidateDbContext;
+
+            try
+            {
+                candidateDbContext = await _dbContextFactory.CreateDbContextAsync();
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+                    $"DbContextCreationFailed | CorrelationId: {candidate.CorrelationId} | Error: {ex.Message}");
+                return;
+            }
+
+            await using (candidateDbContext)
+            {
+                try
+                {
+                    var outboxStub = new OutboxMessage { Id = candidate.OriginalOutboxMessageId };
+                    candidateDbContext.OutboxMessages.Attach(outboxStub);
+                    candidateDbContext.Entry(outboxStub).Property(x => x.ProcessedAt).IsModified = true;
+                    candidateDbContext.Entry(outboxStub).Property(x => x.RetryCount).IsModified = true;
+                    candidateDbContext.Entry(outboxStub).Property(x => x.RetryReason).IsModified = true;
+                    outboxStub.ProcessedAt = null;
+                    outboxStub.RetryCount = 4;
+                    outboxStub.RetryReason = OutboxRetryReason.None;
+
+                    var quarantineStub = new QuarantinedOutboxMessage { Id = candidate.Id };
+                    candidateDbContext.QuarantinedOutboxMessages.Attach(quarantineStub);
+                    candidateDbContext.Entry(quarantineStub).Property(x => x.IsResurrected).IsModified = true;
+                    candidateDbContext.Entry(quarantineStub).Property(x => x.ResurrectedAt).IsModified = true;
+                    candidateDbContext.Entry(quarantineStub).Property(x => x.ResolutionNotes).IsModified = true;
+                    quarantineStub.IsResurrected = true;
+                    quarantineStub.ResurrectedAt = DateTimeOffset.UtcNow;
+                    quarantineStub.ResolutionNotes = "Auto-resurrected: Queue connectivity restored";
+
+                    await candidateDbContext.SaveChangesAsync();
+
+                    context.Logger.LogWarning(
+                        $"ResurrectingMessage | CorrelationId: {candidate.CorrelationId} | OutboxId: {candidate.OriginalOutboxMessageId} | QuarantinedId: {candidate.Id}");
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    await MarkCandidateDiscardedAsync(candidate, context);
+                }
+                catch (Exception ex)
+                {
+                    context.Logger.LogError(
+                        $"AutoRecoveryWriteFailed | CorrelationId: {candidate.CorrelationId} | QuarantinedId: {candidate.Id} | Error: {ex.Message}");
+                }
+            }
+        }
+
+        private async Task MarkCandidateDiscardedAsync(QuarantinedOutboxMessage candidate, ILambdaContext context)
+        {
+            TradingDbContext candidateDbContext;
+
+            try
+            {
+                candidateDbContext = await _dbContextFactory.CreateDbContextAsync();
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+                    $"DbContextCreationFailed | CorrelationId: {candidate.CorrelationId} | Error: {ex.Message}");
+                return;
+            }
+
+            await using (candidateDbContext)
+            {
+                context.Logger.LogWarning(
+                    $"CandidateDiscardStarted | CorrelationId: {candidate.CorrelationId} | OutboxId: {candidate.OriginalOutboxMessageId} | QuarantinedId: {candidate.Id}");
+                try
+                {
+                    var quarantineStub = new QuarantinedOutboxMessage { Id = candidate.Id };
+                    candidateDbContext.QuarantinedOutboxMessages.Attach(quarantineStub);
+                    candidateDbContext.Entry(quarantineStub).Property(x => x.IsDiscarded).IsModified = true;
+                    candidateDbContext.Entry(quarantineStub).Property(x => x.DiscardedAt).IsModified = true;
+                    candidateDbContext.Entry(quarantineStub).Property(x => x.DiscardedBy).IsModified = true;
+                    quarantineStub.IsDiscarded = true;
+                    quarantineStub.DiscardedAt = DateTimeOffset.UtcNow;
+                    quarantineStub.DiscardedBy = "TradingApp-AWS admin";
+
+                    await candidateDbContext.SaveChangesAsync();
+
+                    context.Logger.LogWarning(
+                        $"CandidateDiscarded | CorrelationId: {candidate.CorrelationId} | OutboxId: {candidate.OriginalOutboxMessageId} | QuarantinedId: {candidate.Id}");
+                }
+                catch (Exception ex)
+                {
+                    context.Logger.LogError(
+                        $"CandidateDiscardFailed | CorrelationId: {candidate.CorrelationId} | QuarantinedId: {candidate.Id} | Error: {ex.Message}");
+                }
+            }
+        }
+
+        private async Task<bool> IsQueueReachableAsync(ILambdaContext context)
+        {
+            try
+            {
+                await _sqsClient.GetQueueAttributesAsync(_createOrderQueueUrl, new List<string> { "QueueArn" });
+
+                context.Logger.LogWarning("QueueReachable | CREATE_ORDER_QUEUE.fifo is accessible.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogWarning($"QueueUnreachable | Cannot connect to queue | Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task NotifySqsCreateOrderQueueAsync(Guid clientOrderId, string correlationId)
         {
             SimulateQueueFailure(false);
 
@@ -284,32 +565,16 @@ namespace Handler
             await _sqsClient.SendMessageAsync(request);
         }
 
-        private async Task<bool> IsQueueReachableAsync(ILambdaContext context)
-        {
-            try
-            {
-                await _sqsClient.GetQueueAttributesAsync(_createOrderQueueUrl, new List<string> { "QueueArn" });
-
-                context.Logger.LogWarning("QueueReachable | CREATE_ORDER_QUEUE.fifo is accessible.");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                context.Logger.LogWarning($"QueueUnreachable | Cannot connect to queue | Error: {ex.Message}");
-                return false;
-            }
-        }
-
         private void SimulateQueueFailure(bool isQueueDown)
         {
             if (!isQueueDown) return;
 
-            _queueFailureCount++;
+            var failureCount = Interlocked.Increment(ref _queueFailureCount);
 
-            if (_queueFailureCount <= 3)
+            if (failureCount <= 3)
             {
                 throw new AmazonSQSException(
-                    $"SIMULATED: Queue connection failed (failure {_queueFailureCount} of 3)");
+                    $"SIMULATED: Queue connection failed (failure {failureCount} of 3)");
             }
         }
     }
