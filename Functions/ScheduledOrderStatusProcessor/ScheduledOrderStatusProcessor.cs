@@ -8,7 +8,6 @@ using System.Diagnostics;
 using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.Order;
-using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
 
@@ -316,15 +315,15 @@ namespace Handler
         {
             if (!isTopicDown) return;
 
-            _topicFailureCount++;
+            var failureCount = Interlocked.Increment(ref _topicFailureCount);
 
-            if (_topicFailureCount <= 3)
+            if (failureCount <= 3)
             {
                 context.Logger.LogWarning(
-                    $"SIMULATION | Simulating topic outage | FailureCount: {_topicFailureCount}");
+                    $"SIMULATION | Simulating topic outage | FailureCount: {failureCount}");
 
                 throw new InternalErrorException(
-                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)");
+                    $"SIMULATED: Topic connection failed (failure {failureCount} of 3)");
             }
         }
     }
