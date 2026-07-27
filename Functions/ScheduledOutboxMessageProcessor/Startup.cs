@@ -1,5 +1,8 @@
 using Amazon.Lambda.Annotations;
 using Handler;
+using Handler.Interfaces;
+using Handler.Services;
+using Handler.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using TradingApp.Infrastructure;
 
@@ -15,6 +18,12 @@ namespace LambdaBootstrap
             services.AddTradingDbContextFactory();
             services.AddSqsClient();
             services.AddCircuitBreakerPolicy("CREATE_ORDER_QUEUE");
+
+            services.AddScoped<IOutboxQuarantineService, OutboxQuarantineService>();
+            services.AddScoped<IOutboxProcessingService, OutboxProcessingService>();
+            services.AddScoped<IOutboxRecoveryService, OutboxRecoveryService>();
+
+            services.AddSingleton<OutboxMessageProcessorSettings>();
 
             // Overrides the generator's default AddSingleton<ScheduledOutboxMessageProcessor>()
             // (registered before this method runs) - without this, the Scoped TradingDbContext it
