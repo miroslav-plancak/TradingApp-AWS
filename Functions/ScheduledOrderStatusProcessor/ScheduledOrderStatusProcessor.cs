@@ -194,7 +194,7 @@ namespace Handler
                 try
                 {
                     var rowsUpdated = await orderrDbContext.Orders
-                        .Where(x => x.Id == order.Id)
+                        .Where(x => x.Id == order.Id && x.Status == OrderStatus.ACKNOWLEDGED)
                         .ExecuteUpdateAsync(x => x
                             .SetProperty(x => x.Status, OrderStatus.FILLED)
                             .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow));
