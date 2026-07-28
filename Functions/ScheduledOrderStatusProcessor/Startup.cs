@@ -13,7 +13,7 @@ namespace LambdaBootstrap
             services.AddTradingAppLogging();
             services.AddTradingDbContextFactory();
             services.AddSnsClient();
-            services.AddCircuitBreakerPolicy("order_events_topic");
+            services.AddResiliencePolicy("order_events_topic");
 
             // Overrides the generator's default AddSingleton<ScheduledOrderStatusProcessor>()
             // (registered before this method runs) - without this, the Scoped TradingDbContext it
