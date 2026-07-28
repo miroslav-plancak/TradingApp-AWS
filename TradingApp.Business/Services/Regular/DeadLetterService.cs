@@ -7,6 +7,7 @@ using TradingApp.Business.DTOs.DeadLetter;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Mappers;
+using TradingApp.Domain.Models.Enums;
 
 namespace TradingApp.Business.Services.Regular
 {
@@ -23,18 +24,19 @@ namespace TradingApp.Business.Services.Regular
             _deadLetterRepository = deadLetterRepository;
         }
 
-        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync(string messageBody, Guid clientOrderId, string reason)
+        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync(string messageBody, Guid clientOrderId, string reason, DeadLetterCategory category)
         {
-            return CreateDeadLetterLogAsync(messageBody, clientOrderId, reason, null);
+            return CreateDeadLetterLogAsync(messageBody, clientOrderId, reason, category, null);
         }
 
-        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync(string messageBody, Guid clientOrderId, string reason, string correlationId)
+        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync(string messageBody, Guid clientOrderId, string reason, DeadLetterCategory category, string correlationId)
         {
             return CreateDeadLetterLogAsync(new CreateDeadLetterRequestDTO
             {
                 MessageBody = messageBody,
                 ClientOrderId = clientOrderId,
                 Reason = reason,
+                Category = category,
                 CorrelationId = correlationId
             });
         }
@@ -45,7 +47,7 @@ namespace TradingApp.Business.Services.Regular
 
             try
             {
-                var deadLetterEntity = DeadLetterMapper.ToEntity(createRequest.MessageBody, createRequest.ClientOrderId, createRequest.Reason, createRequest.CorrelationId);
+                var deadLetterEntity = DeadLetterMapper.ToEntity(createRequest.MessageBody, createRequest.ClientOrderId, createRequest.Reason, createRequest.Category, createRequest.CorrelationId);
                 var deadLetterLog = await _deadLetterRepository.CreateDeadLetterLogAsync(deadLetterEntity);
 
                 _logger.LogInformation("DeadLetterLogCreated | CorrelationId: {CorrelationId} | Id: {Id} | ClientOrderId: {ClientOrderId}",

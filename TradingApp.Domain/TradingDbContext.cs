@@ -68,6 +68,7 @@ namespace TradingApp.Domain
 
                 entity.Property(e => e.MessageBody).IsRequired();
                 entity.Property(e => e.Reason).IsRequired().HasMaxLength(500);
+                entity.Property(e => e.Category).IsRequired().HasDefaultValue(DeadLetterCategory.BusinessFailure);
                 entity.Property(e => e.CreatedAt).IsRequired();
                 entity.Property(e => e.IsResolved).IsRequired();
                 entity.Property(e => e.ResolutionNotes).HasMaxLength(2000);
