@@ -23,6 +23,9 @@ namespace OrderExecutionProcessor
         private readonly string _orderEventsTopicArn;
         private readonly IAsyncPolicy _resiliencePolicy;
 
+        // Safe unguarded: FunctionHandler walks evnt.Records with a sequential foreach + await
+        // (no Task.WhenAll/Select fan-out in this file), and one execution environment processes
+        // one invocation at a time - no two threads ever reach this line concurrently.
         private static int _topicFailureCount = 0;
 
         public OrderExecutionProcessor(
@@ -49,7 +52,7 @@ namespace OrderExecutionProcessor
 
         private async Task ProcessOrderMessage(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            SimulateRedirectToDeadLetterQueue(false);
+            SimulateRedirectToDeadLetterQueue(true);
 
             SQSEvent.MessageAttribute? correlationIdAttribute = null;
             var hasRealCorrelationId = record.MessageAttributes != null

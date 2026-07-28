@@ -76,6 +76,16 @@ namespace DeadLetterQueueProcessor
                 var order = await _tradingDbContext.Orders
                     .FirstOrDefaultAsync(x => x.ClientOrderId == payload.ClientOrderId);
 
+                var deadLetterLogAlreadyExists = await _tradingDbContext.DeadLetterLogs
+                    .FirstOrDefaultAsync(x => x.ClientOrderId == payload.ClientOrderId && !x.IsResolved);
+
+                if(deadLetterLogAlreadyExists != null)
+                {
+                    context.Logger.LogWarning(
+                      $"DeadLetterLogEntryAlreadyExists | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId}");
+                    return;
+                }
+
                 if (order == null)
                 {
                     context.Logger.LogError(
@@ -85,12 +95,14 @@ namespace DeadLetterQueueProcessor
                         record.Body,
                         payload.ClientOrderId,
                         "Order not found in the database.",
+                        DeadLetterCategory.InfrastructureFailure,
                         correlationId);
 
                     await SendTeamsNotification(createdDL, context);
 
                     return;
                 }
+
 
                 if (order.IsProcessed)
                 {
@@ -127,6 +139,7 @@ namespace DeadLetterQueueProcessor
                     record.Body,
                     payload.ClientOrderId,
                     reason,
+                    DeadLetterCategory.BusinessFailure,
                     correlationId);
 
                 await SendTeamsNotification(deadLetterEntry, context);
