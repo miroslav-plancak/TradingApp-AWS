@@ -11,7 +11,7 @@ services.AddTradingAppLogging();
 services.AddTradingDbContext();
 services.AddTradingDbContextFactory();
 services.AddSqsClient();
-services.AddCircuitBreakerPolicy("CREATE_ORDER_QUEUE");
+services.AddResiliencePolicy("CREATE_ORDER_QUEUE");
 
 services.AddScoped<IOutboxQuarantineService, OutboxQuarantineService>();
 services.AddScoped<IOutboxProcessingService, OutboxProcessingService>();

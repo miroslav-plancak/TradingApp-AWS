@@ -1,10 +1,14 @@
 ﻿using Amazon;
+using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
+using Polly.CircuitBreaker;
+using Polly.Retry;
+using System.Net;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Repositories;
@@ -58,12 +62,33 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
-        public static IServiceCollection AddCircuitBreakerPolicy(this IServiceCollection services, string protectedResourceName)
+        public static IServiceCollection AddDeadLetterServices(this IServiceCollection services)
         {
-            services.AddSingleton(sp =>
-            {
-                var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("CircuitBreaker");
+            services.AddScoped<IDeadLetterRepository, DeadLetterRepository>();
+            services.AddScoped<IDeadLetterService, DeadLetterService>();
+            services.AddSingleton<HttpClient>();
+            return services;
+        }
 
+        public static IServiceCollection AddResiliencePolicy(this IServiceCollection services, string protectedResourceName)
+        {
+            services.AddSingleton<IAsyncPolicy>(sp => 
+            {
+                var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("ResiliencePolicy");
+
+                var retryPolicy = BuildRetryPolicy(logger, protectedResourceName);
+                var circuitBreakerPolicy = BuildCircuitBreakerPolicy(logger, protectedResourceName);
+
+                var resiliencePolicy = circuitBreakerPolicy.WrapAsync(retryPolicy);
+
+                return resiliencePolicy;
+            });
+
+            return services;
+        }
+
+        private static AsyncCircuitBreakerPolicy BuildCircuitBreakerPolicy(ILogger logger, string protectedResourceName)
+        {
                 return Policy
                     .Handle<Exception>()
                     .CircuitBreakerAsync(
@@ -77,17 +102,61 @@ namespace TradingApp.Infrastructure
                             logger.LogWarning("CircuitBreaker CLOSED | {Resource} connectivity restored", protectedResourceName),
                         onHalfOpen: () =>
                             logger.LogWarning("CircuitBreaker HALF-OPEN | Testing {Resource} connectivity...", protectedResourceName));
-            });
-
-            return services;
         }
 
-        public static IServiceCollection AddDeadLetterServices(this IServiceCollection services)
+        private static AsyncRetryPolicy BuildRetryPolicy(ILogger logger, string protectedResourceName)
         {
-            services.AddScoped<IDeadLetterRepository, DeadLetterRepository>();
-            services.AddScoped<IDeadLetterService, DeadLetterService>();
-            services.AddSingleton<HttpClient>();
-            return services;
+            return Policy
+                .Handle<Exception>(IsTransientAWSException)
+                .WaitAndRetryAsync(
+                    retryCount: 3,
+                    sleepDurationProvider: CalculateSleepDuration,
+                    onRetry: (exception, delay, attempt, ctx) =>
+                        logger.LogWarning(
+                            "RetryAttempt {Attempt} | {Resource} | Waiting {Delay}ms | Error: {Error}",
+                            attempt, protectedResourceName, delay.TotalMilliseconds, exception.Message));
+        }
+
+        private static bool IsTransientAWSException(Exception exception)
+        {
+            if(exception is AmazonServiceException awsEx)
+            {
+                if (awsEx.ErrorType == ErrorType.Receiver) 
+                    return true;
+               
+                return awsEx.StatusCode == HttpStatusCode.TooManyRequests ||     // 429 - throttling
+                       awsEx.StatusCode == HttpStatusCode.ServiceUnavailable ||  // 503
+                       awsEx.StatusCode == HttpStatusCode.BadGateway ||          // 502   
+                       awsEx.StatusCode == HttpStatusCode.GatewayTimeout ||      // 504
+                       awsEx.StatusCode == HttpStatusCode.RequestTimeout;        // 408  
+            }
+
+            if (exception is HttpRequestException || exception is TimeoutException) 
+                return true;
+
+            if (ContainsTransientKeyword(exception.Message)) 
+                return true;
+           
+            if (exception.GetType().Name.Contains("Transient", StringComparison.OrdinalIgnoreCase)) 
+                return true;
+
+            return false;
+        }
+
+        private static bool ContainsTransientKeyword(string message)
+        {
+            if (string.IsNullOrEmpty(message)) 
+                return false;
+
+            string[] transientKeywords = { "transient", "retryable", "temporarily unavailable", "timeout", "throttl" };
+
+            return transientKeywords.Any(keyWord => message.Contains(keyWord, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static TimeSpan CalculateSleepDuration(int attempt)
+        {
+            var delaySeconds = Math.Pow(2, attempt);
+            return TimeSpan.FromSeconds(delaySeconds);
         }
     }
 }

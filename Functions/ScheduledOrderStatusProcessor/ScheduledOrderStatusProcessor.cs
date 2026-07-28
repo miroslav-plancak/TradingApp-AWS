@@ -3,6 +3,7 @@ using Amazon.Lambda.Core;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
+using Polly;
 using Polly.CircuitBreaker;
 using System.Diagnostics;
 using System.Text.Json;
@@ -24,19 +25,19 @@ namespace Handler
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
-        private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
+        private readonly IAsyncPolicy _resiliencePolicy;
         private static int _topicFailureCount = 0;
 
         public ScheduledOrderStatusProcessor(
             TradingDbContext tradingDbContext,
             IDbContextFactory<TradingDbContext> dbContextFactory,
             IAmazonSimpleNotificationService snsClient,
-            AsyncCircuitBreakerPolicy circuitBreaker)
+            IAsyncPolicy resiliencePolicy)
         {
             _tradingDbContext = tradingDbContext;
             _dbContextFactory = dbContextFactory;
             _snsClient = snsClient;
-            _circuitBreaker = circuitBreaker;
+            _resiliencePolicy = resiliencePolicy;
 
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
@@ -236,7 +237,7 @@ namespace Handler
 
                 try
                 {
-                    await _circuitBreaker.ExecuteAsync(async () =>
+                    await _resiliencePolicy.ExecuteAsync(async () =>
                     {
                         SimulateTopicFailure(false, context);
                         await _snsClient.PublishAsync(request);

@@ -10,6 +10,7 @@ using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OutboxMessage;
 using TradingApp.Domain.Models.Enums;
+using Polly;
 
 namespace Handler.Services
 {
@@ -17,7 +18,7 @@ namespace Handler.Services
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
-        private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
+        private readonly IAsyncPolicy _resiliencePolicy;
         private readonly IAmazonSQS _sqsClient;
         private readonly string _createOrderQueueUrl;
 
@@ -26,14 +27,14 @@ namespace Handler.Services
         public OutboxProcessingService(
             TradingDbContext tradingDbContext,
             IDbContextFactory<TradingDbContext> dbContextFactory,
-            AsyncCircuitBreakerPolicy circuitBreaker,
+            IAsyncPolicy resiliencePolicy,
             IAmazonSQS sqsClient,
             OutboxMessageProcessorSettings settings
         )
         {
             _tradingDbContext = tradingDbContext;
             _dbContextFactory = dbContextFactory;
-            _circuitBreaker = circuitBreaker;
+            _resiliencePolicy = resiliencePolicy;
             _sqsClient = sqsClient;
             _createOrderQueueUrl = settings.CreateOrderQueueUrl;
         }
@@ -179,7 +180,7 @@ namespace Handler.Services
                         context.Logger.LogWarning(
                             $"SendingToQueue | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | ClientOrderId: {clientOrderId}");
 
-                        await _circuitBreaker.ExecuteAsync(async () =>
+                        await _resiliencePolicy.ExecuteAsync(async () =>
                         {
                             await NotifySqsCreateOrderQueueAsync(clientOrderId, outboxMessage.CorrelationId);
                         });

@@ -4,11 +4,11 @@ using Amazon.Lambda.SQSEvents;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
+using Polly;
 using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.Order;
-using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
 
@@ -21,21 +21,21 @@ namespace OrderExecutionProcessor
         private readonly TradingDbContext _tradingDbContext;
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
-        private readonly AsyncCircuitBreakerPolicy _circuitBreaker;
+        private readonly IAsyncPolicy _resiliencePolicy;
 
         private static int _topicFailureCount = 0;
 
         public OrderExecutionProcessor(
             TradingDbContext tradingDbContext, 
             IAmazonSimpleNotificationService snsClient,
-            AsyncCircuitBreakerPolicy circuitBreakerPolicy
+            IAsyncPolicy resiliencePolicy
             )
         {
             _tradingDbContext = tradingDbContext;
             _snsClient = snsClient;
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
-            _circuitBreaker = circuitBreakerPolicy;
+            _resiliencePolicy = resiliencePolicy;
         }
 
         [LambdaFunction]
@@ -135,7 +135,7 @@ namespace OrderExecutionProcessor
                 context.Logger.LogWarning(
                     $"PublishingEventToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
 
-                await _circuitBreaker.ExecuteAsync(async () =>
+                await _resiliencePolicy.ExecuteAsync(async () =>
                 {
                     SimulateTopicFailure(false, context);
 

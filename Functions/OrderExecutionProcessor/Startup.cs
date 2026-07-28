@@ -11,7 +11,7 @@ namespace LambdaBootstrap
         {
             services.AddTradingAppLogging();
             services.AddTradingDbContext();
-            services.AddCircuitBreakerPolicy("order_events_topic");
+            services.AddResiliencePolicy("order_events_topic");
             services.AddSnsClient();
 
             // Overrides the generator's default AddSingleton<OrderExecutionProcessor>() (registered
