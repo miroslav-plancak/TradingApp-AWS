@@ -1,4 +1,5 @@
 ﻿using System;
+using TradingApp.Domain.Models.Enums;
 
 namespace TradingApp.Domain.Models.Entities.DeadLetterLog
 {
@@ -8,6 +9,7 @@ namespace TradingApp.Domain.Models.Entities.DeadLetterLog
         public Guid ClientOrderId { get; set; }
         public required string MessageBody { get; set; }
         public required string Reason { get; set; }
+        public DeadLetterCategory Category { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public bool IsResolved { get; set; }
         public required string ResolutionNotes { get; set; }

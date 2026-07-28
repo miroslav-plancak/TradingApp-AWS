@@ -3,6 +3,7 @@ using System.Linq;
 using TradingApp.Business.DTOs;
 using TradingApp.Business.DTOs.DeadLetter;
 using TradingApp.Domain.Models.Entities.DeadLetterLog;
+using TradingApp.Domain.Models.Enums;
 
 namespace TradingApp.Business.Mappers
 {
@@ -17,6 +18,7 @@ namespace TradingApp.Business.Mappers
                 Id = deadLetterLog.Id,
                 ClientOrderId = deadLetterLog.ClientOrderId,
                 Reason = deadLetterLog.Reason,
+                Category = deadLetterLog.Category,
                 CreatedAt = deadLetterLog.CreatedAt,
                 IsResolved = deadLetterLog.IsResolved,
                 ResolutionNotes = deadLetterLog.ResolutionNotes,
@@ -34,13 +36,14 @@ namespace TradingApp.Business.Mappers
             return deadLetterLogs.Select(ToDeadLetterLogResponseDTO).ToList();
         }
 
-        public static DeadLetterLog ToEntity(string messageBody, System.Guid clientOrderId, string reason, string correlationId = null)
+        public static DeadLetterLog ToEntity(string messageBody, System.Guid clientOrderId, string reason, DeadLetterCategory category, string correlationId = null)
         {
             return new DeadLetterLog
             {
                 ClientOrderId = clientOrderId,
                 MessageBody = messageBody,
                 Reason = reason,
+                Category = category,
                 CorrelationId = correlationId,
                 ResolutionNotes = "hardcoded ResolutionNotes",
                 ResolvedBy = "hardcoded ResolvedBy"
