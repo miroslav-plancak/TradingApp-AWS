@@ -34,7 +34,7 @@ namespace Handler
             _createOrderQueueUrl = settings.CreateOrderQueueUrl;
         }
 
-        [LambdaFunction]
+        [LambdaFunction(Timeout = 120)]
         public async Task FunctionHandler(ILambdaContext context)
         {
             context.Logger.LogWarning($"ScheduledOutboxMessageProcessor triggered at: {DateTimeOffset.UtcNow}");

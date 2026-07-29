@@ -14,5 +14,7 @@ namespace TradingApp.Domain.Models.Entities.OutboxMessage
         public OutboxRetryReason RetryReason { get; set; } = OutboxRetryReason.None;
         public string? LastError { get; set; }
         public string CorrelationId { get; set; } = string.Empty;
+        public string? ClaimedBy { get; set; }
+        public DateTimeOffset? ClaimedAt { get; set; }
     }
 }
