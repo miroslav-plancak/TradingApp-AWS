@@ -26,7 +26,7 @@ namespace Handler
 
         private static int _topicFailureCount = 0;
         private const int MaxDegreeOfParallelism = 5;
-
+        private const int LEASE_SECONDS = 130; // timeout 120s + buffer 10s
         public ScheduledUnpublishedTopicMessagesProcessor(
             TradingDbContext tradingDbContext,
             IDbContextFactory<TradingDbContext> dbContextFactory,
@@ -42,7 +42,7 @@ namespace Handler
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
         }
 
-        [LambdaFunction]
+        [LambdaFunction(Timeout=120)]
         public async Task FunctionHandler(ILambdaContext context)
         {
             context.Logger.LogWarning($"ScheduledUnpublishedTopicMessagesProcessor triggered at: {DateTimeOffset.UtcNow}");
@@ -139,6 +139,20 @@ namespace Handler
             {
                 try
                 {
+                    var claimed = await unpublishedMessageDbContext.UnpublishedTopicMessages
+                       .Where(x => x.Id == unpublishedMessage.Id && (x.ClaimedBy == null || x.ClaimedAt < DateTimeOffset.UtcNow.AddSeconds(-LEASE_SECONDS)))
+                       .ExecuteUpdateAsync(x => x
+                           .SetProperty(c => c.ClaimedBy, context.AwsRequestId)
+                           .SetProperty(c => c.ClaimedAt, DateTimeOffset.UtcNow)
+                        );
+
+                    if (claimed == 0)
+                    {
+                        context.Logger.LogWarning(
+                           $"UnpublishedMessageAlreadyClaimed | UnpublishedId: {unpublishedMessage.Id} | CorrelationId: {unpublishedMessage.CorrelationId} | Skipping - claimed by another invocation or lease still active");
+                        return ProcessUnpublishedMessageOutcome.PublishFailed;
+                    }
+
                     context.Logger.LogWarning(
                           $"Trying to publish unpublishedTopicMessage | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} " +
                           $"| ClientOrderId: {unpublishedMessage.ClientOrderId}");

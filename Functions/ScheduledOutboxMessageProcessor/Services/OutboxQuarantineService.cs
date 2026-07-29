@@ -14,6 +14,7 @@ namespace Handler.Services
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
 
         private const bool UseWorkerPoolProcessing = false;
+        private const int LEASE_SECONDS = 130; // timeout 120s + buffer 10s
 
         public OutboxQuarantineService(TradingDbContext tradingDbContext, IDbContextFactory<TradingDbContext> dbContextFactory)
         {
@@ -42,7 +43,9 @@ namespace Handler.Services
                  : QuarantineExhaustedMessagesViaSemaphorePoolAsync(context, maxDegreeOfParallelism, exhaustedOutboxMessages));
         }
 
-        private async Task QuarantineExhaustedMessagesViaWorkerPoolAsync(ILambdaContext context, int maxDegreeOfParallelism, List<OutboxMessage> exObMsgs)
+        private async Task QuarantineExhaustedMessagesViaWorkerPoolAsync(
+            ILambdaContext context, int maxDegreeOfParallelism, List<OutboxMessage> exObMsgs
+        )
         {
             var channel = Channel.CreateUnbounded<OutboxMessage>();
 
@@ -75,7 +78,9 @@ namespace Handler.Services
         }
 
 
-        private async Task QuarantineExhaustedMessagesViaSemaphorePoolAsync(ILambdaContext context, int maxDegreeOfParallelism, List<OutboxMessage> exObMsgs)
+        private async Task QuarantineExhaustedMessagesViaSemaphorePoolAsync(
+            ILambdaContext context, int maxDegreeOfParallelism, List<OutboxMessage> exObMsgs
+        )
         {
             using var semaphore = new SemaphoreSlim(maxDegreeOfParallelism);
 
@@ -108,6 +113,20 @@ namespace Handler.Services
         {
                 try
                 {
+                    var claimed = await dbContext.OutboxMessages
+                        .Where(x => x.Id == exObMsg.Id && (x.ClaimedBy == null || x.ClaimedAt < DateTimeOffset.UtcNow.AddSeconds(-LEASE_SECONDS)))
+                        .ExecuteUpdateAsync(x => x 
+                            .SetProperty(c => c.ClaimedBy, context.AwsRequestId)
+                            .SetProperty(c => c.ClaimedAt, DateTimeOffset.UtcNow)
+                         );
+
+                    if(claimed == 0)
+                    {
+                        context.Logger.LogWarning(
+                           $"OutboxMessageAlreadyClaimed | OutboxId: {exObMsg.Id} | CorrelationId: {exObMsg.CorrelationId} | Skipping - claimed by another invocation or lease still active");
+                        return;
+                    }
+
                     Guid? clientOrderId = Guid.TryParse(exObMsg.Payload, out var parsed) ? parsed : null;
 
                     dbContext.QuarantinedOutboxMessages.Add(new QuarantinedOutboxMessage

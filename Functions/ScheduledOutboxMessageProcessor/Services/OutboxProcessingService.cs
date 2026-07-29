@@ -23,6 +23,7 @@ namespace Handler.Services
         private readonly string _createOrderQueueUrl;
 
         private static int _queueFailureCount = 0;
+        private const int LEASE_SECONDS = 130; // timeout 120s + buffer 10s
 
         public OutboxProcessingService(
             TradingDbContext tradingDbContext,
@@ -163,6 +164,20 @@ namespace Handler.Services
             {
                 try
                 {
+                    var claimed = await outboxMessageDbContext.OutboxMessages
+                        .Where(x => x.Id == outboxMessage.Id && (x.ClaimedBy == null || x.ClaimedAt < DateTimeOffset.UtcNow.AddSeconds(-LEASE_SECONDS)))
+                        .ExecuteUpdateAsync(x => x
+                            .SetProperty(c => c.ClaimedBy, context.AwsRequestId)
+                            .SetProperty(c => c.ClaimedAt, DateTimeOffset.UtcNow)
+                         );
+
+                    if (claimed == 0)
+                    {
+                        context.Logger.LogWarning(
+                           $"OutboxMessageAlreadyClaimed | OutboxId: {outboxMessage.Id} | CorrelationId: {outboxMessage.CorrelationId} | Skipping - claimed by another invocation or lease still active");
+                        return ProcessOutboxMessageOutcome.Failure;
+                    }
+
                     if (Guid.TryParse(outboxMessage.Payload, out var clientOrderId))
                     {
                         if (alreadyProcessedClientOrderIds.Contains(clientOrderId))

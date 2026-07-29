@@ -57,6 +57,9 @@ namespace TradingApp.Domain
 
                 entity.Property(e => e.CorrelationId);
                 entity.HasIndex(e => e.CorrelationId);
+
+                entity.Property(e => e.ClaimedBy);
+                entity.Property(e => e.ClaimedAt);
             });
 
             modelBuilder.Entity<DeadLetterLog>(entity =>
@@ -121,6 +124,9 @@ namespace TradingApp.Domain
 
                 entity.Property(e => e.CorrelationId);
                 entity.HasIndex(e => e.CorrelationId);
+
+                entity.Property(e => e.ClaimedBy);
+                entity.Property(e => e.ClaimedAt);
             });
 
             modelBuilder.Entity<OrderNotificationSequence>(entity =>
