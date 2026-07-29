@@ -42,13 +42,6 @@ namespace Handler
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
         }
 
-        private enum ProcessUnpublishedMessageOutcome
-        {
-            PublishSuccess,
-            PublishFailed,
-            CircuitOpen
-        }
-
         [LambdaFunction]
         public async Task FunctionHandler(ILambdaContext context)
         {
