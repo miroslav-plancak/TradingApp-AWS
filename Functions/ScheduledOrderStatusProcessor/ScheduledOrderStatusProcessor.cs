@@ -3,11 +3,13 @@ using Amazon.Lambda.Core;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.CircuitBreaker;
 using System.Diagnostics;
 using System.Text.Json;
 using TradingApp.Domain;
+using TradingApp.Infrastructure;
 using TradingApp.Domain.Models.Entities.Order;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
@@ -25,19 +27,22 @@ namespace Handler
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
-        private readonly IAsyncPolicy _resiliencePolicy;
+        private readonly IAsyncPolicy _sqlResiliencePolicy;
+        private readonly IAsyncPolicy _messagingResiliencePolicy;
         private static int _topicFailureCount = 0;
 
         public ScheduledOrderStatusProcessor(
             TradingDbContext tradingDbContext,
             IDbContextFactory<TradingDbContext> dbContextFactory,
             IAmazonSimpleNotificationService snsClient,
-            IAsyncPolicy resiliencePolicy)
+            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
+            [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy)
         {
             _tradingDbContext = tradingDbContext;
             _dbContextFactory = dbContextFactory;
             _snsClient = snsClient;
-            _resiliencePolicy = resiliencePolicy;
+            _sqlResiliencePolicy = sqlResiliencePolicy;
+            _messagingResiliencePolicy = messagingResiliencePolicy;
 
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
@@ -48,11 +53,13 @@ namespace Handler
         {
             context.Logger.LogWarning($"ScheduledOrderStatusProcessor triggered at: {DateTimeOffset.UtcNow}");
 
-            var orders = await _tradingDbContext.Orders
-                .Where(ao => ao.Status == OrderStatus.ACKNOWLEDGED)
-                .OrderBy(x => x.CreatedAt)
-                .Take(50)
-                .ToListAsync();
+            var orders = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                await _tradingDbContext.Orders
+                    .Where(ao => ao.Status == OrderStatus.ACKNOWLEDGED)
+                    .OrderBy(x => x.CreatedAt)
+                    .Take(50)
+                    .ToListAsync()
+                );
 
             if (orders.Count == 0)
             {
@@ -64,7 +71,7 @@ namespace Handler
 
             var stopwatch = Stopwatch.StartNew();
 
-            var (filledAndPublished, filledPublishDeferred, saveFailed, circuitOpened) = UseConcurrentProcessing
+            var (filledAndPublished, filledPublishDeferred, filledButNotSavedNorPublished, saveFailed, sqlCircuitOpened) = UseConcurrentProcessing
                 ? await PromoteOrdersConcurrentlyAsync(orders, context)
                 : await PromoteOrdersSequentiallyAsync(orders, context);
 
@@ -73,16 +80,17 @@ namespace Handler
                 $"BatchProcessingTime | Mode: {(UseConcurrentProcessing ? "Concurrent" : "Sequential")} " +
                 $"| {orders.Count} orders | ElapsedTime(ms): {stopwatch.ElapsedMilliseconds}");
 
-            GenerateLogBasedOnResults(filledAndPublished, filledPublishDeferred, saveFailed, circuitOpened, orders.Count, context);
+            GenerateLogBasedOnResults(filledAndPublished, filledPublishDeferred, filledButNotSavedNorPublished, saveFailed, sqlCircuitOpened, orders.Count, context);
         }
 
-        private async Task<(int filledAndPublished, int filledPublishDeferred, int saveFailed, bool circuitOpened)> PromoteOrdersSequentiallyAsync(
+        private async Task<(int filledAndPublished, int filledPublishDeferred, int filledButNotSavedNorPublished, int saveFailed, bool sqlCircuitOpened)> PromoteOrdersSequentiallyAsync(
             List<Order> orders, ILambdaContext context)
         {
             var filledAndPublished = 0;
             var filledPublishDeferred = 0;
+            var filledButNotSavedNorPublished = 0;
             var saveFailed = 0;
-            var circuitOpened = false;
+            var sqlCircuitOpened = false;
 
             foreach (var order in orders)
             {
@@ -96,32 +104,34 @@ namespace Handler
                     case ProcessedOrderStatusOutcome.FilledPublishDeferred:
                         filledPublishDeferred++;
                         break;
+                    case ProcessedOrderStatusOutcome.FilledButNotSavedNorPublished:
+                        filledButNotSavedNorPublished++;
+                        break;
                     case ProcessedOrderStatusOutcome.SaveFailed:
                         saveFailed++;
                         break;
-                    case ProcessedOrderStatusOutcome.CircuitOpen:
-                        circuitOpened = true;
+                    case ProcessedOrderStatusOutcome.SqlCircuitOpen:
+                        sqlCircuitOpened = true;
                         break;
                 }
 
-                // Sequential can stop cleanly the moment it discovers the circuit is open -
-                // nothing after this point in the loop has started yet.
-                if (circuitOpened)
+                if (sqlCircuitOpened)
                 {
                     break;
                 }
             }
 
-            return (filledAndPublished, filledPublishDeferred, saveFailed, circuitOpened);
+            return (filledAndPublished, filledPublishDeferred, filledButNotSavedNorPublished, saveFailed, sqlCircuitOpened);
         }
 
-        private async Task<(int filledAndPublished, int filledPublishDeferred, int saveFailed, bool circuitOpened)> PromoteOrdersConcurrentlyAsync(
+        private async Task<(int filledAndPublished, int filledPublishDeferred, int filledButNotSavedNorPublished, int saveFailed, bool sqlCircuitOpened)> PromoteOrdersConcurrentlyAsync(
             List<Order> orders, ILambdaContext context)
         {
             var filledAndPublished = 0;
             var filledPublishDeferred = 0;
+            var filledButNotSavedNorPublished = 0;
             var saveFailed = 0;
-            var circuitOpenedFlag = 0; // 0 = false, 1 = true - Interlocked/Volatile work on int, not bool
+            var sqlCircuitOpenedFlag = 0; // 0 = false, 1 = true - Interlocked/Volatile work on int, not bool
 
             using var semaphore = new SemaphoreSlim(MaxDegreeOfParallelism);
 
@@ -131,7 +141,7 @@ namespace Handler
 
                 try
                 {
-                    if (Volatile.Read(ref circuitOpenedFlag) == 1)
+                    if (Volatile.Read(ref sqlCircuitOpenedFlag) == 1)
                     {
                         context.Logger.LogWarning(
                             $"SkippedCircuitOpen | CorrelationId: {order.CorrelationId} | Order stays ACKNOWLEDGED");
@@ -149,11 +159,14 @@ namespace Handler
                         case ProcessedOrderStatusOutcome.FilledPublishDeferred:
                             Interlocked.Increment(ref filledPublishDeferred);
                             break;
+                        case ProcessedOrderStatusOutcome.FilledButNotSavedNorPublished:
+                            Interlocked.Increment(ref filledButNotSavedNorPublished);
+                            break;
                         case ProcessedOrderStatusOutcome.SaveFailed:
                             Interlocked.Increment(ref saveFailed);
                             break;
-                        case ProcessedOrderStatusOutcome.CircuitOpen:
-                            Interlocked.Exchange(ref circuitOpenedFlag, 1);
+                        case ProcessedOrderStatusOutcome.SqlCircuitOpen:
+                            Interlocked.Exchange(ref sqlCircuitOpenedFlag, 1);
                             break;
                     }
                 }
@@ -162,10 +175,10 @@ namespace Handler
                     semaphore.Release();
                 }
             });
-   
+
             await Task.WhenAll(tasks);
 
-            return (filledAndPublished, filledPublishDeferred, saveFailed, circuitOpenedFlag == 1);
+            return (filledAndPublished, filledPublishDeferred, filledButNotSavedNorPublished, saveFailed, sqlCircuitOpenedFlag == 1);
         }
 
 
@@ -194,11 +207,13 @@ namespace Handler
 
                 try
                 {
-                    var rowsUpdated = await orderrDbContext.Orders
-                        .Where(x => x.Id == order.Id && x.Status == OrderStatus.ACKNOWLEDGED)
-                        .ExecuteUpdateAsync(x => x
-                            .SetProperty(x => x.Status, OrderStatus.FILLED)
-                            .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow));
+                    var rowsUpdated = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                            await orderrDbContext.Orders
+                                .Where(x => x.Id == order.Id && x.Status == OrderStatus.ACKNOWLEDGED)
+                                .ExecuteUpdateAsync(x => x
+                                    .SetProperty(x => x.Status, OrderStatus.FILLED)
+                                    .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow))
+                            );
 
                     if (rowsUpdated == 0)
                     {
@@ -206,6 +221,12 @@ namespace Handler
                             $"OrderAlreadyProcessed | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
                         return ProcessedOrderStatusOutcome.SaveFailed;
                     }
+                }
+                catch (BrokenCircuitException)
+                {
+                    context.Logger.LogWarning(
+                        $"CircuitOpen | CorrelationId: {order.CorrelationId} | Order stays ACKNOWLEDGED | Database unreachable, stopping batch");
+                    return ProcessedOrderStatusOutcome.SqlCircuitOpen;
                 }
                 catch (Exception ex)
                 {
@@ -237,9 +258,9 @@ namespace Handler
 
                 try
                 {
-                    await _resiliencePolicy.ExecuteAsync(async () =>
+                    await _messagingResiliencePolicy.ExecuteAsync(async () =>
                     {
-                        SimulateTopicFailure(false, context);
+                        SimulateTopicFailure(true, context);
                         await _snsClient.PublishAsync(request);
                     });
 
@@ -250,26 +271,18 @@ namespace Handler
                 catch (BrokenCircuitException)
                 {
                     context.Logger.LogWarning(
-                        $"CircuitOpen | CorrelationId: {order.CorrelationId} | Order is FILLED, event not yet published | Falling back to UnpublishedTopicMessages");
+                        $"CircuitOpen | CorrelationId: {order.CorrelationId} | event not yet published | attempting to persist to UnpublishedTopicMessages");
 
-                    await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
+                    var outcome = await TryPersistUnpublishedTopicMessageAsync(context, order);
 
-                    context.Logger.LogWarning(
-                        $"SavedToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
-
-                    return ProcessedOrderStatusOutcome.CircuitOpen;
+                    return outcome;
                 }
                 catch (AmazonSimpleNotificationServiceException snsEx)
                 {
                     context.Logger.LogError(
                         $"TopicPublishFailed | CorrelationId: {order.CorrelationId} | Falling back to UnpublishedTopicMessages | Error: {snsEx.Message}");
-
-                    await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
-
-                    context.Logger.LogWarning(
-                        $"SavedToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
-
-                    return ProcessedOrderStatusOutcome.FilledPublishDeferred;
+                 
+                    return await TryPersistUnpublishedTopicMessageAsync(context, order);
                 }
                 catch (Exception ex)
                 {
@@ -281,16 +294,22 @@ namespace Handler
         }
 
         private static void GenerateLogBasedOnResults(
-                int filledAndPublished, int filledPublishDeferred, int saveFailed, bool circuitOpened, int totalOrderCount, ILambdaContext context
+                int filledAndPublished, int filledPublishDeferred, int filledButNotSavedNorPublished, int saveFailed, bool circuitOpened, int totalOrderCount, ILambdaContext context
             )
         {
-            var promotedCount = filledAndPublished + filledPublishDeferred;
+            var promotedCount = filledAndPublished + filledPublishDeferred + filledButNotSavedNorPublished;
+
+            if (filledButNotSavedNorPublished > 0)
+            {
+                context.Logger.LogError(
+                    $"FilledButNotSavedNorPublished | {filledButNotSavedNorPublished} orders are FILLED but their event was neither published nor saved to UnpublishedTopicMessages | Needs manual intervention.");
+            }
 
             if (circuitOpened)
             {
                 context.Logger.LogWarning(
                     $"PromotionBatchAborted | CircuitOpen | " +
-                    $"Promoted: {promotedCount} orders to FILLED ({filledAndPublished} published, {filledPublishDeferred} deferred) | " +
+                    $"Promoted: {promotedCount} orders to FILLED ({filledAndPublished} published, {filledPublishDeferred} deferred, {filledButNotSavedNorPublished} not saved/not published) | " +
                     $"SaveFailed: {saveFailed} orders stay ACKNOWLEDGED | Remaining orders not attempted, will retry next cycle");
             }
             else if (saveFailed > 0 && promotedCount == 0)
@@ -298,11 +317,11 @@ namespace Handler
                 context.Logger.LogWarning(
                     $"PromotionBatchFailed | No orders promoted | SaveFailed: {saveFailed}");
             }
-            else if (saveFailed > 0 || filledPublishDeferred > 0)
+            else if (saveFailed > 0 || filledPublishDeferred > 0 || filledButNotSavedNorPublished > 0)
             {
                 context.Logger.LogWarning(
                     $"PromotionBatchPartial | " +
-                    $"Promoted: {promotedCount} ({filledAndPublished} published, {filledPublishDeferred} deferred) | " +
+                    $"Promoted: {promotedCount} ({filledAndPublished} published, {filledPublishDeferred} deferred, {filledButNotSavedNorPublished} not saved/not published) | " +
                     $"SaveFailed: {saveFailed}");
             }
             else
@@ -325,6 +344,51 @@ namespace Handler
 
                 throw new InternalErrorException(
                     $"SIMULATED: Topic connection failed (failure {failureCount} of 3)");
+            }
+        }
+
+        private async Task<ProcessedOrderStatusOutcome> TryPersistUnpublishedTopicMessageAsync(ILambdaContext context, Order order)
+        {
+            try
+            {
+                var outcome = await _sqlResiliencePolicy.ExecuteAsync(async Task<ProcessedOrderStatusOutcome> () =>
+                {
+                   
+                    var alreadyExists = await _tradingDbContext.CheckIfUnpublishedTopicMessageExistsAsync(
+                        order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
+
+                    if (alreadyExists == null)
+                    {
+                        await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
+
+                        context.Logger.LogWarning(
+                    $"SavedToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
+
+                        return ProcessedOrderStatusOutcome.FilledPublishDeferred;
+                    }
+                    else
+                    {
+                        context.Logger.LogWarning(
+                              $"UnpublishedTopicMessageAlreadyExists | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
+                        return ProcessedOrderStatusOutcome.FilledPublishDeferred;
+                    }
+                  
+                });
+
+                return outcome;
+            }
+            catch (BrokenCircuitException)
+            {
+                context.Logger.LogWarning(
+                        $"CircuitOpen | FailedPersistingToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} | Database unreachable, stopping batch");
+                return ProcessedOrderStatusOutcome.SqlCircuitOpen;
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+               $"UnexpectedError | CorrelationId: {order.CorrelationId} | UnpublishedTopicMessagePersisted, event not published | Error: {ex.Message}");
+
+                return ProcessedOrderStatusOutcome.FilledButNotSavedNorPublished;
             }
         }
     }

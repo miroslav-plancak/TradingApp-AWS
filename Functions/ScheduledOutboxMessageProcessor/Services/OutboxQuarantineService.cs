@@ -1,10 +1,13 @@
 ﻿using Amazon.Lambda.Core;
 using Handler.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Polly;
 using System.Threading.Channels;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OutboxMessage;
 using TradingApp.Domain.Models.Entities.QuarantinedOutboxMessage;
+using TradingApp.Infrastructure;
 
 namespace Handler.Services
 {
@@ -12,23 +15,30 @@ namespace Handler.Services
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
+        private readonly IAsyncPolicy _sqlResiliencePolicy;
 
         private const bool UseWorkerPoolProcessing = false;
         private const int LEASE_SECONDS = 130; // timeout 120s + buffer 10s
 
-        public OutboxQuarantineService(TradingDbContext tradingDbContext, IDbContextFactory<TradingDbContext> dbContextFactory)
+        public OutboxQuarantineService(
+            TradingDbContext tradingDbContext,
+            IDbContextFactory<TradingDbContext> dbContextFactory,
+            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy
+        )
         {
             _tradingDbContext = tradingDbContext;
             _dbContextFactory = dbContextFactory;
+            _sqlResiliencePolicy = sqlResiliencePolicy;
         }
 
         public async Task QuarantineExhaustedMessagesAsync(ILambdaContext context, int maxDegreeOfParallelism)
         {
-            var exhaustedOutboxMessages = await _tradingDbContext.OutboxMessages
+            var exhaustedOutboxMessages = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                 await _tradingDbContext.OutboxMessages
                   .Where(x => x.ProcessedAt == null && x.RetryCount >= 5)
                   .OrderBy(x => x.CreatedAt)
                   .Take(50)
-                  .ToListAsync();
+                  .ToListAsync());
 
             if (exhaustedOutboxMessages.Count == 0)
             {
@@ -111,19 +121,32 @@ namespace Handler.Services
 
         private async Task QuarantineExhaustedMessageAsync(OutboxMessage exObMsg, ILambdaContext context, TradingDbContext dbContext)
         {
-                try
-                {
-                    var claimed = await dbContext.OutboxMessages
-                        .Where(x => x.Id == exObMsg.Id && (x.ClaimedBy == null || x.ClaimedAt < DateTimeOffset.UtcNow.AddSeconds(-LEASE_SECONDS)))
-                        .ExecuteUpdateAsync(x => x 
-                            .SetProperty(c => c.ClaimedBy, context.AwsRequestId)
-                            .SetProperty(c => c.ClaimedAt, DateTimeOffset.UtcNow)
-                         );
+            try
+            {
+                var claimed = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                    await dbContext.OutboxMessages
+                            .Where(x => x.Id == exObMsg.Id && (x.ClaimedBy == null || x.ClaimedAt < DateTimeOffset.UtcNow.AddSeconds(-LEASE_SECONDS)))
+                            .ExecuteUpdateAsync(x => x
+                                .SetProperty(c => c.ClaimedBy, context.AwsRequestId)
+                                .SetProperty(c => c.ClaimedAt, DateTimeOffset.UtcNow)
+                ));
 
-                    if(claimed == 0)
+                if (claimed == 0)
+                {
+                    context.Logger.LogWarning(
+                       $"OutboxMessageAlreadyClaimed | OutboxId: {exObMsg.Id} | CorrelationId: {exObMsg.CorrelationId} | Skipping - claimed by another invocation or lease still active");
+                    return;
+                }
+
+                await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                {
+                    var rowExists = await dbContext.QuarantinedOutboxMessages
+                            .FirstOrDefaultAsync(x => x.OriginalOutboxMessageId == exObMsg.Id);
+                  
+                    if (rowExists != null)
                     {
                         context.Logger.LogWarning(
-                           $"OutboxMessageAlreadyClaimed | OutboxId: {exObMsg.Id} | CorrelationId: {exObMsg.CorrelationId} | Skipping - claimed by another invocation or lease still active");
+                             $"QuarantinedOutboxMessageAlreadyExists | OutboxId: {exObMsg.Id} | CorrelationId: {exObMsg.CorrelationId}");
                         return;
                     }
 
@@ -148,15 +171,16 @@ namespace Handler.Services
                     outboxStub.ProcessedAt = DateTimeOffset.UtcNow;
 
                     await dbContext.SaveChangesAsync();
-                   
+
                     context.Logger.LogWarning(
                         $"QuarantiningMessage | CorrelationId: {exObMsg.CorrelationId} | OutboxId: {exObMsg.Id} | Reason: {exObMsg.RetryReason} | RetryCount: {exObMsg.RetryCount}");
-                }
-                catch (Exception ex)
-                {
-                    context.Logger.LogError(
-                        $"QuarantineWriteFailed | CorrelationId: {exObMsg.CorrelationId} | OutboxId: {exObMsg.Id} | Error: {ex.Message}");
-                }
+                });
+            }
+            catch (Exception ex)
+            {
+                context.Logger.LogError(
+                    $"QuarantineWriteFailed | CorrelationId: {exObMsg.CorrelationId} | OutboxId: {exObMsg.Id} | Error: {ex.Message}");
+            }
         }
 
         private async Task<TradingDbContext?> TryCreateDbContext(ILambdaContext context)

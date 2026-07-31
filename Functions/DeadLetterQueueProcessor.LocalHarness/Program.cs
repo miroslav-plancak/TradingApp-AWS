@@ -3,6 +3,7 @@ using Amazon.Lambda.TestUtilities;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.DependencyInjection;
+using Polly;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain;
 using TradingApp.Infrastructure;
@@ -11,6 +12,7 @@ var services = new ServiceCollection();
 services.AddTradingAppLogging();
 services.AddTradingDbContext();
 services.AddDeadLetterServices();
+services.AddResiliencePolicy("DeadLetterQueueProcessor.LocalHarness");
 var serviceProvider = services.BuildServiceProvider();
 
 var sqsClient = new AmazonSQSClient(Amazon.RegionEndpoint.EUNorth1);
@@ -38,7 +40,8 @@ while (true)
             var function = new DeadLetterQueueProcessor.DeadLetterQueueProcessor(
                 scope.ServiceProvider.GetRequiredService<TradingDbContext>(),
                 scope.ServiceProvider.GetRequiredService<IDeadLetterService>(),
-                scope.ServiceProvider.GetRequiredService<HttpClient>()
+                scope.ServiceProvider.GetRequiredService<HttpClient>(),
+                scope.ServiceProvider.GetRequiredService<IAsyncPolicy>()
                 );
 
             var sqsEvent = new SQSEvent

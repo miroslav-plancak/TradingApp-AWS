@@ -1,10 +1,14 @@
 ﻿using Amazon.Lambda.Core;
 using Handler.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Polly;
+using Polly.CircuitBreaker;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OutboxMessage;
 using TradingApp.Domain.Models.Entities.QuarantinedOutboxMessage;
 using TradingApp.Domain.Models.Enums;
+using TradingApp.Infrastructure;
 
 namespace Handler.Services
 {
@@ -12,22 +16,27 @@ namespace Handler.Services
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
+        private readonly IAsyncPolicy _sqlResiliencePolicy;
+
         public OutboxRecoveryService(
             TradingDbContext tradingDbContext,
-            IDbContextFactory<TradingDbContext> dbContextFactory
+            IDbContextFactory<TradingDbContext> dbContextFactory,
+            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy
         )
         {
             _tradingDbContext = tradingDbContext;
             _dbContextFactory = dbContextFactory;
+            _sqlResiliencePolicy = sqlResiliencePolicy;
         }
 
         public async Task AutoRecoverResurrectedMessagesAsync(ILambdaContext context, int maxDegreeOfParallelism)
         {
-            var resurrectCandidates = await _tradingDbContext.QuarantinedOutboxMessages
-              .Where(q => !q.IsResurrected
-                       && !q.IsDiscarded
-                       && q.Reason == OutboxRetryReason.SimpleQueueServiceUnavailable)
-              .ToListAsync();
+            var resurrectCandidates = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                await _tradingDbContext.QuarantinedOutboxMessages
+                  .Where(q => !q.IsResurrected
+                           && !q.IsDiscarded
+                           && q.Reason == OutboxRetryReason.SimpleQueueServiceUnavailable)
+                  .ToListAsync());
 
             if (resurrectCandidates.Count == 0)
             {
@@ -41,10 +50,11 @@ namespace Handler.Services
                 .Select(c => c.OriginalOutboxMessageId)
                 .ToHashSet();
 
-            var existingOriginalMessageIds = await _tradingDbContext.OutboxMessages
-                .Where(x => originalMessageIds.Contains(x.Id))
-                .Select(x => x.Id)
-                .ToHashSetAsync();
+            var existingOriginalMessageIds = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                await _tradingDbContext.OutboxMessages
+                    .Where(x => originalMessageIds.Contains(x.Id))
+                    .Select(x => x.Id)
+                    .ToHashSetAsync());
 
             using var semaphore = new SemaphoreSlim(maxDegreeOfParallelism);
 
@@ -110,10 +120,15 @@ namespace Handler.Services
                     quarantineStub.ResurrectedAt = DateTimeOffset.UtcNow;
                     quarantineStub.ResolutionNotes = "Auto-resurrected: Queue connectivity restored";
 
-                    await candidateDbContext.SaveChangesAsync();
+                    await _sqlResiliencePolicy.ExecuteAsync(async () => await candidateDbContext.SaveChangesAsync());
 
                     context.Logger.LogWarning(
                         $"ResurrectingMessage | CorrelationId: {candidate.CorrelationId} | OutboxId: {candidate.OriginalOutboxMessageId} | QuarantinedId: {candidate.Id}");
+                }
+                catch (BrokenCircuitException)
+                {
+                    context.Logger.LogWarning(
+                        $"CircuitOpen | Database unreachable | CorrelationId: {candidate.CorrelationId} | QuarantinedId: {candidate.Id} | Will retry next cycle");
                 }
                 catch (DbUpdateConcurrencyException)
                 {
@@ -157,10 +172,15 @@ namespace Handler.Services
                     quarantineStub.DiscardedAt = DateTimeOffset.UtcNow;
                     quarantineStub.DiscardedBy = "TradingApp-AWS admin";
 
-                    await candidateDbContext.SaveChangesAsync();
+                    await _sqlResiliencePolicy.ExecuteAsync(async () => await candidateDbContext.SaveChangesAsync());
 
                     context.Logger.LogWarning(
                         $"CandidateDiscarded | CorrelationId: {candidate.CorrelationId} | OutboxId: {candidate.OriginalOutboxMessageId} | QuarantinedId: {candidate.Id}");
+                }
+                catch (BrokenCircuitException)
+                {
+                    context.Logger.LogWarning(
+                        $"CircuitOpen | Database unreachable | CorrelationId: {candidate.CorrelationId} | QuarantinedId: {candidate.Id} | Will retry next cycle");
                 }
                 catch (Exception ex)
                 {

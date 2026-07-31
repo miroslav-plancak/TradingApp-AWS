@@ -58,7 +58,7 @@ namespace TradingApp.Business.Services.Regular
             catch (Exception ex)
             {
                 _logger.LogError(ex, "CreateDeadLetterLogFailed | CorrelationId: {CorrelationId} | ClientOrderId: {ClientOrderId}", createRequest.CorrelationId, createRequest.ClientOrderId);
-                throw new Exception($"Failed to create dead letter log for client order {createRequest.ClientOrderId}", ex);
+                throw;
             }
         }
 
@@ -280,7 +280,7 @@ namespace TradingApp.Business.Services.Regular
             catch (Exception ex)
             {
                 _logger.LogError(ex, "MarkOutboxMessageAsProcessedFailed | ClientOrderId: {ClientOrderId}", clientOrderId);
-                throw new Exception($"Failed to mark outbox message as processed for client order {clientOrderId}", ex);
+                throw;
             }
         }
     }

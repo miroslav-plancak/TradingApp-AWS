@@ -19,6 +19,8 @@ namespace TradingApp.Infrastructure
 {
     public static class ServiceCollectionExtensions
     {
+        private const int SqlCommandTimeoutSeconds = 10;
+
         private static string GetSqlConnectionString()
         {
             return Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING")
@@ -31,15 +33,22 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+
         public static IServiceCollection AddTradingDbContext(this IServiceCollection services)
         {
-            services.AddDbContext<TradingDbContext>(options => options.UseSqlServer(GetSqlConnectionString()));
+            services.AddDbContext<TradingDbContext>(options =>
+                options.UseSqlServer(GetSqlConnectionString(), 
+                options => options.CommandTimeout(SqlCommandTimeoutSeconds)));
+
             return services;
         }
 
         public static IServiceCollection AddTradingDbContextFactory(this IServiceCollection services)
         {
-            services.AddDbContextFactory<TradingDbContext>(options => options.UseSqlServer(GetSqlConnectionString()));
+            services.AddDbContextFactory<TradingDbContext>(options =>
+                options.UseSqlServer(GetSqlConnectionString(), 
+                options => options.CommandTimeout(SqlCommandTimeoutSeconds)));
+
             return services;
         }
 
@@ -70,9 +79,31 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        // For classes that talk to exactly one downstream dependency through _resiliencePolicy - a
+        // shared circuit breaker is fine there, since there's nothing else it could wrongly block.
         public static IServiceCollection AddResiliencePolicy(this IServiceCollection services, string protectedResourceName)
         {
-            services.AddSingleton<IAsyncPolicy>(sp => 
+            services.AddSingleton<IAsyncPolicy>(sp =>
+            {
+                var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("ResiliencePolicy");
+
+                var retryPolicy = BuildRetryPolicy(logger, protectedResourceName);
+                var circuitBreakerPolicy = BuildCircuitBreakerPolicy(logger, protectedResourceName);
+
+                var resiliencePolicy = circuitBreakerPolicy.WrapAsync(retryPolicy);
+
+                return resiliencePolicy;
+            });
+
+            return services;
+        }
+
+        // For classes that do BOTH SQL writes and an SNS/SQS call - registers a separate, independently
+        // circuited IAsyncPolicy per policyKey, so a downed SQL Server can't trip the same breaker that
+        // guards the topic/queue publish (or vice versa). Resolve via [FromKeyedServices(policyKey)].
+        public static IServiceCollection AddResiliencePolicy(this IServiceCollection services, ResiliencePolicyKey policyKey, string protectedResourceName)
+        {
+            services.AddKeyedSingleton<IAsyncPolicy>(policyKey, (sp, _) =>
             {
                 var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("ResiliencePolicy");
 

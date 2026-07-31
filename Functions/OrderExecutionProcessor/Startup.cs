@@ -11,7 +11,8 @@ namespace LambdaBootstrap
         {
             services.AddTradingAppLogging();
             services.AddTradingDbContext();
-            services.AddResiliencePolicy("order_events_topic");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "OrderExecutionProcessor-Sql");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
             services.AddSnsClient();
 
             // Overrides the generator's default AddSingleton<OrderExecutionProcessor>() (registered

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.EntityFrameworkCore;
+using System;
 using System.Threading.Tasks;
 using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
 using TradingApp.Domain.Models.Enums;
@@ -26,6 +27,23 @@ namespace TradingApp.Domain
             });
 
             return dbContext.SaveChangesAsync();
+        }
+
+        public async static Task<UnpublishedTopicMessage?> CheckIfUnpublishedTopicMessageExistsAsync
+        (
+           this TradingDbContext dbContext,
+           Guid clientOrderId,
+           OrderStatus status,
+           string correlationId
+        )
+        {
+           var result = await dbContext.UnpublishedTopicMessages
+                .FirstOrDefaultAsync(x =>
+                    x.ClientOrderId == clientOrderId &&
+                    x.OrderStatus == status &&
+                    (string.IsNullOrEmpty(correlationId) || x.CorrelationId == correlationId));
+
+            return result;
         }
     }
 }
