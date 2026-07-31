@@ -3,11 +3,13 @@ using Amazon.Lambda.Core;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.CircuitBreaker;
 using System.Diagnostics;
 using System.Text.Json;
 using TradingApp.Domain;
+using TradingApp.Infrastructure;
 using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
@@ -22,7 +24,8 @@ namespace Handler
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
-        private readonly IAsyncPolicy _resiliencePolicy;
+        private readonly IAsyncPolicy _sqlResiliencePolicy;
+        private readonly IAsyncPolicy _messagingResiliencePolicy;
 
         private static int _topicFailureCount = 0;
         private const int MaxDegreeOfParallelism = 5;
@@ -31,12 +34,14 @@ namespace Handler
             TradingDbContext tradingDbContext,
             IDbContextFactory<TradingDbContext> dbContextFactory,
             IAmazonSimpleNotificationService snsClient,
-            IAsyncPolicy resiliencePolicy)
+            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
+            [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy)
         {
             _tradingDbContext = tradingDbContext;
             _dbContextFactory = dbContextFactory;
             _snsClient = snsClient;
-            _resiliencePolicy = resiliencePolicy;
+            _sqlResiliencePolicy = sqlResiliencePolicy;
+            _messagingResiliencePolicy = messagingResiliencePolicy;
 
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
@@ -47,12 +52,13 @@ namespace Handler
         {
             context.Logger.LogWarning($"ScheduledUnpublishedTopicMessagesProcessor triggered at: {DateTimeOffset.UtcNow}");
 
-            var unpublishedMessages = await _tradingDbContext.UnpublishedTopicMessages
-                .Where(x => x.PublishedAt == null && x.RetryCount < 5)
-                .OrderBy(x => x.CreatedAt)
-                .ThenBy(x => x.OrderStatus)
-                .Take(50)
-                .ToListAsync();
+            var unpublishedMessages = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                await _tradingDbContext.UnpublishedTopicMessages
+                    .Where(x => x.PublishedAt == null && x.RetryCount < 5)
+                    .OrderBy(x => x.CreatedAt)
+                    .ThenBy(x => x.OrderStatus)
+                    .Take(50)
+                    .ToListAsync());
 
             if (unpublishedMessages.Count == 0)
             {
@@ -137,61 +143,71 @@ namespace Handler
 
             await using (unpublishedMessageDbContext)
             {
+                int claimed;
+
                 try
                 {
-                    var claimed = await unpublishedMessageDbContext.UnpublishedTopicMessages
-                       .Where(x => x.Id == unpublishedMessage.Id && (x.ClaimedBy == null || x.ClaimedAt < DateTimeOffset.UtcNow.AddSeconds(-LEASE_SECONDS)))
-                       .ExecuteUpdateAsync(x => x
-                           .SetProperty(c => c.ClaimedBy, context.AwsRequestId)
-                           .SetProperty(c => c.ClaimedAt, DateTimeOffset.UtcNow)
-                        );
-
-                    if (claimed == 0)
-                    {
-                        context.Logger.LogWarning(
-                           $"UnpublishedMessageAlreadyClaimed | UnpublishedId: {unpublishedMessage.Id} | CorrelationId: {unpublishedMessage.CorrelationId} | Skipping - claimed by another invocation or lease still active");
-                        return ProcessUnpublishedMessageOutcome.PublishFailed;
-                    }
-
+                    claimed = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                        await unpublishedMessageDbContext.UnpublishedTopicMessages
+                           .Where(x => x.Id == unpublishedMessage.Id && (x.ClaimedBy == null || x.ClaimedAt < DateTimeOffset.UtcNow.AddSeconds(-LEASE_SECONDS)))
+                           .ExecuteUpdateAsync(x => x
+                               .SetProperty(c => c.ClaimedBy, context.AwsRequestId)
+                               .SetProperty(c => c.ClaimedAt, DateTimeOffset.UtcNow)
+                            ));
+                }
+                catch (BrokenCircuitException)
+                {
                     context.Logger.LogWarning(
-                          $"Trying to publish unpublishedTopicMessage | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} " +
-                          $"| ClientOrderId: {unpublishedMessage.ClientOrderId}");
+                        $"CircuitOpen | Database unreachable | Stopping retry batch | CorrelationId: {unpublishedMessage.CorrelationId}");
 
-                    var eventPayload = new OrderStatusEvent
-                    {
-                        ClientOrderId = unpublishedMessage.ClientOrderId,
-                        Status = unpublishedMessage.OrderStatus.ToString(),
-                        EventTime = unpublishedMessage.ProcessedAt,
-                        Sequence = unpublishedMessage.OrderStatus == OrderStatus.FILLED ? 2 : 1,
-                        CorrelationId = unpublishedMessage.CorrelationId
-                    };
+                    return ProcessUnpublishedMessageOutcome.CircuitOpen;
+                }
+                catch (Exception ex)
+                {
+                    context.Logger.LogError(
+                        $"ClaimFailed | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} | Error: {ex.Message}");
 
-                    var messageBody = JsonSerializer.Serialize(eventPayload);
+                    return ProcessUnpublishedMessageOutcome.PublishFailed;
+                }
 
-                    var request = new PublishRequest
-                    {
-                        TopicArn = _orderEventsTopicArn,
-                        Message = messageBody,
-                        Subject = "OrderProcessed",
-                        MessageGroupId = unpublishedMessage.ClientOrderId.ToString(),
-                        MessageDeduplicationId = Guid.NewGuid().ToString()
-                    };
+                if (claimed == 0)
+                {
+                    context.Logger.LogWarning(
+                       $"UnpublishedMessageAlreadyClaimed | UnpublishedId: {unpublishedMessage.Id} | CorrelationId: {unpublishedMessage.CorrelationId} | Skipping - claimed by another invocation or lease still active");
+                    return ProcessUnpublishedMessageOutcome.PublishFailed;
+                }
 
-                    await _resiliencePolicy.ExecuteAsync(async () =>
+                context.Logger.LogWarning(
+                      $"Trying to publish unpublishedTopicMessage | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} " +
+                      $"| ClientOrderId: {unpublishedMessage.ClientOrderId}");
+
+                var eventPayload = new OrderStatusEvent
+                {
+                    ClientOrderId = unpublishedMessage.ClientOrderId,
+                    Status = unpublishedMessage.OrderStatus.ToString(),
+                    EventTime = unpublishedMessage.ProcessedAt,
+                    Sequence = unpublishedMessage.OrderStatus == OrderStatus.FILLED ? 2 : 1,
+                    CorrelationId = unpublishedMessage.CorrelationId
+                };
+
+                var messageBody = JsonSerializer.Serialize(eventPayload);
+
+                var request = new PublishRequest
+                {
+                    TopicArn = _orderEventsTopicArn,
+                    Message = messageBody,
+                    Subject = "OrderProcessed",
+                    MessageGroupId = unpublishedMessage.ClientOrderId.ToString(),
+                    MessageDeduplicationId = Guid.NewGuid().ToString()
+                };
+
+                try
+                {
+                    await _messagingResiliencePolicy.ExecuteAsync(async () =>
                     {
                         SimulateTopicFailure(false, context);
                         await _snsClient.PublishAsync(request);
                     });
-
-                    await unpublishedMessageDbContext.UnpublishedTopicMessages
-                            .Where(x => x.Id == unpublishedMessage.Id && x.PublishedAt == null)
-                            .ExecuteUpdateAsync(x => x
-                                .SetProperty(x => x.PublishedAt, DateTimeOffset.UtcNow));
-
-                    context.Logger.LogWarning(
-                        $"TopicPublishMessageRetrySucceeded | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id}");
-
-                    return ProcessUnpublishedMessageOutcome.PublishSuccess;
                 }
                 catch (BrokenCircuitException)
                 {
@@ -202,11 +218,20 @@ namespace Handler
                 }
                 catch (AmazonSimpleNotificationServiceException snsEx)
                 {
-                    await unpublishedMessageDbContext.UnpublishedTopicMessages
-                            .Where(x => x.Id == unpublishedMessage.Id)
-                            .ExecuteUpdateAsync(x => x
-                                .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1)
-                                .SetProperty(x => x.LastError, snsEx.Message));
+                    try
+                    {
+                        await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                            await unpublishedMessageDbContext.UnpublishedTopicMessages
+                                    .Where(x => x.Id == unpublishedMessage.Id)
+                                    .ExecuteUpdateAsync(x => x
+                                        .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1)
+                                        .SetProperty(x => x.LastError, snsEx.Message)));
+                    }
+                    catch (Exception retryUpdateEx)
+                    {
+                        context.Logger.LogError(
+                            $"RetryCountUpdateFailed | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} | Error: {retryUpdateEx.Message}");
+                    }
 
                     context.Logger.LogError(
                         $"TopicPublishRetryFailed | CorrelationId: {unpublishedMessage.CorrelationId} " +
@@ -216,10 +241,19 @@ namespace Handler
                 }
                 catch (Exception ex)
                 {
-                    await unpublishedMessageDbContext.UnpublishedTopicMessages
-                          .Where(x => x.Id == unpublishedMessage.Id)
-                          .ExecuteUpdateAsync(x => x
-                              .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1));
+                    try
+                    {
+                        await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                            await unpublishedMessageDbContext.UnpublishedTopicMessages
+                                  .Where(x => x.Id == unpublishedMessage.Id)
+                                  .ExecuteUpdateAsync(x => x
+                                      .SetProperty(x => x.RetryCount, (x) => x.RetryCount + 1)));
+                    }
+                    catch (Exception retryUpdateEx)
+                    {
+                        context.Logger.LogError(
+                            $"RetryCountUpdateFailed | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} | Error: {retryUpdateEx.Message}");
+                    }
 
                     context.Logger.LogError(
                         $"TopicPublishRetryFailed | CorrelationId: {unpublishedMessage.CorrelationId} " +
@@ -227,6 +261,28 @@ namespace Handler
 
                     return ProcessUnpublishedMessageOutcome.PublishFailed;
                 }
+
+                try
+                {
+                    await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                        await unpublishedMessageDbContext.UnpublishedTopicMessages
+                                .Where(x => x.Id == unpublishedMessage.Id && x.PublishedAt == null)
+                                .ExecuteUpdateAsync(x => x
+                                    .SetProperty(x => x.PublishedAt, DateTimeOffset.UtcNow)));
+                }
+                catch (Exception ex)
+                {
+                    context.Logger.LogError(
+                        $"MarkPublishedAtFailed | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} | " +
+                        $"Event WAS published to SNS but not marked - may be re-published next cycle | Error: {ex.Message}");
+
+                    return ProcessUnpublishedMessageOutcome.PublishSuccess;
+                }
+
+                context.Logger.LogWarning(
+                    $"TopicPublishMessageRetrySucceeded | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id}");
+
+                return ProcessUnpublishedMessageOutcome.PublishSuccess;
             }
         }
 

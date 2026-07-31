@@ -17,7 +17,8 @@ namespace LambdaBootstrap
             services.AddTradingDbContext();
             services.AddTradingDbContextFactory();
             services.AddSqsClient();
-            services.AddResiliencePolicy("CREATE_ORDER_QUEUE");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "OutboxProcessingService-Sql");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "CREATE_ORDER_QUEUE");
 
             services.AddScoped<IOutboxQuarantineService, OutboxQuarantineService>();
             services.AddScoped<IOutboxProcessingService, OutboxProcessingService>();

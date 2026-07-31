@@ -4,10 +4,12 @@ using Amazon.Lambda.SQSEvents;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
+using TradingApp.Infrastructure;
 using TradingApp.Domain.Models.Entities.Order;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
@@ -21,7 +23,8 @@ namespace OrderExecutionProcessor
         private readonly TradingDbContext _tradingDbContext;
         private readonly IAmazonSimpleNotificationService _snsClient;
         private readonly string _orderEventsTopicArn;
-        private readonly IAsyncPolicy _resiliencePolicy;
+        private readonly IAsyncPolicy _sqlResiliencePolicy;
+        private readonly IAsyncPolicy _messagingResiliencePolicy;
 
         // Safe unguarded: FunctionHandler walks evnt.Records with a sequential foreach + await
         // (no Task.WhenAll/Select fan-out in this file), and one execution environment processes
@@ -29,16 +32,18 @@ namespace OrderExecutionProcessor
         private static int _topicFailureCount = 0;
 
         public OrderExecutionProcessor(
-            TradingDbContext tradingDbContext, 
+            TradingDbContext tradingDbContext,
             IAmazonSimpleNotificationService snsClient,
-            IAsyncPolicy resiliencePolicy
+            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
+            [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy
             )
         {
             _tradingDbContext = tradingDbContext;
             _snsClient = snsClient;
             _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
-            _resiliencePolicy = resiliencePolicy;
+            _sqlResiliencePolicy = sqlResiliencePolicy;
+            _messagingResiliencePolicy = messagingResiliencePolicy;
         }
 
         [LambdaFunction]
@@ -74,12 +79,10 @@ namespace OrderExecutionProcessor
                 return;
             }
 
-            // TODO: unbounded DB calls are even more dangerous here than on Azure - Lambda's configured
-            // timeout is 15 SECONDS by default (not the up-to-15-minute Consumption plan window this
-            // comment used to refer to), so a hung SQL call kills the whole invocation much faster.
-            // Add a command timeout once the connection string / DbContext setup is finalized.
-            var orderExists = await _tradingDbContext.Orders
-                .AnyAsync(o => o.ClientOrderId == payload.ClientOrderId);
+            //ResiliencePolicy produces uncaught BrokenCircuitException when both policies are exhausted,
+            //which effectively fails the SQS triggered invocation.
+            var orderExists = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                await _tradingDbContext.Orders.AnyAsync(o => o.ClientOrderId == payload.ClientOrderId));
 
             if (!orderExists)
             {
@@ -91,12 +94,13 @@ namespace OrderExecutionProcessor
             var random = new Random();
             var randomStatus = random.Next(2) == 0 ? OrderStatus.ACKNOWLEDGED : OrderStatus.REJECTED;
 
-            var orderRowsProcessed = await _tradingDbContext.Orders
-                .Where(x => x.ClientOrderId == payload.ClientOrderId && !x.IsProcessed)
-                .ExecuteUpdateAsync(x => x
-                    .SetProperty(x => x.Status, randomStatus)
-                    .SetProperty(x => x.IsProcessed, true)
-                    .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow));
+            var orderRowsProcessed = await _sqlResiliencePolicy.ExecuteAsync(async () =>
+                await _tradingDbContext.Orders
+                    .Where(x => x.ClientOrderId == payload.ClientOrderId && !x.IsProcessed)
+                    .ExecuteUpdateAsync(x => x
+                        .SetProperty(x => x.Status, randomStatus)
+                        .SetProperty(x => x.IsProcessed, true)
+                        .SetProperty(x => x.UpdatedAt, DateTimeOffset.UtcNow)));
 
             if (orderRowsProcessed == 0)
             {
@@ -138,7 +142,7 @@ namespace OrderExecutionProcessor
                 context.Logger.LogWarning(
                     $"PublishingEventToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
 
-                await _resiliencePolicy.ExecuteAsync(async () =>
+                await _messagingResiliencePolicy.ExecuteAsync(async () =>
                 {
                     SimulateTopicFailure(false, context);
 
@@ -153,7 +157,7 @@ namespace OrderExecutionProcessor
             {
                 context.Logger.LogWarning(
                     $"CircuitOpen | CorrelationId: {correlationId} | Order is {status}, event not yet published | Falling back to UnpublishedTopicMessages");
-
+          
                 await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
 
                 context.Logger.LogWarning(

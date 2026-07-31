@@ -2,6 +2,7 @@ using Amazon.Lambda.Annotations;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using Microsoft.EntityFrameworkCore;
+using Polly;
 using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OrderNotificationSequences;
@@ -16,12 +17,15 @@ namespace NotificationProcessor
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly HttpClient _httpClient;
+        private readonly IAsyncPolicy _resiliencePolicy;
+
         private readonly string _teamsWebhookUrl;
 
-        public NotificationProcessor(TradingDbContext tradingDbContext, HttpClient httpClient)
+        public NotificationProcessor(TradingDbContext tradingDbContext, HttpClient httpClient, IAsyncPolicy resiliencePolicy)
         {
             _tradingDbContext = tradingDbContext;
             _httpClient = httpClient;
+            _resiliencePolicy = resiliencePolicy;
 
             _teamsWebhookUrl = Environment.GetEnvironmentVariable("TEAMS_NOTIFICATION_WEBHOOK_URL")
                 ?? throw new InvalidOperationException("TEAMS_NOTIFICATION_WEBHOOK_URL environment variable is not set.");
@@ -57,8 +61,9 @@ namespace NotificationProcessor
             context.Logger.LogWarning(
                 $"ReceivedEvent | CorrelationId: {correlationId} | Status: {orderStatusEvent.Status} | Sequence: {orderStatusEvent.Sequence}");
 
-            var tracking = await _tradingDbContext.OrderNotificationSequences
-                .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId);
+            var tracking = await _resiliencePolicy.ExecuteAsync(async () =>
+                 await _tradingDbContext.OrderNotificationSequences
+                    .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId));
 
             var lastProcessedSequence = tracking?.LastProcessedSequence ?? 0;
 
@@ -68,17 +73,32 @@ namespace NotificationProcessor
                     $"OutOfOrder | Expected sequence {lastProcessedSequence + 1} but got {orderStatusEvent.Sequence} | " +
                     $"PersistingFilledToDB | CorrelationId: {correlationId}");
 
+                var rowExists = await _resiliencePolicy.ExecuteAsync(async () =>
+                    await _tradingDbContext.PendingFilledNotifications
+                        .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId));
+
+                if (rowExists != null)
+                {
+                    context.Logger.LogWarning(
+                        $"PendingFilledAlreadyExists | CorrelationId: {correlationId} | ClientOrderId: {orderStatusEvent.ClientOrderId} | Skipping duplicate persist");
+
+                    return;
+                }
+
                 var serializedOrderEventPayload = JsonSerializer.Serialize(orderStatusEvent);
 
-                _tradingDbContext.PendingFilledNotifications.Add(new PendingFilledNotification
+                await _resiliencePolicy.ExecuteAsync(async () =>
                 {
-                    ClientOrderId = orderStatusEvent.ClientOrderId,
-                    EventPayload = serializedOrderEventPayload,
-                    CorrelationId = correlationId,
-                    StoredAt = DateTimeOffset.UtcNow
-                });
+                    _tradingDbContext.PendingFilledNotifications.Add(new PendingFilledNotification
+                    {
+                        ClientOrderId = orderStatusEvent.ClientOrderId,
+                        EventPayload = serializedOrderEventPayload,
+                        CorrelationId = correlationId,
+                        StoredAt = DateTimeOffset.UtcNow
+                    });
 
-                await _tradingDbContext.SaveChangesAsync();
+                    await _tradingDbContext.SaveChangesAsync();
+                });
 
                 context.Logger.LogWarning(
                     $"FilledPersistedToDB | ClientOrderId: {orderStatusEvent.ClientOrderId} | CorrelationId: {correlationId}");
@@ -88,8 +108,9 @@ namespace NotificationProcessor
 
             await ProcessNotification(orderStatusEvent, correlationId, context);
 
-            var pendingFilledOrder = await _tradingDbContext.PendingFilledNotifications
-                .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId);
+            var pendingFilledOrder = await _resiliencePolicy.ExecuteAsync(async () =>
+                    await _tradingDbContext.PendingFilledNotifications
+                         .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId));
 
             if (pendingFilledOrder != null)
             {
@@ -104,20 +125,33 @@ namespace NotificationProcessor
                     await ProcessNotification(deserializedPendingFilledOrder, correlationId, context);
                 }
 
-                _tradingDbContext.PendingFilledNotifications.Remove(pendingFilledOrder);
+                await _resiliencePolicy.ExecuteAsync(async () => {
+                    _tradingDbContext.PendingFilledNotifications.Remove(pendingFilledOrder);
 
-                if (tracking != null)
-                {
-                    _tradingDbContext.OrderNotificationSequences.Remove(tracking);
-                }
+                    if (tracking != null)
+                    {
+                        _tradingDbContext.OrderNotificationSequences.Remove(tracking);
+                    }
 
-                await _tradingDbContext.SaveChangesAsync();
-
+                    await _tradingDbContext.SaveChangesAsync();
+                });
+            
                 return;
             }
 
             if (tracking == null && orderStatusEvent.Status != "REJECTED")
             {
+                var rowExists = await _resiliencePolicy.ExecuteAsync(async () =>
+                    await _tradingDbContext.OrderNotificationSequences
+                        .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId));
+
+                if (rowExists != null)
+                {
+                    context.Logger.LogWarning(
+                      $"OrderNotificationSequenceExists | CorrelationId: {correlationId} | ClientOrderId: {orderStatusEvent.ClientOrderId} | Skipping duplicate persist");
+                    return;
+                }
+
                 _tradingDbContext.OrderNotificationSequences.Add(new OrderNotificationSequence
                 {
                     ClientOrderId = orderStatusEvent.ClientOrderId,
@@ -141,8 +175,8 @@ namespace NotificationProcessor
                         $"TrackingRemoved | FinalSequenceProcessed | CorrelationId: {correlationId}");
                 }
             }
+            await _resiliencePolicy.ExecuteAsync(async () => await _tradingDbContext.SaveChangesAsync());
 
-            await _tradingDbContext.SaveChangesAsync();
         }
 
         private async Task ProcessNotification(OrderStatusEvent orderEvent, string correlationId, ILambdaContext context)

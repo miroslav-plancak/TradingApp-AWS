@@ -12,7 +12,8 @@ var services = new ServiceCollection();
 services.AddTradingAppLogging();
 services.AddTradingDbContext();
 services.AddSnsClient();
-services.AddResiliencePolicy("order_events_topic");
+services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "OrderExecutionProcessor-Sql");
+services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
 var serviceProvider = services.BuildServiceProvider();
 
 var sqsClient = new AmazonSQSClient(Amazon.RegionEndpoint.EUNorth1);
@@ -38,7 +39,8 @@ while (true)
             var function = new OrderExecutionProcessor.OrderExecutionProcessor(
                                 scope.ServiceProvider.GetRequiredService<TradingDbContext>(),
                                 scope.ServiceProvider.GetRequiredService<IAmazonSimpleNotificationService>(),
-                                scope.ServiceProvider.GetRequiredService<IAsyncPolicy>()
+                                scope.ServiceProvider.GetRequiredKeyedService<IAsyncPolicy>(ResiliencePolicyKey.Sql),
+                                scope.ServiceProvider.GetRequiredKeyedService<IAsyncPolicy>(ResiliencePolicyKey.Messaging)
                             );
 
             var sqsEvent = new SQSEvent

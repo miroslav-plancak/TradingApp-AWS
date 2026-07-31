@@ -4,7 +4,8 @@
     {
         Filled, 
         FilledPublishDeferred,
+        FilledButNotSavedNorPublished,
         SaveFailed, 
-        CircuitOpen
+        SqlCircuitOpen
     }
 }

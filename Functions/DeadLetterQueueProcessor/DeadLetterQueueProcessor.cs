@@ -2,6 +2,7 @@
 using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using Microsoft.EntityFrameworkCore;
+using Polly;
 using System.Text.Json;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain;
@@ -17,6 +18,7 @@ namespace DeadLetterQueueProcessor
         private readonly TradingDbContext _tradingDbContext;
         private readonly IDeadLetterService _deadLetterService;
         private readonly HttpClient _httpClient;
+        private readonly IAsyncPolicy _resiliencePolicy;
         private readonly string? _teamsWebhookUrl;
 
         private const string themeColor = "D70000";
@@ -24,11 +26,13 @@ namespace DeadLetterQueueProcessor
         public DeadLetterQueueProcessor(
            TradingDbContext tradingDbContext,
            IDeadLetterService deadLetterService,
-           HttpClient httpClient)
+           HttpClient httpClient,
+           IAsyncPolicy resiliencePolicy)
         {
             _tradingDbContext = tradingDbContext;
             _deadLetterService = deadLetterService;
             _httpClient = httpClient;
+            _resiliencePolicy = resiliencePolicy;
 
             _teamsWebhookUrl = Environment.GetEnvironmentVariable("TEAMS_DLQ_WEBHOOK_URL")
                 ?? throw new InvalidOperationException("TEAMS_DLQ_WEBHOOK_URL environment variable is not set.");
@@ -45,9 +49,6 @@ namespace DeadLetterQueueProcessor
 
         private async Task ProcessDeadLetterMessage(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            var tradingDBContext = _tradingDbContext.GetHashCode();
-            context.Logger.LogWarning($"TradingDBContext is:{tradingDBContext}");
-
             SQSEvent.MessageAttribute? correlationIdAttribute = null;
             var hasRealCorrelationId = record.MessageAttributes != null
                 && record.MessageAttributes.TryGetValue("CorrelationId", out correlationIdAttribute)
@@ -73,11 +74,13 @@ namespace DeadLetterQueueProcessor
                 context.Logger.LogWarning(
                     $"ProcessingDeadLetter | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId}");
 
-                var order = await _tradingDbContext.Orders
-                    .FirstOrDefaultAsync(x => x.ClientOrderId == payload.ClientOrderId);
+                var order = await _resiliencePolicy.ExecuteAsync(async () =>
+                    await _tradingDbContext.Orders
+                     .FirstOrDefaultAsync(x => x.ClientOrderId == payload.ClientOrderId));
 
-                var deadLetterLogAlreadyExists = await _tradingDbContext.DeadLetterLogs
-                    .FirstOrDefaultAsync(x => x.ClientOrderId == payload.ClientOrderId && !x.IsResolved);
+                var deadLetterLogAlreadyExists = await _resiliencePolicy.ExecuteAsync(async () =>
+                      await _tradingDbContext.DeadLetterLogs
+                        .FirstOrDefaultAsync(x => x.ClientOrderId == payload.ClientOrderId && !x.IsResolved));
 
                 if(deadLetterLogAlreadyExists != null)
                 {
@@ -110,19 +113,25 @@ namespace DeadLetterQueueProcessor
                         $"OrderAlreadyProcessed | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId} " +
                         $"| Status: {order.Status}");
 
-                    await _deadLetterService.MarkOutboxMessageAsProcessedAsync(payload.ClientOrderId);
+                    await _resiliencePolicy.ExecuteAsync(async () =>
+                        await _deadLetterService.MarkOutboxMessageAsProcessedAsync(payload.ClientOrderId));
+
                     return;
                 }
 
                 context.Logger.LogError(
                     $"OrderFailedAndInDLQ | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId}");
 
-                order.Status = OrderStatus.REJECTED;
-                order.UpdatedAt = DateTimeOffset.UtcNow;
-                order.IsProcessed = true;
-                await _tradingDbContext.SaveChangesAsync();
+                await _resiliencePolicy.ExecuteAsync(async () =>
+                {
+                    order.Status = OrderStatus.REJECTED;
+                    order.UpdatedAt = DateTimeOffset.UtcNow;
+                    order.IsProcessed = true;
+                    await _tradingDbContext.SaveChangesAsync();
+                });
 
-                await _deadLetterService.MarkOutboxMessageAsProcessedAsync(payload.ClientOrderId);
+                await _resiliencePolicy.ExecuteAsync(async () =>
+                         await _deadLetterService.MarkOutboxMessageAsProcessedAsync(payload.ClientOrderId));
 
                 // WORKAROUND: Azure's ServiceBusReceivedMessage.DeadLetterReason is populated
                 // automatically by Service Bus itself (e.g. "MaxDeliveryCountExceeded"). SQS has no
