@@ -12,6 +12,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\..\TradingApp.LocalHarnessCore\TradingApp.LocalHarnessCore.csproj" />
 		<ProjectReference Include="..\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.csproj" />
 		<ProjectReference Include="..\..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
 	</ItemGroup>
