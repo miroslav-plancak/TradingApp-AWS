@@ -1,41 +1,14 @@
-using Amazon.Lambda.TestUtilities;
-using Amazon.SimpleNotificationService;
-using Microsoft.EntityFrameworkCore;
+using Handler;
+using LambdaBootstrap;
 using Microsoft.Extensions.DependencyInjection;
-using Polly;
-using TradingApp.Domain;
-using TradingApp.Infrastructure;
+using TradingApp.LocalHarnessCore;
 
 var services = new ServiceCollection();
-services.AddTradingAppLogging();
-services.AddTradingDbContextFactory();
-services.AddSnsClient();
-services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "ScheduledOrderStatusProcessor-Sql");
-services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
+new Startup().ConfigureServices(services);
 var serviceProvider = services.BuildServiceProvider();
 
-Console.WriteLine("Simulating EventBridge Scheduler - running ScheduledOrderStatusProcessor every 60s... (Ctrl+C to stop)");
-
-while (true)
+await ScheduledHarness.RunAsync(serviceProvider, async (sp, context) =>
 {
-    try
-    {
-        using var scope = serviceProvider.CreateScope();
-        var function = new Handler.ScheduledOrderStatusProcessor(
-            scope.ServiceProvider.GetRequiredService<TradingDbContext>(),
-            scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>(),
-            scope.ServiceProvider.GetRequiredService<IAmazonSimpleNotificationService>(),
-            scope.ServiceProvider.GetRequiredKeyedService<IAsyncPolicy>(ResiliencePolicyKey.Sql),
-            scope.ServiceProvider.GetRequiredKeyedService<IAsyncPolicy>(ResiliencePolicyKey.Messaging));
-
-        await function.FunctionHandler(new TestLambdaContext());
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Tick failed: {ex.Message}");
-        // deliberately not rethrown - one bad tick shouldn't kill the harness,
-        // same reasoning as the ReceiveMessageAsync guard we discussed earlier
-    }
-
-    await Task.Delay(TimeSpan.FromMinutes(1));
-}
+    var function = sp.GetRequiredService<ScheduledOrderStatusProcessor>();
+    await function.FunctionHandler(context);
+}, "ScheduledOrderStatusProcessor every 60s... (Ctrl+C to stop)");

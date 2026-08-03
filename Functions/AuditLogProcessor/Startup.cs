@@ -10,6 +10,8 @@ namespace LambdaBootstrap
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddTradingAppLogging();
+
+            services.AddScoped<AuditLogProcessor.AuditLogProcessor>();
         }
     }
 }

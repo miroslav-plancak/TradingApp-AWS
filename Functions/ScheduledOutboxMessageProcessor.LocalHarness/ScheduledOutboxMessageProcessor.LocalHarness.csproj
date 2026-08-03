@@ -14,6 +14,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\ScheduledOutboxMessageProcessor\ScheduledOutboxMessageProcessor.csproj" />
 		<ProjectReference Include="..\..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
+		<ProjectReference Include="..\..\TradingApp.LocalHarnessCore\TradingApp.LocalHarnessCore.csproj" />
 	</ItemGroup>
 	
 </Project>
