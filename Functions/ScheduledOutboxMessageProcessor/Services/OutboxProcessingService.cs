@@ -336,6 +336,7 @@ namespace Handler.Services
                 return ProcessOutboxMessageOutcome.Sent;
             }
         }
+
         private void GenerateLogBasedOnResults(ILambdaContext context, int successCount, int failureCount, bool circuitOpened)
         {
             if (circuitOpened)

@@ -47,12 +47,9 @@ namespace OrderExecutionProcessor
         }
 
         [LambdaFunction]
-        public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
+        public async Task<SQSBatchResponse> FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
-            foreach (var record in evnt.Records)
-            {
-                await ProcessOrderMessage(record, context);
-            }
+            return await SqsBatchHandler.BatchSqsMessages(evnt, context, ProcessOrderMessage);
         }
 
         private async Task ProcessOrderMessage(SQSEvent.SQSMessage record, ILambdaContext context)
@@ -79,8 +76,6 @@ namespace OrderExecutionProcessor
                 return;
             }
 
-            //ResiliencePolicy produces uncaught BrokenCircuitException when both policies are exhausted,
-            //which effectively fails the SQS triggered invocation.
             var orderExists = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 await _tradingDbContext.Orders.AnyAsync(o => o.ClientOrderId == payload.ClientOrderId));
 

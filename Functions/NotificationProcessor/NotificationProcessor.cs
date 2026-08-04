@@ -8,6 +8,7 @@ using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OrderNotificationSequences;
 using TradingApp.Domain.Models.Entities.PendingFilledNotification;
 using TradingApp.Events.Events;
+using TradingApp.Infrastructure;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -32,12 +33,9 @@ namespace NotificationProcessor
         }
 
         [LambdaFunction]
-        public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
+        public async Task<SQSBatchResponse> FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
-            foreach (var record in evnt.Records)
-            {
-                await ProcessRecord(record, context);
-            }
+            return await SqsBatchHandler.BatchSqsMessages(evnt, context, ProcessRecord);
         }
 
         private async Task ProcessRecord(SQSEvent.SQSMessage record, ILambdaContext context)

@@ -8,6 +8,7 @@ using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Payloads;
+using TradingApp.Infrastructure;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -39,12 +40,9 @@ namespace DeadLetterQueueProcessor
         }
 
         [LambdaFunction]
-        public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
+        public async Task<SQSBatchResponse> FunctionHandler(SQSEvent evnt, ILambdaContext context)
         {
-            foreach (var record in evnt.Records)
-            {
-                await ProcessDeadLetterMessage(record, context);
-            }
+            return await SqsBatchHandler.BatchSqsMessages(evnt, context, ProcessDeadLetterMessage);
         }
 
         private async Task ProcessDeadLetterMessage(SQSEvent.SQSMessage record, ILambdaContext context)
