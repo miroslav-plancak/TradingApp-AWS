@@ -2,6 +2,7 @@
 using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,23 @@ namespace TradingApp.Infrastructure
     public static class ServiceCollectionExtensions
     {
         private const int SqlCommandTimeoutSeconds = 10;
+
+        private static readonly HashSet<int> _sqlServerTransientErrorNumbers = new()
+        {
+            4060,   // Cannot open database requested by the login
+			10928,  // Resource limit reached
+			10929,
+            40197,  // The service has encountered an error processing your request
+			40501,  // The service is currently busy
+			40613,  // Database unavailable
+			49918,  // Cannot process request. Not enough resources
+			49919,
+            49920,
+            1205,   // Deadlock
+			233,    // Connection initialization error
+			64,     // Network-related error
+			-2      // Timeout
+		};
 
         private static string GetSqlConnectionString()
         {
@@ -107,7 +125,7 @@ namespace TradingApp.Infrastructure
             {
                 var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("ResiliencePolicy");
 
-                var retryPolicy = BuildRetryPolicy(logger, protectedResourceName);
+                var retryPolicy = BuildRetryPolicy(logger, protectedResourceName, policyKey);
                 var circuitBreakerPolicy = BuildCircuitBreakerPolicy(logger, protectedResourceName);
 
                 var resiliencePolicy = circuitBreakerPolicy.WrapAsync(retryPolicy);
@@ -135,10 +153,10 @@ namespace TradingApp.Infrastructure
                             logger.LogWarning("CircuitBreaker HALF-OPEN | Testing {Resource} connectivity...", protectedResourceName));
         }
 
-        private static AsyncRetryPolicy BuildRetryPolicy(ILogger logger, string protectedResourceName)
+        private static AsyncRetryPolicy BuildRetryPolicy(ILogger logger, string protectedResourceName, ResiliencePolicyKey? policyKey = null)
         {
             return Policy
-                .Handle<Exception>(IsTransientAWSException)
+                .Handle<Exception>(exception => IsTransientException(exception, policyKey))
                 .WaitAndRetryAsync(
                     retryCount: 3,
                     sleepDurationProvider: CalculateSleepDuration,
@@ -146,6 +164,13 @@ namespace TradingApp.Infrastructure
                         logger.LogWarning(
                             "RetryAttempt {Attempt} | {Resource} | Waiting {Delay}ms | Error: {Error}",
                             attempt, protectedResourceName, delay.TotalMilliseconds, exception.Message));
+        }
+
+        private static bool IsTransientException(Exception exception, ResiliencePolicyKey? policyKey)
+        {
+            return policyKey == ResiliencePolicyKey.Messaging
+                ? IsTransientAWSException(exception)
+                : IsTransientSQLException(exception);
         }
 
         private static bool IsTransientAWSException(Exception exception)
@@ -161,14 +186,31 @@ namespace TradingApp.Infrastructure
                        awsEx.StatusCode == HttpStatusCode.GatewayTimeout ||      // 504
                        awsEx.StatusCode == HttpStatusCode.RequestTimeout;        // 408  
             }
+            
+           return AreThereAnyTransientHttpExceptions(exception); 
+        }
 
-            if (exception is HttpRequestException || exception is TimeoutException) 
+        private static bool IsTransientSQLException(Exception exception)
+        {
+            if (exception is SqlException sqlEx)
+            {
+                return _sqlServerTransientErrorNumbers.Contains(sqlEx.Number);
+            }
+          
+           return AreThereAnyTransientHttpExceptions(exception);
+         
+        }
+
+        private static bool AreThereAnyTransientHttpExceptions(Exception exception)
+        {
+            if (exception is HttpRequestException || exception is TimeoutException)
                 return true;
 
-            if (ContainsTransientKeyword(exception.Message)) 
+
+            if (ContainsTransientKeyword(exception.Message))
                 return true;
-           
-            if (exception.GetType().Name.Contains("Transient", StringComparison.OrdinalIgnoreCase)) 
+
+            if (exception.GetType().Name.Contains("Transient", StringComparison.OrdinalIgnoreCase))
                 return true;
 
             return false;
