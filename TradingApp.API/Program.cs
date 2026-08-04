@@ -1,34 +1,24 @@
-﻿using Azure.Identity;
+﻿using Amazon;
+using Amazon.SecretsManager;
+using Amazon.SecretsManager.Model;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using TradingApp.Business;
 using TradingApp.Business.Middleware;
-using TradingApp.Domain;
+using TradingApp.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var keyVaultUrl = new Uri("https://tradingapp-demo-kv.vault.azure.net/");
-var credential = new DefaultAzureCredential();
-
-var secretClient = new Azure.Security.KeyVault.Secrets.SecretClient(keyVaultUrl, credential);
-
-builder.Configuration.AddAzureKeyVault(keyVaultUrl, credential);
-
-var aiSecret = secretClient.GetSecret("APPLICATIONINSIGHTS-CONNECTION-STRING").Value.Value;
-
-builder.Services.AddApplicationInsightsTelemetry(options =>
+var secretsManagerClient = new AmazonSecretsManagerClient(RegionEndpoint.EUNorth1);
+var secretResponse = await secretsManagerClient.GetSecretValueAsync(new GetSecretValueRequest
 {
-    options.ConnectionString = aiSecret;
-    options.EnableAdaptiveSampling = false;
+    SecretId = "TradingApp/SqlConnectionString"
 });
+Environment.SetEnvironmentVariable("SQL_CONNECTION_STRING", secretResponse.SecretString);
 
-builder.Services.AddDbContext<TradingDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
+builder.Services.AddTradingDbContext();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

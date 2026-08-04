@@ -336,12 +336,12 @@ database with all 7 tables, indexes, and constraints.
 
 ### 2. Environment variables
 
-No Key Vault/Secrets Manager — everything is a plain environment variable, read via
-`Environment.GetEnvironmentVariable(...)`:
+For the **Lambda functions** — no Key Vault/Secrets Manager, everything is a plain environment
+variable, read via `Environment.GetEnvironmentVariable(...)`:
 
 | Variable | Used by |
 |---|---|
-| `SQL_CONNECTION_STRING` | Every function touching SQL Server |
+| `SQL_CONNECTION_STRING` | Every Lambda function touching SQL Server |
 | `CREATE_ORDER_QUEUE_URL` | `ScheduledOutboxMessageProcessor` |
 | `ORDER_EVENTS_TOPIC_ARN` | `OrderExecutionProcessor`, `ScheduledOrderStatusProcessor`, `ScheduledUnpublishedTopicMessagesProcessor` |
 | `TEAMS_NOTIFICATION_WEBHOOK_URL` | `NotificationProcessor` |
@@ -350,6 +350,17 @@ No Key Vault/Secrets Manager — everything is a plain environment variable, rea
 (`NotificationProcessor`, `RiskAnalysisProcessor`, `AuditLogProcessor`, `DeadLetterQueueProcessor`
 consume their own SQS queue directly via the Lambda trigger / local harness poll — no queue URL env
 var needed on the consuming side.)
+
+**`TradingApp.API` is the one exception** — it used to load config from a real Azure Key Vault via
+`DefaultAzureCredential` (a stale leftover from the original Azure clone that meant it couldn't start
+without an `az login` against a specific Azure AD tenant), migrated 2026-08-04. It now fetches
+`SQL_CONNECTION_STRING` from **AWS Secrets Manager** at startup (`Program.cs`, secret name
+`TradingApp/SqlConnectionString`, region `eu-north-1` — same region as the SQS/SNS clients) and sets
+it as an environment variable before calling the same `AddTradingDbContext()` extension every Lambda
+uses — so the DB-context registration itself is identical everywhere, only *where the value comes
+from* differs for this one project. Application Insights was removed outright, not replaced — there's
+no AWS equivalent wired up (CloudWatch via each Lambda's own logging is the AWS-side tracing story,
+see Distributed Tracing above; `TradingApp.API` itself has no request-level tracing today).
 
 ### 3. Run
 
@@ -369,8 +380,10 @@ verify the actual deployed artifact, not for routine development.
 
 ## Notes
 
-- SQL Server and AWS credentials are the only two things every function/harness needs locally — there
-  is no Key Vault, no Secrets Manager, no Application Insights in this AWS port
+- SQL Server and AWS credentials are the only two things every Lambda function/harness needs locally —
+  no Key Vault, no Secrets Manager, no Application Insights for those. `TradingApp.API` is the
+  exception: it needs AWS credentials with `secretsmanager:GetSecretValue` on
+  `TradingApp/SqlConnectionString` to start at all (see Environment Variables above)
 - `AmazonSQSClient`/`AmazonSimpleNotificationServiceClient` use the default AWS SDK credential chain —
   no explicit key/secret wiring in code
 - `RiskAnalysisProcessor` and `AuditLogProcessor` are currently stubs (a placeholder delay and, for
