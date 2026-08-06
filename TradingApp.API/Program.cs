@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
+using TradingApp.API;
+using TradingApp.API.BackgroundServices;
 using TradingApp.Business;
 using TradingApp.Business.Middleware;
 using TradingApp.Infrastructure;
@@ -25,10 +27,17 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.RegisterBusiness();
 
+builder.Services.AddSignalR();
+builder.Services.AddHostedService<SignalRPushBackgroundService>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",
-        builder => builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        builder => builder
+        .WithOrigins("http://localhost:4200", "https://localhost:4200")
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .AllowCredentials());
 });
 
 var app = builder.Build();
@@ -45,5 +54,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
+
+app.MapAppHubs();
 
 app.Run();
