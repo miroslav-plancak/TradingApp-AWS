@@ -16,7 +16,8 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5275",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "SIGNALR_PUSH_QUEUE_URL": "https://sqs.eu-north-1.amazonaws.com/465861110788/signalr_push_queue.fifo"
       }
     },
     "https": {
@@ -26,7 +27,8 @@
       "launchUrl": "swagger",
       "applicationUrl": "https://localhost:7224;http://localhost:5275",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "SIGNALR_PUSH_QUEUE_URL": "https://sqs.eu-north-1.amazonaws.com/465861110788/signalr_push_queue.fifo"
       }
     },
     "IIS Express": {

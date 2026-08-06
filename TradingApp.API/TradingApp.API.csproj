@@ -12,17 +12,19 @@
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.100.7" />
+	<PackageReference Include="AWSSDK.SQS" Version="4.0.100.3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.5">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
-
+	
   <ItemGroup>
 	<ProjectReference Include="..\TradingApp.Business\TradingApp.Business.csproj" />
     <ProjectReference Include="..\TradingApp.Domain\TradingApp.Domain.csproj" />
 	<ProjectReference Include="..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
+	<ProjectReference Include="..\TradingApp.Events\TradingApp.Events.csproj" />
   </ItemGroup>
 
 </Project>
