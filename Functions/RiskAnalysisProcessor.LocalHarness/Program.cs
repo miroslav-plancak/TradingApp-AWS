@@ -11,6 +11,6 @@ var queueUrl = "https://sqs.eu-north-1.amazonaws.com/465861110788/risk_analysis_
 await SqsHarness.RunAsync(queueUrl, serviceProvider, async (sp, sqsEvent, context) =>
 {
     var function = sp.GetRequiredService<RiskAnalysisProcessor.RiskAnalysisProcessor>();
-    await function.FunctionHandler(sqsEvent, context);
+    return await function.FunctionHandler(sqsEvent, context);
 }, "Listening for order status events on risk_analysis_queue.fifo... (Ctrl+C to stop)");
 

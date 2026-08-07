@@ -10,6 +10,10 @@ var queueUrl = "https://sqs.eu-north-1.amazonaws.com/465861110788/CREATE_ORDER_Q
 
 await SqsHarness.RunAsync(queueUrl, serviceProvider, async (sp, sqsEvent, context) =>
 {
-    var function = sp.GetRequiredService<OrderExecutionProcessor.OrderExecutionProcessor>(); 
-    await function.FunctionHandler(sqsEvent, context);
-}, "Listening for real messages on CREATE_ORDER_QUEUE.fifo... (Ctrl+C to stop)");
+    var function = sp.GetRequiredService<OrderExecutionProcessor.OrderExecutionProcessor>();
+    return await function.FunctionHandler(sqsEvent, context);
+},
+"Listening for real messages on CREATE_ORDER_QUEUE.fifo... (Ctrl+C to stop)",
+// Only matters for a message that actually fails queue's real 120s VisibilityTimeout
+// applies to every other message untouched. Works only when SimulateRedirectToDeadLetterQueue(true);
+failureVisibilityTimeoutSeconds: 10);
