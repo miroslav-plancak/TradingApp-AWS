@@ -10,6 +10,7 @@ namespace TradingApp.Business.Interfaces.Services
         Task<CreatedOrderResponseDTO> CreateOrderAsync(CreateOrderRequestDTO createOrder);
         Task <IEnumerable<OrderResponseDTO>> GetOrdersAsync();
         Task <OrderResponseDTO> GetOrderByIdAsync(Guid orderId);
+        Task <OrderResponseDTO> GetOrderByClientOrderIdAsync(Guid clientOrderId);
         Task<bool> DeleteOrderAsync(Guid orderId);
         Task<int> DeleteAllOrdersAsync();
     }

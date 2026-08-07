@@ -10,6 +10,7 @@ namespace TradingApp.Business.Interfaces.Repositories
         Task<Order> CreateOrderAsync(Order order);
         Task<IEnumerable<Order>> GetOrdersAsync();
         Task<Order> GetOrderByIdAsync(Guid orderId);
+        Task<Order> GetOrderByClientOrderIdAsync(Guid clientOrderId);
         Task<bool> DeleteOrderAsync(Guid orderId);
         Task<int> DeleteAllOrdersAsync();
     }
