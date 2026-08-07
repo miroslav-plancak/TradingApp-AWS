@@ -69,6 +69,25 @@ namespace TradingApp.Business.Repositories
             }
         }
 
+        public async Task<Order> GetOrderByClientOrderIdAsync(Guid clientOrderId)
+        {
+            try
+            {
+                var result = await _tradingDbContext.Orders
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(x => x.ClientOrderId == clientOrderId);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "DatabaseError | Failed to get order | ClientOrderId: {ClientOrderId}",
+                    clientOrderId);
+                throw;
+            }
+        }
+
         public async Task<IEnumerable<Order>> GetOrdersAsync()
         {
             try

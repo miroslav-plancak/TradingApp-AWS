@@ -2,6 +2,7 @@
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
@@ -10,6 +11,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.API.Hubs;
+using TradingApp.Business.Interfaces.Services;
 using TradingApp.Events.Events;
 
 namespace TradingApp.API.BackgroundServices
@@ -17,6 +19,7 @@ namespace TradingApp.API.BackgroundServices
     public class SignalRPushBackgroundService : BackgroundService
     {
         private readonly IHubContext<OrderStatusHub> _hubContext;
+        private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<SignalRPushBackgroundService> _logger;
         private readonly IAmazonSQS _sqsClient;
         private readonly string _queueUrl;
@@ -24,10 +27,12 @@ namespace TradingApp.API.BackgroundServices
         public SignalRPushBackgroundService
         (
             IHubContext<OrderStatusHub> hubContext,
+            IServiceScopeFactory scopeFactory,
             ILogger<SignalRPushBackgroundService> logger
         )
         {
             _hubContext = hubContext;
+            _scopeFactory = scopeFactory;
             _logger = logger;
             _sqsClient = new AmazonSQSClient(RegionEndpoint.EUNorth1);
             _queueUrl = Environment.GetEnvironmentVariable("SIGNALR_PUSH_QUEUE_URL")
@@ -68,12 +73,20 @@ namespace TradingApp.API.BackgroundServices
                     {
                         var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(message.Body);
 
-                        await _hubContext.Clients.All.SendAsync(
-                            "OrderStatusChanged",
-                            orderEvent.ClientOrderId.ToString(),
-                            orderEvent.Status,
-                            stoppingToken);
+                        using var scope = _scopeFactory.CreateScope();
+                        var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
+                        var order = await orderService.GetOrderByClientOrderIdAsync(orderEvent.ClientOrderId);
 
+                        // The full order, not just id+status - clients apply it directly with
+                        // no follow-up fetch (upsert into the entity store, same shape RequestCurrentStatus returns).
+                        await _hubContext.Clients.All.SendAsync("OrderStatusChanged", order, stoppingToken);
+
+                        await _sqsClient.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, stoppingToken);
+                    }
+                    catch (KeyNotFoundException ex)
+                    {
+                        // The order genuinely doesn't exist - retrying won't fix that, so drop the message.
+                        _logger.LogWarning(ex, "OrderNotFoundForPush | MessageId: {MessageId} - discarding, not retrying", message.MessageId);
                         await _sqsClient.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, stoppingToken);
                     }
                     catch(Exception ex)

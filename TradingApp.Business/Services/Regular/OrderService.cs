@@ -123,6 +123,38 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
+        public async Task<OrderResponseDTO> GetOrderByClientOrderIdAsync(Guid clientOrderId)
+        {
+            _logger.LogInformation("GetOrderByClientOrderId | ClientOrderId: {ClientOrderId}", clientOrderId);
+
+            try
+            {
+                var orderEntity = await _orderRepository.GetOrderByClientOrderIdAsync(clientOrderId);
+
+                if (orderEntity == null)
+                {
+                    _logger.LogWarning("OrderNotFoundForClientOrderId | ClientOrderId: {ClientOrderId}", clientOrderId);
+                    throw new KeyNotFoundException($"Order with ClientOrderId {clientOrderId} not found.");
+                }
+
+                var orderDTO = OrderMapper.ToOrderResponseDTO(orderEntity);
+
+                _logger.LogInformation("OrderRetrievedByClientOrderId | ClientOrderId: {ClientOrderId} | OrderId: {OrderId}",
+                    clientOrderId, orderEntity.Id);
+
+                return orderDTO;
+            }
+            catch (KeyNotFoundException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetOrderByClientOrderIdFailed | ClientOrderId: {ClientOrderId}", clientOrderId);
+                throw new Exception($"Failed to retrieve order for ClientOrderId {clientOrderId}", ex);
+            }
+        }
+
         public async Task<IEnumerable<OrderResponseDTO>> GetOrdersAsync()
         {
             _logger.LogInformation("GetOrders");
