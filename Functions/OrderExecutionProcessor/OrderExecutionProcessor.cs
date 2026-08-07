@@ -22,7 +22,6 @@ namespace OrderExecutionProcessor
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IAmazonSimpleNotificationService _snsClient;
-        private readonly string _orderEventsTopicArn;
         private readonly IAsyncPolicy _sqlResiliencePolicy;
         private readonly IAsyncPolicy _messagingResiliencePolicy;
 
@@ -30,6 +29,7 @@ namespace OrderExecutionProcessor
         // (no Task.WhenAll/Select fan-out in this file), and one execution environment processes
         // one invocation at a time - no two threads ever reach this line concurrently.
         private static int _topicFailureCount = 0;
+        private readonly string _orderEventsTopicArn;
 
         public OrderExecutionProcessor(
             TradingDbContext tradingDbContext,
@@ -54,7 +54,7 @@ namespace OrderExecutionProcessor
 
         private async Task ProcessOrderMessage(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            SimulateRedirectToDeadLetterQueue(false);
+            SimulateRedirectToDeadLetterQueue(true);
 
             SQSEvent.MessageAttribute? correlationIdAttribute = null;
             var hasRealCorrelationId = record.MessageAttributes != null

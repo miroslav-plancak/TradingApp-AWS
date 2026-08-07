@@ -12,7 +12,9 @@ namespace LambdaBootstrap
             services.AddTradingAppLogging();
             services.AddTradingDbContext();
             services.AddDeadLetterServices();
-            services.AddResiliencePolicy("DeadLetterQueueProcessor");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "DeadLetterQueueProcessor-Sql");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
+            services.AddSnsClient();
 
             // Overrides the generator's default AddSingleton<DeadLetterQueueProcessor>() (registered
             // before this method runs) - without this, the Scoped TradingDbContext it depends on gets

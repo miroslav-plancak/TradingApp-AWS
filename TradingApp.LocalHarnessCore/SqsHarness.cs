@@ -14,8 +14,13 @@ namespace TradingApp.LocalHarnessCore
         public static async Task RunAsync(
             string queueUrl,
             IServiceProvider serviceProvider,
-            Func<IServiceProvider, SQSEvent, ILambdaContext, Task> handler,
-            string? listeningMessage = null
+            Func<IServiceProvider, SQSEvent, ILambdaContext, Task<SQSBatchResponse>> handler,
+            string? listeningMessage = null,
+            // Only takes effect on a message the handler actually reports as failed - never touches
+            // the queue's real VisibilityTimeout, so normal (non-failing) traffic is unaffected. Lets
+            // a harness that's deliberately testing DLQ redrive shorten the wait between redeliveries
+            // instead of sitting through the queue's full production visibility timeout each time.
+            int? failureVisibilityTimeoutSeconds = null
         )
         {
             var sqsClient = new AmazonSQSClient(RegionEndpoint.EUNorth1);
@@ -75,8 +80,40 @@ namespace TradingApp.LocalHarnessCore
                             }
                         };
 
-                        await handler(scope.ServiceProvider, sqsEvent, new TestLambdaContext());
-                        await sqsClient.DeleteMessageAsync(queueUrl, message.ReceiptHandle);
+                        var batchResponse = await handler(scope.ServiceProvider, sqsEvent, new TestLambdaContext());
+
+                        // BatchItemFailures is the real Lambda/SQS event-source-mapping contract - in a
+                        // deployed Lambda, AWS itself reads this to decide which messages to leave
+                        // un-deleted so SQS naturally redelivers them (toward the queue's real
+                        // maxReceiveCount and redrive policy). This harness has no such runtime behind
+                        // it, so it has to honor that contract itself: skip the delete for anything the
+                        // handler reported as failed, exactly like AWS would.
+                        var reportedFailure = batchResponse?.BatchItemFailures?
+                            .Any(f => f.ItemIdentifier == message.MessageId) ?? false;
+
+                        if (reportedFailure)
+                        {
+                            var receiveCount = message.Attributes != null
+                                && message.Attributes.TryGetValue("ApproximateReceiveCount", out var countStr)
+                                ? countStr
+                                : "unknown";
+
+                            Console.WriteLine(
+                                $"Message {message.MessageId} reported as failed (ApproximateReceiveCount={receiveCount}) " +
+                                $"- left on queue for SQS to redeliver/redrive.");
+
+                            if (failureVisibilityTimeoutSeconds is int seconds)
+                            {
+                                await sqsClient.ChangeMessageVisibilityAsync(queueUrl, message.ReceiptHandle, seconds);
+
+                                Console.WriteLine(
+                                    $"Message {message.MessageId} visibility timeout shortened to {seconds}s for faster redrive testing.");
+                            }
+                        }
+                        else
+                        {
+                            await sqsClient.DeleteMessageAsync(queueUrl, message.ReceiptHandle);
+                        }
                     }
                     catch (Exception ex)
                     {
