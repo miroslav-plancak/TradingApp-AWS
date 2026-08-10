@@ -19,7 +19,7 @@ namespace RiskAnalysisProcessor
 
         private async Task ProcessRecord(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(record.Body);
+            var orderEvent = JsonSerializer.Deserialize<IntegrationEvent>(record.Body);
 
             if (orderEvent == null)
             {
@@ -40,7 +40,7 @@ namespace RiskAnalysisProcessor
                 $"Risk analysis complete with CorrelationId {correlationId} | ClientOrderId: {orderEvent.ClientOrderId} | RiskScore: {riskScore}");
         }
 
-        private async Task<double> CalculateRiskScore(OrderStatusEvent orderEvent)
+        private async Task<double> CalculateRiskScore(IntegrationEvent orderEvent)
         {
             await Task.Delay(500);
             var random = new Random();

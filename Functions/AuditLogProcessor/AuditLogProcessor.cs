@@ -19,7 +19,7 @@ namespace AuditLogProcessor
 
         private async Task ProcessRecord(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(record.Body);
+            var orderEvent = JsonSerializer.Deserialize<IntegrationEvent>(record.Body);
 
             if (orderEvent == null)
             {
@@ -40,7 +40,7 @@ namespace AuditLogProcessor
                 $"Audit log written for Order with CorrelationId: {correlationId} | ClientOrderId {orderEvent.ClientOrderId}");
         }
 
-        private async Task WriteAuditLog(OrderStatusEvent orderEvent)
+        private async Task WriteAuditLog(IntegrationEvent orderEvent)
         {
             await Task.Delay(1500);
             await Task.CompletedTask;

@@ -181,7 +181,7 @@ namespace Handler
                       $"Trying to publish unpublishedTopicMessage | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} " +
                       $"| ClientOrderId: {unpublishedMessage.ClientOrderId}");
 
-                var eventPayload = new OrderStatusEvent
+                var eventPayload = new OrderStatusChangedEvent
                 {
                     ClientOrderId = unpublishedMessage.ClientOrderId,
                     Status = unpublishedMessage.OrderStatus.ToString(),

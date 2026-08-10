@@ -71,7 +71,7 @@ namespace TradingApp.API.BackgroundServices
                 {
                     try
                     {
-                        var orderEvent = JsonSerializer.Deserialize<OrderStatusEvent>(message.Body);
+                        var orderEvent = JsonSerializer.Deserialize<IntegrationEvent>(message.Body);
 
                         using var scope = _scopeFactory.CreateScope();
                         var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
