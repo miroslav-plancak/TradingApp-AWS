@@ -40,7 +40,7 @@ namespace NotificationProcessor
 
         private async Task ProcessRecord(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            var orderStatusEvent = JsonSerializer.Deserialize<OrderStatusEvent>(record.Body);
+            var orderStatusEvent = JsonSerializer.Deserialize<OrderStatusChangedEvent>(record.Body);
 
             if (orderStatusEvent == null)
             {
@@ -116,7 +116,7 @@ namespace NotificationProcessor
                     $"PendingFilledFound | Sending deferred FILLED | CorrelationId: {correlationId}");
 
                 var deserializedPendingFilledOrder =
-                    JsonSerializer.Deserialize<OrderStatusEvent>(pendingFilledOrder.EventPayload);
+                    JsonSerializer.Deserialize<OrderStatusChangedEvent>(pendingFilledOrder.EventPayload);
 
                 if (deserializedPendingFilledOrder != null)
                 {
@@ -177,7 +177,7 @@ namespace NotificationProcessor
 
         }
 
-        private async Task ProcessNotification(OrderStatusEvent orderEvent, string correlationId, ILambdaContext context)
+        private async Task ProcessNotification(OrderStatusChangedEvent orderEvent, string correlationId, ILambdaContext context)
         {
             context.Logger.LogWarning(
                 $"Sending notification for Order with CorrelationId: {correlationId} | ClientOrderId {orderEvent.ClientOrderId} | OrderStatus: {orderEvent.Status}");
@@ -188,7 +188,7 @@ namespace NotificationProcessor
                 $"Notification sent for Order with CorrelationId: {correlationId} | ClientOrderId {orderEvent.ClientOrderId} | OrderStatus: {orderEvent.Status}");
         }
 
-        private async Task SendTeamsNotification(OrderStatusEvent orderEvent, string correlationId, ILambdaContext context)
+        private async Task SendTeamsNotification(OrderStatusChangedEvent orderEvent, string correlationId, ILambdaContext context)
         {
             var statusColor = orderEvent.Status switch
             {

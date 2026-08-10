@@ -236,7 +236,7 @@ namespace Handler
                 }
 
                 // From here on, the order IS FILLED in the database - only the event publish can still fail.
-                var eventPayload = new OrderStatusEvent
+                var eventPayload = new OrderStatusChangedEvent
                 {
                     ClientOrderId = order.ClientOrderId,
                     Status = OrderStatus.FILLED.ToString(),

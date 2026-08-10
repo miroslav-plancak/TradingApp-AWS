@@ -187,7 +187,7 @@ namespace DeadLetterQueueProcessor
         {
             try
             {
-                var eventPayload = new OrderStatusEvent
+                var eventPayload = new OrderStatusChangedEvent
                 {
                     ClientOrderId = clientOrderId,
                     Status = status.ToString(),
