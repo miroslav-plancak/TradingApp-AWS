@@ -185,17 +185,17 @@ namespace DeadLetterQueueProcessor
 
         private async Task PublishOrderProcessedEvent(Guid clientOrderId, OrderStatus status, string correlationId, ILambdaContext context)
         {
+            var eventPayload = new OrderStatusChangedEvent
+            {
+                ClientOrderId = clientOrderId,
+                Status = status.ToString(),
+                EventTime = DateTimeOffset.UtcNow,
+                Sequence = 1,
+                CorrelationId = correlationId
+            };
+
             try
             {
-                var eventPayload = new OrderStatusChangedEvent
-                {
-                    ClientOrderId = clientOrderId,
-                    Status = status.ToString(),
-                    EventTime = DateTimeOffset.UtcNow,
-                    Sequence = 1,
-                    CorrelationId = correlationId
-                };
-
                 var messageBody = JsonSerializer.Serialize(eventPayload);
 
                 var request = new PublishRequest
@@ -224,7 +224,7 @@ namespace DeadLetterQueueProcessor
                     $"CircuitOpen | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Status: {status} " +
                     $"| Action: deferring publish to UnpublishedTopicMessages");
 
-                await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
+                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
 
                 context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
@@ -236,7 +236,7 @@ namespace DeadLetterQueueProcessor
                 context.Logger.LogError(
                     $"TopicPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {snsException.Message}");
 
-                await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
+                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
 
                 context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
@@ -248,7 +248,7 @@ namespace DeadLetterQueueProcessor
                 context.Logger.LogError(
                     $"EventPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {ex.Message}");
 
-                await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
+                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
 
                 context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");

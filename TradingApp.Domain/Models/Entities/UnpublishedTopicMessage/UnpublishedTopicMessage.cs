@@ -1,5 +1,4 @@
 ﻿using System;
-using TradingApp.Domain.Models.Enums;
 
 namespace TradingApp.Domain.Models.Entities.UnpublishedTopicMessages
 {
@@ -7,8 +6,8 @@ namespace TradingApp.Domain.Models.Entities.UnpublishedTopicMessages
     {
         public Guid Id { get; set; }
         public Guid ClientOrderId { get; set; }
-        public OrderStatus OrderStatus { get; set; }
-        public DateTimeOffset ProcessedAt { get; set; }
+        public string EventType { get; set; } = string.Empty;
+        public string Payload { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset? PublishedAt { get; set; }
         public int RetryCount { get; set; }

@@ -7,12 +7,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.CircuitBreaker;
 using System.Diagnostics;
-using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Infrastructure;
 using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
 using TradingApp.Domain.Models.Enums;
-using TradingApp.Events.Events;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -56,7 +54,7 @@ namespace Handler
                 await _tradingDbContext.UnpublishedTopicMessages
                     .Where(x => x.PublishedAt == null && x.RetryCount < 5)
                     .OrderBy(x => x.CreatedAt)
-                    .ThenBy(x => x.OrderStatus)
+                    .ThenBy(x => x.EventType)
                     .Take(50)
                     .ToListAsync());
 
@@ -181,22 +179,14 @@ namespace Handler
                       $"Trying to publish unpublishedTopicMessage | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} " +
                       $"| ClientOrderId: {unpublishedMessage.ClientOrderId}");
 
-                var eventPayload = new OrderStatusChangedEvent
-                {
-                    ClientOrderId = unpublishedMessage.ClientOrderId,
-                    Status = unpublishedMessage.OrderStatus.ToString(),
-                    EventTime = unpublishedMessage.ProcessedAt,
-                    Sequence = unpublishedMessage.OrderStatus == OrderStatus.FILLED ? 2 : 1,
-                    CorrelationId = unpublishedMessage.CorrelationId
-                };
-
-                var messageBody = JsonSerializer.Serialize(eventPayload);
-
+                // Payload is the exact JSON that failed to publish the first time - republish it
+                // byte-for-byte instead of reconstructing it, so redrive can never produce an event
+                // that differs from the one that actually failed.
                 var request = new PublishRequest
                 {
                     TopicArn = _orderEventsTopicArn,
-                    Message = messageBody,
-                    Subject = "OrderProcessed",
+                    Message = unpublishedMessage.Payload,
+                    Subject = $"{unpublishedMessage.EventType}Republished",
                     MessageGroupId = unpublishedMessage.ClientOrderId.ToString(),
                     MessageDeduplicationId = Guid.NewGuid().ToString()
                 };

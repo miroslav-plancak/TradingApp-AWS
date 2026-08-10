@@ -112,16 +112,17 @@ namespace OrderExecutionProcessor
 
         private async Task PublishOrderProcessedEvent(Guid clientOrderId, OrderStatus status, string correlationId, ILambdaContext context)
         {
+            var eventPayload = new OrderStatusChangedEvent
+            {
+                ClientOrderId = clientOrderId,
+                Status = status.ToString(),
+                EventTime = DateTimeOffset.UtcNow,
+                Sequence = 1,
+                CorrelationId = correlationId
+            };
+
             try
             {
-                var eventPayload = new OrderStatusChangedEvent
-                {
-                    ClientOrderId = clientOrderId,
-                    Status = status.ToString(),
-                    EventTime = DateTimeOffset.UtcNow,
-                    Sequence = 1,
-                    CorrelationId = correlationId
-                };
 
                 var messageBody = JsonSerializer.Serialize(eventPayload);
 
@@ -153,7 +154,7 @@ namespace OrderExecutionProcessor
                 context.Logger.LogWarning(
                     $"CircuitOpen | CorrelationId: {correlationId} | Order is {status}, event not yet published | Falling back to UnpublishedTopicMessages");
           
-                await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
+                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
 
                 context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
@@ -163,7 +164,7 @@ namespace OrderExecutionProcessor
                 context.Logger.LogError(
                     $"TopicPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {snsException.Message}");
 
-                await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(clientOrderId, status, correlationId);
+                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
 
                 context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");

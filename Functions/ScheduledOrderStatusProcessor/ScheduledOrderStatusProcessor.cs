@@ -353,13 +353,21 @@ namespace Handler
             {
                 var outcome = await _sqlResiliencePolicy.ExecuteAsync(async Task<ProcessedOrderStatusOutcome> () =>
                 {
-                   
-                    var alreadyExists = await _tradingDbContext.CheckIfUnpublishedTopicMessageExistsAsync(
-                        order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
+                    var alreadyExists = await _tradingDbContext.CheckIfUnpublishedTopicMessageExistsAsync<OrderStatusChangedEvent>(
+                        order.ClientOrderId, order.CorrelationId);
 
                     if (alreadyExists == null)
                     {
-                        await _tradingDbContext.SaveUnpublishedTopicMessagesAsync(order.ClientOrderId, OrderStatus.FILLED, order.CorrelationId);
+                        var eventPayload = new OrderStatusChangedEvent
+                        {
+                            ClientOrderId = order.ClientOrderId,
+                            Status = OrderStatus.FILLED.ToString(),
+                            EventTime = DateTimeOffset.UtcNow,
+                            Sequence = 2,
+                            CorrelationId = order.CorrelationId
+                        };
+
+                        await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
 
                         context.Logger.LogWarning(
                     $"SavedToUnpublishedTopicMessages | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
@@ -372,7 +380,7 @@ namespace Handler
                               $"UnpublishedTopicMessageAlreadyExists | CorrelationId: {order.CorrelationId} | ClientOrderId: {order.ClientOrderId}");
                         return ProcessedOrderStatusOutcome.FilledPublishDeferred;
                     }
-                  
+
                 });
 
                 return outcome;
