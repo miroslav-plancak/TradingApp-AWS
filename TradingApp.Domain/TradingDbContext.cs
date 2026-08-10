@@ -115,8 +115,9 @@ namespace TradingApp.Domain
                 entity.HasIndex(e => e.ClientOrderId);
                 entity.Property(e => e.ClientOrderId);
 
-                entity.Property(e => e.OrderStatus).IsRequired();
-                entity.Property(e => e.ProcessedAt).IsRequired();
+                entity.Property(e => e.EventType).IsRequired().HasMaxLength(100);
+                entity.HasIndex(e => e.EventType);
+                entity.Property(e => e.Payload).IsRequired();
                 entity.Property(e => e.CreatedAt).IsRequired();
                 entity.Property(e => e.PublishedAt);
                 entity.Property(e => e.RetryCount).IsRequired();

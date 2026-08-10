@@ -1,49 +1,51 @@
-﻿using Microsoft.EntityFrameworkCore;
-using System;
-using System.Threading.Tasks;
-using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
-using TradingApp.Domain.Models.Enums;
+﻿  using Microsoft.EntityFrameworkCore;
+  using System;
+  using System.Text.Json;
+  using System.Threading.Tasks;
+  using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
+  using TradingApp.Events.Events;
 
-namespace TradingApp.Domain
-{
-    public static class TradingDbContextExtensions
-    {
-        public static Task SaveUnpublishedTopicMessagesAsync
-            (
-                this TradingDbContext dbContext,
-                Guid clientOrderId,
-                OrderStatus status,
-                string correlationId
-            )
+  namespace TradingApp.Domain
+  {
+      public static class TradingDbContextExtensions
+      {
+        public async static Task<UnpublishedTopicMessage?> CheckIfUnpublishedTopicMessageExistsAsync<TEvent>
+        (
+           this TradingDbContext dbContext,
+           Guid clientOrderId,
+           string correlationId
+        )
+            where TEvent : IntegrationEvent
+        {
+            var eventType = typeof(TEvent).Name;
+
+            var result = await dbContext.UnpublishedTopicMessages
+                 .FirstOrDefaultAsync(x =>
+                     x.ClientOrderId == clientOrderId &&
+                     x.EventType == eventType &&
+                     (string.IsNullOrEmpty(correlationId) || x.CorrelationId == correlationId));
+
+            return result;
+        }
+
+        public static Task SaveUnpublishedTopicMessageAsync<TEvent>
+        (
+            this TradingDbContext dbContext,
+            TEvent integrationEvent
+        )
+            where TEvent : IntegrationEvent
         {
             dbContext.UnpublishedTopicMessages.Add(new UnpublishedTopicMessage
             {
                 Id = Guid.NewGuid(),
-                ClientOrderId = clientOrderId,
-                OrderStatus = status,
-                ProcessedAt = DateTimeOffset.UtcNow,
+                ClientOrderId = integrationEvent.ClientOrderId,
+                EventType = typeof(TEvent).Name,
+                Payload = JsonSerializer.Serialize(integrationEvent),
                 CreatedAt = DateTimeOffset.UtcNow,
-                CorrelationId = correlationId
+                CorrelationId = integrationEvent.CorrelationId
             });
 
             return dbContext.SaveChangesAsync();
         }
-
-        public async static Task<UnpublishedTopicMessage?> CheckIfUnpublishedTopicMessageExistsAsync
-        (
-           this TradingDbContext dbContext,
-           Guid clientOrderId,
-           OrderStatus status,
-           string correlationId
-        )
-        {
-           var result = await dbContext.UnpublishedTopicMessages
-                .FirstOrDefaultAsync(x =>
-                    x.ClientOrderId == clientOrderId &&
-                    x.OrderStatus == status &&
-                    (string.IsNullOrEmpty(correlationId) || x.CorrelationId == correlationId));
-
-            return result;
-        }
-    }
-}
+      }
+  }
