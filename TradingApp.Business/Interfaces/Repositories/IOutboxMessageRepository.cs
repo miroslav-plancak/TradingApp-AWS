@@ -9,6 +9,7 @@ namespace TradingApp.Business.Interfaces.Repositories
     public interface IOutboxMessageRepository
     {
         Task<OutboxMessage> GetByIdAsync(Guid id);
+        Task<OutboxMessage> GetByClientOrderIdAsync(Guid clientOrderId);
         Task<IEnumerable<OutboxMessage>> GetAllAsync();
         Task<IEnumerable<OutboxMessage>> GetUnprocessedAsync();
         Task<IEnumerable<OutboxMessage>> GetProcessedAsync();

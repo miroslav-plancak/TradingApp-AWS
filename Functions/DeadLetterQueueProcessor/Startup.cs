@@ -15,7 +15,8 @@ namespace LambdaBootstrap
             services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "DeadLetterQueueProcessor-Sql");
             services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
             services.AddSnsClient();
-
+            services.AddIntegrationEventPublisherServices();
+            //services.AddScoped<IIntegrationEventPublisher>();
             // Overrides the generator's default AddSingleton<DeadLetterQueueProcessor>() (registered
             // before this method runs) - without this, the Scoped TradingDbContext it depends on gets
             // captured once at cold start and reused for the life of the execution environment.

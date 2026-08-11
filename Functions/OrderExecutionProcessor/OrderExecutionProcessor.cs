@@ -6,13 +6,13 @@ using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
-using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Domain;
-using TradingApp.Infrastructure;
 using TradingApp.Domain.Models.Entities.Order;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
+using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Interfaces;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -21,29 +21,23 @@ namespace OrderExecutionProcessor
     public class OrderExecutionProcessor
     {
         private readonly TradingDbContext _tradingDbContext;
-        private readonly IAmazonSimpleNotificationService _snsClient;
+        private readonly IIntegrationEventPublisher _integrationEventPublisher;
         private readonly IAsyncPolicy _sqlResiliencePolicy;
-        private readonly IAsyncPolicy _messagingResiliencePolicy;
 
         // Safe unguarded: FunctionHandler walks evnt.Records with a sequential foreach + await
         // (no Task.WhenAll/Select fan-out in this file), and one execution environment processes
         // one invocation at a time - no two threads ever reach this line concurrently.
         private static int _topicFailureCount = 0;
-        private readonly string _orderEventsTopicArn;
 
         public OrderExecutionProcessor(
             TradingDbContext tradingDbContext,
-            IAmazonSimpleNotificationService snsClient,
-            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
-            [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy
+            IIntegrationEventPublisher integrationEventPublisher,
+            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy
             )
         {
             _tradingDbContext = tradingDbContext;
-            _snsClient = snsClient;
-            _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
-                ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
+            _integrationEventPublisher = integrationEventPublisher;
             _sqlResiliencePolicy = sqlResiliencePolicy;
-            _messagingResiliencePolicy = messagingResiliencePolicy;
         }
 
         [LambdaFunction]
@@ -54,7 +48,7 @@ namespace OrderExecutionProcessor
 
         private async Task ProcessOrderMessage(SQSEvent.SQSMessage record, ILambdaContext context)
         {
-            SimulateRedirectToDeadLetterQueue(true);
+            SimulateRedirectToDeadLetterQueue(false);
 
             SQSEvent.MessageAttribute? correlationIdAttribute = null;
             var hasRealCorrelationId = record.MessageAttributes != null
@@ -87,7 +81,7 @@ namespace OrderExecutionProcessor
             }
 
             var random = new Random();
-            var randomStatus = random.Next(2) == 0 ? OrderStatus.ACKNOWLEDGED : OrderStatus.REJECTED;
+            var randomStatus = random.Next(2) == 0 ? OrderStatus.ACKNOWLEDGED : OrderStatus.REJECTED; 
 
             var orderRowsProcessed = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 await _tradingDbContext.Orders
@@ -107,74 +101,18 @@ namespace OrderExecutionProcessor
             context.Logger.LogWarning(
                 $"OrderProcessed | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId} | Status: {randomStatus}");
 
-            await PublishOrderProcessedEvent(payload.ClientOrderId, randomStatus, correlationId, context);
-        }
-
-        private async Task PublishOrderProcessedEvent(Guid clientOrderId, OrderStatus status, string correlationId, ILambdaContext context)
-        {
             var eventPayload = new OrderStatusChangedEvent
             {
-                ClientOrderId = clientOrderId,
-                Status = status.ToString(),
+                ClientOrderId = payload.ClientOrderId,
+                Status = randomStatus.ToString(),
                 EventTime = DateTimeOffset.UtcNow,
                 Sequence = 1,
                 CorrelationId = correlationId
             };
-
-            try
-            {
-
-                var messageBody = JsonSerializer.Serialize(eventPayload);
-
-                var request = new PublishRequest
-                {
-                    TopicArn = _orderEventsTopicArn,
-                    Message = messageBody,
-                    Subject = "OrderProcessed",
-                    MessageGroupId = clientOrderId.ToString(),
-                    MessageDeduplicationId = Guid.NewGuid().ToString()
-                };
-
-                context.Logger.LogWarning(
-                    $"PublishingEventToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
-
-                await _messagingResiliencePolicy.ExecuteAsync(async () =>
-                {
-                    SimulateTopicFailure(false, context);
-
-                    await _snsClient.PublishAsync(request);
-
-                });
-
-                context.Logger.LogWarning(
-                    $"EventPublishedToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
-            }
-            catch (BrokenCircuitException)
-            {
-                context.Logger.LogWarning(
-                    $"CircuitOpen | CorrelationId: {correlationId} | Order is {status}, event not yet published | Falling back to UnpublishedTopicMessages");
-          
-                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
-
-                context.Logger.LogWarning(
-                    $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
-            }
-            catch (AmazonSimpleNotificationServiceException snsException)
-            {
-                context.Logger.LogError(
-                    $"TopicPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {snsException.Message}");
-
-                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
-
-                context.Logger.LogWarning(
-                    $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
-            }
-            catch (Exception ex)
-            {
-                context.Logger.LogError(
-                    $"EventPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {ex.Message}");
-            }
-
+           
+            await _integrationEventPublisher.PublishToTopicAsync(
+                eventPayload, "OrderProcessed", context,
+                simulateTopicFailure: () => SimulateTopicFailure(false, context));
         }
 
         private void SimulateTopicFailure(bool isTopicDown, ILambdaContext context)
@@ -183,13 +121,16 @@ namespace OrderExecutionProcessor
 
             _topicFailureCount++;
 
-            if (_topicFailureCount <= 3)
+            if (_topicFailureCount <= 5)
             {
                 context.Logger.LogWarning(
                     $"SIMULATION | Simulating topic outage | FailureCount: {_topicFailureCount}");
 
                 throw new InternalErrorException(
-                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 3)");
+                    $"SIMULATED: Topic connection failed (failure {_topicFailureCount} of 5)")
+                {
+                    StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+                };
             }
         }
 

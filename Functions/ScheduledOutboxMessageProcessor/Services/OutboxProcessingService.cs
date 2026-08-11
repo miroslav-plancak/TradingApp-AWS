@@ -1,4 +1,6 @@
 ﻿using Amazon.Lambda.Core;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Handler.Interfaces;
@@ -12,24 +14,29 @@ using System.Text.Json;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OutboxMessage;
 using TradingApp.Domain.Models.Enums;
+using TradingApp.Events.Events;
 using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Interfaces;
 
 namespace Handler.Services
 {
     public class OutboxProcessingService : IOutboxProcessingService
     {
         private readonly TradingDbContext _tradingDbContext;
+        private readonly IIntegrationEventPublisher _integrationEventPublisher;
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IAsyncPolicy _sqlResiliencePolicy;
         private readonly IAsyncPolicy _messagingResiliencePolicy;
         private readonly IAmazonSQS _sqsClient;
-        private readonly string _createOrderQueueUrl;
 
+        private readonly string _createOrderQueueUrl;
         private static int _queueFailureCount = 0;
+        private static int _topicFailureCount = 0;
         private const int LEASE_SECONDS = 130; // timeout 120s + buffer 10s
 
         public OutboxProcessingService(
             TradingDbContext tradingDbContext,
+            IIntegrationEventPublisher integrationEventPublisher,
             IDbContextFactory<TradingDbContext> dbContextFactory,
             [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
             [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy,
@@ -38,6 +45,7 @@ namespace Handler.Services
         )
         {
             _tradingDbContext = tradingDbContext;
+            _integrationEventPublisher = integrationEventPublisher;
             _dbContextFactory = dbContextFactory;
             _sqlResiliencePolicy = sqlResiliencePolicy;
             _messagingResiliencePolicy = messagingResiliencePolicy;
@@ -224,6 +232,14 @@ namespace Handler.Services
                     return ProcessOutboxMessageOutcome.Failure;
                 }
 
+                var eventPayload = new OutboxMessageProcessedEvent
+                {
+                    CorrelationId = outboxMessage.CorrelationId,
+                    ClientOrderId = clientOrderId,
+                    EventTime = DateTimeOffset.UtcNow,
+                    IsAlreadyProcessed = true
+                };
+
                 if (alreadyProcessedClientOrderIds.Contains(clientOrderId))
                 {
                     context.Logger.LogWarning(
@@ -246,8 +262,13 @@ namespace Handler.Services
                     {
                         context.Logger.LogError(
                             $"MarkProcessedAtFailed | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | Will retry next cycle | Error: {ex.Message}");
+
                         return ProcessOutboxMessageOutcome.Failure;
                     }
+
+                    await _integrationEventPublisher.PublishToTopicAsync(
+                        eventPayload, "OutboxMessageAlreadyProcessed", context,
+                        simulateTopicFailure: () => SimulateTopicFailure(false, context));
 
                     return ProcessOutboxMessageOutcome.AlreadyProcessed;
                 }
@@ -314,6 +335,9 @@ namespace Handler.Services
                     return ProcessOutboxMessageOutcome.Failure;
                 }
 
+                context.Logger.LogWarning(
+                    $"SentToQueue | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | Queue: CREATE_ORDER_QUEUE.fifo");
+
                 try
                 {
                     await _sqlResiliencePolicy.ExecuteAsync(async () =>
@@ -326,12 +350,18 @@ namespace Handler.Services
                 {
                     context.Logger.LogError(
                         $"MarkProcessedAtFailed | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | " +
-                        $"Message WAS sent to queue but not marked - may be re-sent next cycle | Error: {ex.Message}");
+                        $"Message WAS not marked | retrying next cycle | Error: {ex.Message}");
                     return ProcessOutboxMessageOutcome.Sent;
                 }
 
                 context.Logger.LogWarning(
-                    $"SentToQueue | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | Queue: CREATE_ORDER_QUEUE.fifo");
+                       $"MarkProcessedAndSentToTheQueue | CorrelationId: {outboxMessage.CorrelationId} | OutboxId: {outboxMessage.Id} | "
+                     );
+
+                eventPayload.IsAlreadyProcessed = false;
+                await _integrationEventPublisher.PublishToTopicAsync(
+                    eventPayload, "OutboxMessageProcessed", context,
+                    simulateTopicFailure: () => SimulateTopicFailure(false, context));
 
                 return ProcessOutboxMessageOutcome.Sent;
             }
@@ -372,6 +402,25 @@ namespace Handler.Services
             }
         }
 
+        private static void SimulateTopicFailure(bool isTopicDown, ILambdaContext context)
+        {
+            if (!isTopicDown) return;
+
+            var failureCount = Interlocked.Increment(ref _topicFailureCount);
+
+            if (failureCount <= 5)
+            {
+                context.Logger.LogWarning(
+                    $"SIMULATION | Simulating topic outage | FailureCount: {failureCount}");
+
+                throw new InternalErrorException(
+                    $"SIMULATED: Topic connection failed (failure {failureCount} of 5)")
+                {
+                    StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
+                };
+            }
+        }
+
         private async Task NotifySqsCreateOrderQueueAsync(Guid clientOrderId, string correlationId)
         {
             SimulateQueueFailure(false);
@@ -384,10 +433,10 @@ namespace Handler.Services
                 MessageBody = serializedPayload,
                 MessageGroupId = clientOrderId.ToString(),
                 MessageDeduplicationId = Guid.NewGuid().ToString(),
-                MessageAttributes = new Dictionary<string, MessageAttributeValue>
+                MessageAttributes = new Dictionary<string, Amazon.SQS.Model.MessageAttributeValue>
                 {
                     {
-                        "CorrelationId", new MessageAttributeValue
+                        "CorrelationId", new Amazon.SQS.Model.MessageAttributeValue
                         {
                             DataType = "String",
                             StringValue = correlationId

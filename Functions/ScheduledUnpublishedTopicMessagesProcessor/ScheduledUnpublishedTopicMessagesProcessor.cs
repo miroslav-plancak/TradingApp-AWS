@@ -188,7 +188,16 @@ namespace Handler
                     Message = unpublishedMessage.Payload,
                     Subject = $"{unpublishedMessage.EventType}Republished",
                     MessageGroupId = unpublishedMessage.ClientOrderId.ToString(),
-                    MessageDeduplicationId = Guid.NewGuid().ToString()
+                    MessageDeduplicationId = Guid.NewGuid().ToString(),
+                    MessageAttributes = new Dictionary<string, MessageAttributeValue>
+                    {
+                        { "EventType", new MessageAttributeValue
+                            {
+                                DataType = "String",
+                                StringValue = unpublishedMessage.EventType
+                            }
+                        }
+                    }
                 };
 
                 try
@@ -303,12 +312,12 @@ namespace Handler
 
             var failureCount = Interlocked.Increment(ref _topicFailureCount);
 
-            if (failureCount <= 3)
+            if (failureCount <= 5)
             {
                 context.Logger.LogWarning($"SIMULATION | Simulating topic outage | FailureCount: {failureCount}");
 
                 throw new InternalErrorException(
-                    $"SIMULATED: Topic connection failed (failure {failureCount} of 3)");
+                    $"SIMULATED: Topic connection failed (failure {failureCount} of 5)");
             }
         }
     }

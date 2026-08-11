@@ -15,6 +15,8 @@ using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Repositories;
 using TradingApp.Business.Services.Regular;
 using TradingApp.Domain;
+using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Services;
 
 namespace TradingApp.Infrastructure
 {
@@ -86,6 +88,11 @@ namespace TradingApp.Infrastructure
         public static IServiceCollection AddSharedHttpClient(this IServiceCollection services)
         {
             services.AddSingleton<HttpClient>();
+            return services;
+        }
+        public static IServiceCollection AddIntegrationEventPublisherServices(this IServiceCollection services)
+        {
+            services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
             return services;
         }
 

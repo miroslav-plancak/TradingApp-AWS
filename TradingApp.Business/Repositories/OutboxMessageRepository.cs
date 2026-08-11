@@ -41,6 +41,27 @@ namespace TradingApp.Business.Repositories
             }
         }
 
+        public async Task<OutboxMessage> GetByClientOrderIdAsync(Guid clientOrderId)
+        {
+            try
+            {
+                var result = await _tradingDbContext.OutboxMessages
+                    .AsNoTracking()
+                    .Where(x => x.Payload == clientOrderId.ToString())
+                    .OrderByDescending(x => x.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "DatabaseError | Failed to get outbox message | ClientOrderId: {ClientOrderId}",
+                    clientOrderId);
+                throw;
+            }
+        }
+
         public async Task<IEnumerable<OutboxMessage>> GetAllAsync()
         {
             try
