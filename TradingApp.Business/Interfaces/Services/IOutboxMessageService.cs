@@ -8,6 +8,7 @@ namespace TradingApp.Business.Interfaces.Services
     public interface IOutboxMessageService
     {
         Task<OutboxMessageResponseDTO> GetByIdAsync(Guid id);
+        Task<OutboxMessageResponseDTO> GetByClientOrderIdAsync(Guid clientOrderId);
         Task<IEnumerable<OutboxMessageResponseDTO>> GetAllAsync();
         Task<IEnumerable<OutboxMessageResponseDTO>> GetUnprocessedAsync();
         Task<IEnumerable<OutboxMessageResponseDTO>> GetProcessedAsync();

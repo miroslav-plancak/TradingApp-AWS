@@ -1,7 +1,6 @@
 ﻿using Amazon.Lambda.Annotations;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
-using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +15,7 @@ using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
 using TradingApp.Events.Payloads;
 using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Interfaces;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -25,33 +25,27 @@ namespace DeadLetterQueueProcessor
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IDeadLetterService _deadLetterService;
+        private readonly IIntegrationEventPublisher _integrationEventPublisher;
         private readonly HttpClient _httpClient;
         private readonly IAsyncPolicy _sqlResiliencePolicy;
-        private readonly IAsyncPolicy _messagingResiliencePolicy;
-        private readonly IAmazonSimpleNotificationService _snsClient;
-
-        private readonly string _orderEventsTopicArn;
+      
         private readonly string? _teamsWebhookUrl;
         private const string themeColor = "D70000";
+        private static int _topicFailureCount = 0;
 
         public DeadLetterQueueProcessor(
            TradingDbContext tradingDbContext,
            IDeadLetterService deadLetterService,
+           IIntegrationEventPublisher integrationEventPublisher,
            HttpClient httpClient,
-           [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
-           [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy,
-           IAmazonSimpleNotificationService snsClient)
+           [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy)
         {
             _tradingDbContext = tradingDbContext;
             _deadLetterService = deadLetterService;
+            _integrationEventPublisher = integrationEventPublisher;
             _httpClient = httpClient;
             _sqlResiliencePolicy = sqlResiliencePolicy;
-            _messagingResiliencePolicy = messagingResiliencePolicy;
-            _snsClient = snsClient;
-
-            _orderEventsTopicArn = Environment.GetEnvironmentVariable("ORDER_EVENTS_TOPIC_ARN")
-               ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
-
+          
             _teamsWebhookUrl = Environment.GetEnvironmentVariable("TEAMS_DLQ_WEBHOOK_URL")
                 ?? throw new InvalidOperationException("TEAMS_DLQ_WEBHOOK_URL environment variable is not set.");
         }
@@ -116,6 +110,17 @@ namespace DeadLetterQueueProcessor
                         DeadLetterCategory.InfrastructureFailure,
                         correlationId);
 
+                    var deadLetterLogEventPayload = new DeadLetterLogPersistedEvent 
+                    { 
+                        ClientOrderId = payload.ClientOrderId, 
+                        EventTime = DateTimeOffset.UtcNow, 
+                        CorrelationId = correlationId 
+                    };
+
+                    await _integrationEventPublisher.PublishToTopicAsync(
+                        deadLetterLogEventPayload, "DeadLetterLogPersisted", context,
+                        simulateTopicFailure: () => SimulateTopicFailure(false, context));
+
                     await SendTeamsNotification(createdDL, context);
 
                     return;
@@ -151,7 +156,29 @@ namespace DeadLetterQueueProcessor
                     await _tradingDbContext.SaveChangesAsync();
                 });
 
-                await PublishOrderProcessedEvent(payload.ClientOrderId, OrderStatus.REJECTED, correlationId, context);
+                var eventPayload = new OrderStatusChangedEvent
+                {
+                    ClientOrderId = payload.ClientOrderId, 
+                    Status = OrderStatus.REJECTED.ToString(), 
+                    EventTime = DateTimeOffset.UtcNow, 
+                    Sequence = 1, 
+                    CorrelationId = correlationId 
+                };
+
+                await _integrationEventPublisher.PublishToTopicAsync(
+                    eventPayload, "OrderPersistedToDLQ", context,
+                    simulateTopicFailure: () => SimulateTopicFailure(false, context));
+
+                var rejectedDeadLetterLogEventPayload = new DeadLetterLogPersistedEvent
+                {
+                    ClientOrderId = payload.ClientOrderId,
+                    EventTime = DateTimeOffset.UtcNow,
+                    CorrelationId = correlationId
+                };
+
+                await _integrationEventPublisher.PublishToTopicAsync(
+                    rejectedDeadLetterLogEventPayload, "DeadLetterLogPersisted", context,
+                    simulateTopicFailure: () => SimulateTopicFailure(false, context));
 
                 await _sqlResiliencePolicy.ExecuteAsync(async () =>
                     await _deadLetterService.MarkOutboxMessageAsProcessedAsync(payload.ClientOrderId));
@@ -183,77 +210,22 @@ namespace DeadLetterQueueProcessor
             }
         }
 
-        private async Task PublishOrderProcessedEvent(Guid clientOrderId, OrderStatus status, string correlationId, ILambdaContext context)
+        private static void SimulateTopicFailure(bool isTopicDown, ILambdaContext context)
         {
-            var eventPayload = new OrderStatusChangedEvent
-            {
-                ClientOrderId = clientOrderId,
-                Status = status.ToString(),
-                EventTime = DateTimeOffset.UtcNow,
-                Sequence = 1,
-                CorrelationId = correlationId
-            };
+            if (!isTopicDown) return;
 
-            try
-            {
-                var messageBody = JsonSerializer.Serialize(eventPayload);
+            var failureCount = Interlocked.Increment(ref _topicFailureCount);
 
-                var request = new PublishRequest
+            if (failureCount <= 5)
+            {
+                context.Logger.LogWarning(
+                    $"SIMULATION | Simulating topic outage | FailureCount: {failureCount}");
+
+                throw new InternalErrorException(
+                    $"SIMULATED: Topic connection failed (failure {failureCount} of 5)")
                 {
-                    TopicArn = _orderEventsTopicArn,
-                    Message = messageBody,
-                    Subject = "OrderPersistedToDLQ",
-                    MessageGroupId = clientOrderId.ToString(),
-                    MessageDeduplicationId = Guid.NewGuid().ToString()
+                    StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
                 };
-
-                context.Logger.LogWarning(
-                    $"PublishingEventToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
-
-                await _messagingResiliencePolicy.ExecuteAsync(async () =>
-                {
-                    await _snsClient.PublishAsync(request);
-                });
-
-                context.Logger.LogWarning(
-                    $"EventPublishedToTopic | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Topic: order_events_topic.fifo");
-            }
-            catch (BrokenCircuitException)
-            {
-                context.Logger.LogWarning(
-                    $"CircuitOpen | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Status: {status} " +
-                    $"| Action: deferring publish to UnpublishedTopicMessages");
-
-                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
-
-                context.Logger.LogWarning(
-                    $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
-
-                return;
-            }
-            catch (AmazonSimpleNotificationServiceException snsException)
-            {
-                context.Logger.LogError(
-                    $"TopicPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {snsException.Message}");
-
-                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
-
-                context.Logger.LogWarning(
-                    $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
-
-                return;
-            }
-            catch (Exception ex)
-            {
-                context.Logger.LogError(
-                    $"EventPublishFailed | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId} | Error: {ex.Message}");
-
-                await _tradingDbContext.SaveUnpublishedTopicMessageAsync(eventPayload);
-
-                context.Logger.LogWarning(
-                    $"SavedToUnpublishedTopicMessages | CorrelationId: {correlationId} | ClientOrderId: {clientOrderId}");
-
-                return;
             }
         }
 

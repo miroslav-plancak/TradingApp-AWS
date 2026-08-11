@@ -54,6 +54,37 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
+        public async Task<OutboxMessageResponseDTO> GetByClientOrderIdAsync(Guid clientOrderId)
+        {
+            _logger.LogInformation("GetOutboxMessageByClientOrderId | ClientOrderId: {ClientOrderId}", clientOrderId);
+
+            try
+            {
+                var entity = await _outboxMessageRepository.GetByClientOrderIdAsync(clientOrderId);
+
+                if (entity == null)
+                {
+                    _logger.LogWarning("OutboxMessageNotFound | ClientOrderId: {ClientOrderId}", clientOrderId);
+                    throw new KeyNotFoundException($"Outbox message for order {clientOrderId} not found.");
+                }
+
+                var dto = OutboxMessageMapper.ToOutboxMessageResponseDTO(entity);
+
+                _logger.LogInformation("OutboxMessageRetrieved | ClientOrderId: {ClientOrderId}", clientOrderId);
+
+                return dto;
+            }
+            catch (KeyNotFoundException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetOutboxMessageByClientOrderIdFailed | ClientOrderId: {ClientOrderId}", clientOrderId);
+                throw new Exception($"Failed to retrieve outbox message for order {clientOrderId}", ex);
+            }
+        }
+
         public async Task<IEnumerable<OutboxMessageResponseDTO>> GetAllAsync()
         {
             _logger.LogInformation("GetAllOutboxMessages");

@@ -15,6 +15,7 @@ namespace LambdaBootstrap
             services.AddSnsClient();
             services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "ScheduledOrderStatusProcessor-Sql");
             services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
+            services.AddIntegrationEventPublisherServices();
 
             // Overrides the generator's default AddSingleton<ScheduledOrderStatusProcessor>()
             // (registered before this method runs) - without this, the Scoped TradingDbContext it

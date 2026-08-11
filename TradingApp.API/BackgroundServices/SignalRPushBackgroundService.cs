@@ -53,7 +53,8 @@ namespace TradingApp.API.BackgroundServices
                     {
                         QueueUrl = _queueUrl,
                         MaxNumberOfMessages = 10,
-                        WaitTimeSeconds = 20
+                        WaitTimeSeconds = 20,
+                        MessageAttributeNames = new List<string> { "All" }
                     }, stoppingToken);
                 }
                 catch (OperationCanceledException)
@@ -72,14 +73,40 @@ namespace TradingApp.API.BackgroundServices
                     try
                     {
                         var orderEvent = JsonSerializer.Deserialize<IntegrationEvent>(message.Body);
-
                         using var scope = _scopeFactory.CreateScope();
-                        var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
-                        var order = await orderService.GetOrderByClientOrderIdAsync(orderEvent.ClientOrderId);
 
-                        // The full order, not just id+status - clients apply it directly with
-                        // no follow-up fetch (upsert into the entity store, same shape RequestCurrentStatus returns).
-                        await _hubContext.Clients.All.SendAsync("OrderStatusChanged", order, stoppingToken);
+                       
+                        var eventType = message.MessageAttributes["EventType"].StringValue;
+
+                        switch (eventType)
+                        {
+                            case nameof(OrderStatusChangedEvent):
+                                
+                                var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
+                                var order = await orderService.GetOrderByClientOrderIdAsync(orderEvent.ClientOrderId);
+                                await _hubContext.Clients.All.SendAsync(nameof(OrderStatusChangedEvent), order, stoppingToken);
+                                break;
+
+                            case nameof(DeadLetterLogPersistedEvent):
+                                
+                                var deadLetterLogService = scope.ServiceProvider.GetRequiredService<IDeadLetterService>();
+                                var deadLetterLog =  await deadLetterLogService.GetByClientOrderIdAsync(orderEvent.ClientOrderId);
+                                await _hubContext.Clients.All.SendAsync(nameof(DeadLetterLogPersistedEvent), deadLetterLog, stoppingToken);
+                                break;
+
+                            case nameof(OutboxMessageProcessedEvent):
+
+                                var outboxMessageService = scope.ServiceProvider.GetRequiredService<IOutboxMessageService>();
+                                var outboxMessage = await outboxMessageService.GetByClientOrderIdAsync(orderEvent.ClientOrderId);
+                                await _hubContext.Clients.All.SendAsync(nameof(OutboxMessageProcessedEvent), outboxMessage, stoppingToken);
+                                break;
+
+                            default:
+                                _logger.LogWarning(
+                                    "UnrecognizedEventType | EventType: {EventType} | MessageId: {MessageId} - discarding, no handler registered",
+                                    eventType, message.MessageId);
+                                break;
+                        }
 
                         await _sqsClient.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, stoppingToken);
                     }
