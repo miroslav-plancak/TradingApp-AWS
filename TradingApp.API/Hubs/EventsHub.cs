@@ -7,11 +7,11 @@ using TradingApp.Business.Interfaces.Services;
 
 namespace TradingApp.API.Hubs
 {
-    public class OrderStatusHub : Hub
+    public class EventsHub : Hub
     {
-        private readonly ILogger<OrderStatusHub> _logger;
+        private readonly ILogger<EventsHub> _logger;
         private readonly IOrderService _orderService;
-        public OrderStatusHub(ILogger<OrderStatusHub> logger, IOrderService orderService)
+        public EventsHub(ILogger<EventsHub> logger, IOrderService orderService)
         {
             _logger = logger;
             _orderService = orderService;
