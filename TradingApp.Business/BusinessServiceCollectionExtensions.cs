@@ -3,6 +3,7 @@ using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Middleware;
 using TradingApp.Business.Repositories;
+using TradingApp.Business.Services.Helpers;
 using TradingApp.Business.Services.Regular;
 
 namespace TradingApp.Business
@@ -18,6 +19,8 @@ namespace TradingApp.Business
                     .AddScoped<IDeadLetterRepository, DeadLetterRepository>()
                     .AddScoped<IOutboxMessageService, OutboxMessageService>()
                     .AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
+
+            services.AddSingleton<IResiliencePolicyGuard, ResiliencePolicyGuard>();
 
             return services;
         }

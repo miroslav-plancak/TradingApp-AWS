@@ -26,6 +26,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.RegisterBusiness();
+builder.Services.AddResiliencePolicy("TradingApp.Business-repository");
 
 builder.Services.AddSignalR();
 builder.Services.AddHostedService<SignalRPushBackgroundService>();
