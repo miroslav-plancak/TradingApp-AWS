@@ -17,9 +17,10 @@ namespace TradingApp.LocalHarnessCore
             Func<IServiceProvider, SQSEvent, ILambdaContext, Task<SQSBatchResponse>> handler,
             string? listeningMessage = null,
             // Only takes effect on a message the handler actually reports as failed - never touches
-            // the queue's real VisibilityTimeout, so normal (non-failing) traffic is unaffected. Lets
-            // a harness that's deliberately testing DLQ redrive shorten the wait between redeliveries
-            // instead of sitting through the queue's full production visibility timeout each time.
+            // the queue's real VisibilityTimeout, so normal (non-failing) messages are unaffected.
+            // Used exclusively by OrderExecutionProcessor.LocalHarness for the purposes of deliberately
+            // shortening the wait time between the redeliveries of messages to the queue by reducing
+            // their VisibilityTimeout programmatically from 120s to 10s.
             int? failureVisibilityTimeoutSeconds = null
         )
         {
@@ -82,12 +83,10 @@ namespace TradingApp.LocalHarnessCore
 
                         var batchResponse = await handler(scope.ServiceProvider, sqsEvent, new TestLambdaContext());
 
-                        // BatchItemFailures is the real Lambda/SQS event-source-mapping contract - in a
-                        // deployed Lambda, AWS itself reads this to decide which messages to leave
-                        // un-deleted so SQS naturally redelivers them (toward the queue's real
-                        // maxReceiveCount and redrive policy). This harness has no such runtime behind
-                        // it, so it has to honor that contract itself: skip the delete for anything the
-                        // handler reported as failed, exactly like AWS would.
+                        // In a deployed Lambda the AWS would read this batchResponse.BatchItemFailures and have these
+                        // messages left for an SQS redelivery (bumping up the maxReceiveCount towards redrive policy).
+                        // In our localharness we have to do this manually to mimic the behavior - we skip deleting every
+                        // message that handler has reported as failed.
                         var reportedFailure = batchResponse?.BatchItemFailures?
                             .Any(f => f.ItemIdentifier == message.MessageId) ?? false;
 

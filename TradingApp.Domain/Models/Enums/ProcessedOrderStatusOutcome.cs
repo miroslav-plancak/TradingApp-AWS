@@ -2,10 +2,10 @@
 {
     public enum ProcessedOrderStatusOutcome
     {
-        Filled, 
+        Filled,
         FilledPublishDeferred,
         FilledButNotSavedNorPublished,
-        SaveFailed, 
+        SaveFailed,
         SqlCircuitOpen
     }
 }

@@ -24,9 +24,6 @@ namespace OrderExecutionProcessor
         private readonly IIntegrationEventPublisher _integrationEventPublisher;
         private readonly IAsyncPolicy _sqlResiliencePolicy;
 
-        // Safe unguarded: FunctionHandler walks evnt.Records with a sequential foreach + await
-        // (no Task.WhenAll/Select fan-out in this file), and one execution environment processes
-        // one invocation at a time - no two threads ever reach this line concurrently.
         private static int _topicFailureCount = 0;
 
         public OrderExecutionProcessor(
@@ -81,7 +78,7 @@ namespace OrderExecutionProcessor
             }
 
             var random = new Random();
-            var randomStatus = random.Next(2) == 0 ? OrderStatus.ACKNOWLEDGED : OrderStatus.REJECTED; 
+            var randomStatus = random.Next(2) == 0 ? OrderStatus.ACKNOWLEDGED : OrderStatus.REJECTED;
 
             var orderRowsProcessed = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 await _tradingDbContext.Orders
@@ -109,7 +106,7 @@ namespace OrderExecutionProcessor
                 Sequence = 1,
                 CorrelationId = correlationId
             };
-           
+
             await _integrationEventPublisher.PublishToTopicAsync(
                 eventPayload, "OrderProcessed", context,
                 simulateTopicFailure: () => SimulateTopicFailure(false, context));
@@ -134,7 +131,7 @@ namespace OrderExecutionProcessor
             }
         }
 
-        private void SimulateRedirectToDeadLetterQueue(bool active) 
+        private void SimulateRedirectToDeadLetterQueue(bool active)
         {
             if (!active) return;
 

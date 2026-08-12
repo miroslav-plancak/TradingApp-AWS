@@ -33,6 +33,7 @@ namespace Handler.Services
         {
             var resurrectCandidates = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 await _tradingDbContext.QuarantinedOutboxMessages
+                  .AsNoTracking()
                   .Where(q => !q.IsResurrected
                            && !q.IsDiscarded
                            && q.Reason == OutboxRetryReason.SimpleQueueServiceUnavailable)

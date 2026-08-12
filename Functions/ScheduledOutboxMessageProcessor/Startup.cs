@@ -30,7 +30,8 @@ namespace LambdaBootstrap
 
             // Overrides the generator's default AddSingleton<ScheduledOutboxMessageProcessor>()
             // (registered before this method runs) - without this, the Scoped TradingDbContext it
-            // depends on gets captured once at cold start and reused for the life of the execution environment.
+            // depends on gets captured and held "hostage" once at cold start and reused for the lifetime
+            // of the execution environment.
             services.AddScoped<ScheduledOutboxMessageProcessor>();
         }
     }

@@ -76,6 +76,7 @@ namespace TradingApp.Business.Repositories
             try
             {
                 var result = await _tradingDbContext.DeadLetterLogs
+                    .AsNoTracking()
                     .OrderByDescending(x => x.CreatedAt)
                     .ToListAsync();
 
@@ -93,6 +94,7 @@ namespace TradingApp.Business.Repositories
             try
             {
                 var result = await _tradingDbContext.DeadLetterLogs
+                    .AsNoTracking()
                     .Where(x => !x.IsResolved)
                     .OrderByDescending(x => x.CreatedAt)
                     .ToListAsync();
@@ -166,7 +168,7 @@ namespace TradingApp.Business.Repositories
         {
             try
             {
-                var allDeadLetters = await _tradingDbContext.DeadLetterLogs.ToListAsync();
+                var allDeadLetters = await _tradingDbContext.DeadLetterLogs.AsNoTracking().ToListAsync();
 
                 var stats = new DeadLetterStatsDTO
                 {
@@ -221,6 +223,7 @@ namespace TradingApp.Business.Repositories
             try
             {
                 var deadLetterLog = await _tradingDbContext.DeadLetterLogs
+                    .AsNoTracking()
                     .SingleOrDefaultAsync(x => x.Id == id);
 
                 if (deadLetterLog == null)
@@ -253,7 +256,7 @@ namespace TradingApp.Business.Repositories
         {
             try
             {
-                var deadLetterLogs = await _tradingDbContext.DeadLetterLogs.ToListAsync();
+                var deadLetterLogs = await _tradingDbContext.DeadLetterLogs.AsNoTracking().ToListAsync();
                 var count = deadLetterLogs.Count;
 
                 if (count > 0)

@@ -16,10 +16,11 @@ namespace LambdaBootstrap
             services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
             services.AddSnsClient();
             services.AddIntegrationEventPublisherServices();
-            //services.AddScoped<IIntegrationEventPublisher>();
+
             // Overrides the generator's default AddSingleton<DeadLetterQueueProcessor>() (registered
             // before this method runs) - without this, the Scoped TradingDbContext it depends on gets
-            // captured once at cold start and reused for the life of the execution environment.
+            // captured and held "hostage" once at cold start and reused for the lifetime of the execution
+            // environment.
             // global:: is required here - the namespace and class share the same name, so a plain
             // `using` resolves the bare identifier to the NAMESPACE, not the class (CS0118).
             services.AddScoped<global::DeadLetterQueueProcessor.DeadLetterQueueProcessor>();

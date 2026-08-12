@@ -7,7 +7,7 @@ namespace TradingApp.Business.Mappers
 {
     public static class OrderMapper
     {
-        public static CreatedOrderResponseDTO ToCreatedOrderResponseDTO(Order entity) 
+        public static CreatedOrderResponseDTO ToCreatedOrderResponseDTO(Order entity)
         {
             if (entity == null) return null;
 
@@ -25,7 +25,7 @@ namespace TradingApp.Business.Mappers
             };
         }
 
-        public static Order  ToEntity(CreateOrderRequestDTO dto)
+        public static Order ToEntity(CreateOrderRequestDTO dto)
         {
             if (dto == null) return null;
 

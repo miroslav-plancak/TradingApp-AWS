@@ -14,8 +14,8 @@ namespace TradingApp.Domain
     {
         public TradingDbContext(DbContextOptions<TradingDbContext> options) : base(options) { }
         public DbSet<Order> Orders { get; set; }
-        public DbSet<OutboxMessage> OutboxMessages {get; set; }
-        public DbSet<DeadLetterLog> DeadLetterLogs { get; set;}
+        public DbSet<OutboxMessage> OutboxMessages { get; set; }
+        public DbSet<DeadLetterLog> DeadLetterLogs { get; set; }
         public DbSet<QuarantinedOutboxMessage> QuarantinedOutboxMessages { get; set; }
         public DbSet<UnpublishedTopicMessage> UnpublishedTopicMessages { get; set; }
         public DbSet<OrderNotificationSequence> OrderNotificationSequences { get; set; }

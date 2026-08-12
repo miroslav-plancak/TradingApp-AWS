@@ -35,6 +35,7 @@ namespace Handler.Services
         {
             var exhaustedOutboxMessages = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                  await _tradingDbContext.OutboxMessages
+                  .AsNoTracking()
                   .Where(x => x.ProcessedAt == null && x.RetryCount >= 5)
                   .OrderBy(x => x.CreatedAt)
                   .Take(50)
@@ -59,7 +60,7 @@ namespace Handler.Services
         {
             var channel = Channel.CreateUnbounded<OutboxMessage>();
 
-            foreach(var exObMsg in exObMsgs)
+            foreach (var exObMsg in exObMsgs)
             {
                 channel.Writer.TryWrite(exObMsg);
             }
@@ -87,7 +88,6 @@ namespace Handler.Services
             await Task.WhenAll(workers);
         }
 
-
         private async Task QuarantineExhaustedMessagesViaSemaphorePoolAsync(
             ILambdaContext context, int maxDegreeOfParallelism, List<OutboxMessage> exObMsgs
         )
@@ -102,7 +102,7 @@ namespace Handler.Services
                 {
                     var dbContext = await TryCreateDbContext(context);
 
-                    if (dbContext == null) 
+                    if (dbContext == null)
                         return;
 
                     await using (dbContext)
@@ -141,8 +141,9 @@ namespace Handler.Services
                 await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 {
                     var rowExists = await dbContext.QuarantinedOutboxMessages
+                            .AsNoTracking()
                             .FirstOrDefaultAsync(x => x.OriginalOutboxMessageId == exObMsg.Id);
-                  
+
                     if (rowExists != null)
                     {
                         context.Logger.LogWarning(

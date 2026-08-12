@@ -45,13 +45,14 @@ namespace Handler
                 ?? throw new InvalidOperationException("ORDER_EVENTS_TOPIC_ARN environment variable is not set.");
         }
 
-        [LambdaFunction(Timeout=120)]
+        [LambdaFunction(Timeout = 120)]
         public async Task FunctionHandler(ILambdaContext context)
         {
             context.Logger.LogWarning($"ScheduledUnpublishedTopicMessagesProcessor triggered at: {DateTimeOffset.UtcNow}");
 
             var unpublishedMessages = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 await _tradingDbContext.UnpublishedTopicMessages
+                    .AsNoTracking()
                     .Where(x => x.PublishedAt == null && x.RetryCount < 5)
                     .OrderBy(x => x.CreatedAt)
                     .ThenBy(x => x.EventType)
@@ -88,9 +89,9 @@ namespace Handler
             {
                 await semaphore.WaitAsync();
 
-                try 
-                { 
-                    if(Volatile.Read(ref circuitOpenedFlag) == 1)
+                try
+                {
+                    if (Volatile.Read(ref circuitOpenedFlag) == 1)
                     {
                         context.Logger.LogWarning(
                            $"SkippedCircuitOpen | CorrelationId: {unpublishedMessage.CorrelationId} | Unpublished message stays unpublished");
@@ -179,9 +180,10 @@ namespace Handler
                       $"Trying to publish unpublishedTopicMessage | CorrelationId: {unpublishedMessage.CorrelationId} | UnpublishedId: {unpublishedMessage.Id} " +
                       $"| ClientOrderId: {unpublishedMessage.ClientOrderId}");
 
-                // Payload is the exact JSON that failed to publish the first time - republish it
-                // byte-for-byte instead of reconstructing it, so redrive can never produce an event
-                // that differs from the one that actually failed.
+                // Payload is the same UnpublishedTopicMessage that failed first time around, here we are
+                // republishing it entirely instead of trying to reconstruct it. In addition to it, we've
+                // persisted the original EventType and we re-publish using the original EventType which
+                // was persisted when the original publishing has failed.
                 var request = new PublishRequest
                 {
                     TopicArn = _orderEventsTopicArn,

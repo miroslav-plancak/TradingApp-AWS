@@ -28,7 +28,7 @@ namespace DeadLetterQueueProcessor
         private readonly IIntegrationEventPublisher _integrationEventPublisher;
         private readonly HttpClient _httpClient;
         private readonly IAsyncPolicy _sqlResiliencePolicy;
-      
+
         private readonly string? _teamsWebhookUrl;
         private const string themeColor = "D70000";
         private static int _topicFailureCount = 0;
@@ -45,7 +45,7 @@ namespace DeadLetterQueueProcessor
             _integrationEventPublisher = integrationEventPublisher;
             _httpClient = httpClient;
             _sqlResiliencePolicy = sqlResiliencePolicy;
-          
+
             _teamsWebhookUrl = Environment.GetEnvironmentVariable("TEAMS_DLQ_WEBHOOK_URL")
                 ?? throw new InvalidOperationException("TEAMS_DLQ_WEBHOOK_URL environment variable is not set.");
         }
@@ -89,9 +89,10 @@ namespace DeadLetterQueueProcessor
 
                 var deadLetterLogAlreadyExists = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                       await _tradingDbContext.DeadLetterLogs
+                        .AsNoTracking()
                         .FirstOrDefaultAsync(x => x.ClientOrderId == payload.ClientOrderId && !x.IsResolved));
 
-                if(deadLetterLogAlreadyExists != null)
+                if (deadLetterLogAlreadyExists != null)
                 {
                     context.Logger.LogWarning(
                       $"DeadLetterLogEntryAlreadyExists | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId}");
@@ -110,11 +111,11 @@ namespace DeadLetterQueueProcessor
                         DeadLetterCategory.InfrastructureFailure,
                         correlationId);
 
-                    var deadLetterLogEventPayload = new DeadLetterLogPersistedEvent 
-                    { 
-                        ClientOrderId = payload.ClientOrderId, 
-                        EventTime = DateTimeOffset.UtcNow, 
-                        CorrelationId = correlationId 
+                    var deadLetterLogEventPayload = new DeadLetterLogPersistedEvent
+                    {
+                        ClientOrderId = payload.ClientOrderId,
+                        EventTime = DateTimeOffset.UtcNow,
+                        CorrelationId = correlationId
                     };
 
                     await _integrationEventPublisher.PublishToTopicAsync(
@@ -141,10 +142,11 @@ namespace DeadLetterQueueProcessor
                 context.Logger.LogError(
                     $"OrderFailedAndInDLQ | CorrelationId: {correlationId} | ClientOrderId: {payload.ClientOrderId}");
 
-                // Staged (Add, not saved) before the retried block below - Polly re-runs that whole
-                // lambda on a transient failure, and CreateDeadLetterLogAsync's own Add+Save isn't
-                // idempotent, so building the entity here means at most one row is ever pending,
-                // however many times the save gets retried.
+                // We do not save the DeadLetterEntity here just yet, we add it to the _tradingDbContext
+                // and only save if the _sqlResiliencePolicy below does not throw. This way we ensure
+                // atomic save of both Order and DL entities. By doing this we also ensure idempotency
+                // on a transient failure because we always have one added DL entity regardless of how many
+                // retry attempts are we into the ExecuteAsync().
                 var deadLetterEntry = StageDeadLetterLogEntity(record, payload, correlationId);
 
                 await _sqlResiliencePolicy.ExecuteAsync(async () =>
@@ -158,11 +160,11 @@ namespace DeadLetterQueueProcessor
 
                 var eventPayload = new OrderStatusChangedEvent
                 {
-                    ClientOrderId = payload.ClientOrderId, 
-                    Status = OrderStatus.REJECTED.ToString(), 
-                    EventTime = DateTimeOffset.UtcNow, 
-                    Sequence = 1, 
-                    CorrelationId = correlationId 
+                    ClientOrderId = payload.ClientOrderId,
+                    Status = OrderStatus.REJECTED.ToString(),
+                    EventTime = DateTimeOffset.UtcNow,
+                    Sequence = 1,
+                    CorrelationId = correlationId
                 };
 
                 await _integrationEventPublisher.PublishToTopicAsync(
@@ -229,17 +231,11 @@ namespace DeadLetterQueueProcessor
             }
         }
 
-        /// <summary>
-        /// Builds the DeadLetterLog entity and stages it (Add, no save) - the caller's own
-        /// SaveChangesAsync is what actually commits it, together with the order update.
-        /// </summary>
         private DeadLetterLogResponseDTO StageDeadLetterLogEntity(SQSEvent.SQSMessage record, OrderPayload payload, string correlationId)
         {
-            // WORKAROUND: Azure's ServiceBusReceivedMessage.DeadLetterReason is populated
-            // automatically by Service Bus itself (e.g. "MaxDeliveryCountExceeded"). SQS has no
-            // equivalent - a redriven message carries no reason string at all. Closest honest
-            // substitute: report the real ApproximateReceiveCount SQS *did* give us (via the
-            // harness requesting it as a system attribute), rather than inventing a fake reason.
+            // We extract ApproximateReceiveCount from the SQS record via MessageSystemAttributeNames = new List<string> { "All" }
+            // in this Lambda's respective localharness and we use this parameter to populate DeadLetterLog.Reason instead of inventing
+            // a fake reason.
             var receiveCount = record.Attributes != null
                 && record.Attributes.TryGetValue("ApproximateReceiveCount", out var countStr)
                 ? countStr

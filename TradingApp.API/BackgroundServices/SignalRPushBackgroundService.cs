@@ -61,36 +61,35 @@ namespace TradingApp.API.BackgroundServices
                 {
                     break;
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     _logger.LogError(ex, "ReceiveMessage failed on {QueueUrl}, backing off 5s", _queueUrl);
                     await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
                     continue;
                 }
 
-                foreach(var message in response.Messages ?? new List<Message>())
+                foreach (var message in response.Messages ?? new List<Message>())
                 {
                     try
                     {
                         var orderEvent = JsonSerializer.Deserialize<IntegrationEvent>(message.Body);
                         using var scope = _scopeFactory.CreateScope();
 
-                       
                         var eventType = message.MessageAttributes["EventType"].StringValue;
 
                         switch (eventType)
                         {
                             case nameof(OrderStatusChangedEvent):
-                                
+
                                 var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
                                 var order = await orderService.GetOrderByClientOrderIdAsync(orderEvent.ClientOrderId);
                                 await _hubContext.Clients.All.SendAsync(nameof(OrderStatusChangedEvent), order, stoppingToken);
                                 break;
 
                             case nameof(DeadLetterLogPersistedEvent):
-                                
+
                                 var deadLetterLogService = scope.ServiceProvider.GetRequiredService<IDeadLetterService>();
-                                var deadLetterLog =  await deadLetterLogService.GetByClientOrderIdAsync(orderEvent.ClientOrderId);
+                                var deadLetterLog = await deadLetterLogService.GetByClientOrderIdAsync(orderEvent.ClientOrderId);
                                 await _hubContext.Clients.All.SendAsync(nameof(DeadLetterLogPersistedEvent), deadLetterLog, stoppingToken);
                                 break;
 
@@ -112,11 +111,12 @@ namespace TradingApp.API.BackgroundServices
                     }
                     catch (KeyNotFoundException ex)
                     {
-                        // The order genuinely doesn't exist - retrying won't fix that, so drop the message.
+                        // At this point we are sure that the entity we are trying to find genuinely doesn't exist, which means that
+                        // retrying won't fix this issue, so we delete the message we are trying to push to the client from the queue.
                         _logger.LogWarning(ex, "OrderNotFoundForPush | MessageId: {MessageId} - discarding, not retrying", message.MessageId);
                         await _sqsClient.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, stoppingToken);
                     }
-                    catch(Exception ex)
+                    catch (Exception ex)
                     {
                         _logger.LogError(ex, "Failed processing message {MessageId} - left on queue for retry", message.MessageId);
                     }

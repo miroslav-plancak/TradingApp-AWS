@@ -15,6 +15,6 @@ namespace TradingApp.Domain.Models.Entities.DeadLetterLog
         public required string ResolutionNotes { get; set; }
         public DateTimeOffset? ResolvedAt { get; set; }
         public required string ResolvedBy { get; set; }
-        public  string? CorrelationId { get; set; }
+        public string? CorrelationId { get; set; }
     }
 }

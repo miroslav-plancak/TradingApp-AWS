@@ -43,7 +43,7 @@ namespace TradingApp.Business.Services.Regular
             try
             {
                 var orderEntityRequest = OrderMapper.ToEntity(orderRequest);
-                orderEntityRequest.CorrelationId = correlationId; 
+                orderEntityRequest.CorrelationId = correlationId;
 
                 var order = await _orderRepository.CreateOrderAsync(orderEntityRequest);
 
@@ -53,7 +53,7 @@ namespace TradingApp.Business.Services.Regular
                     Type = "OrderCreated",
                     Payload = order.ClientOrderId.ToString(),
                     CreatedAt = DateTimeOffset.UtcNow,
-                    CorrelationId = correlationId 
+                    CorrelationId = correlationId
                 });
 
                 await _tradingDbContext.SaveChangesAsync();
