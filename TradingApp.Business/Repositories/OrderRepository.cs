@@ -1,9 +1,9 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using TradingApp.Business.Interfaces.Repositories;
+using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.Order;
 
@@ -12,17 +12,21 @@ namespace TradingApp.Business.Repositories
     public class OrderRepository : IOrderRepository
     {
         private readonly TradingDbContext _tradingDbContext;
-        private readonly ILogger<OrderRepository> _logger;
+        private readonly IResiliencePolicyGuard _resiliencePolicyGuard;
 
-        public OrderRepository(ILogger<OrderRepository> logger, TradingDbContext tradingDbContext)
+        public OrderRepository
+        (
+            TradingDbContext tradingDbContext,
+            IResiliencePolicyGuard resiliencePolicyGuard
+        )
         {
-            _logger = logger;
             _tradingDbContext = tradingDbContext;
+            _resiliencePolicyGuard = resiliencePolicyGuard;
         }
 
         public async Task<Order> CreateOrderAsync(Order order)
         {
-            try
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
                 order.Id = Guid.NewGuid();
                 order.ClientOrderId = Guid.NewGuid();
@@ -31,136 +35,79 @@ namespace TradingApp.Business.Repositories
 
                 _tradingDbContext.Orders.Add(order);
                 await _tradingDbContext.SaveChangesAsync();
+            },
+            $"{nameof(CreateOrderAsync)}:Save:{order.CorrelationId}");
 
-                return order;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to create order | CorrelationId: {CorrelationId}",
-                    order.CorrelationId);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to create order | CorrelationId: {CorrelationId}",
-                    order.CorrelationId);
-                throw;
-            }
+            return order;
         }
 
         public async Task<Order> GetOrderByIdAsync(Guid orderId)
         {
-            try
-            {
-                var result = await _tradingDbContext.Orders
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.Orders
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == orderId);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "DatabaseError | Failed to get order | OrderId: {OrderId}",
-                    orderId);
-                throw;
-            }
+                    .SingleOrDefaultAsync(x => x.Id == orderId),
+                $"{nameof(GetOrderByIdAsync)}:Fetch:{orderId}");
         }
 
         public async Task<Order> GetOrderByClientOrderIdAsync(Guid clientOrderId)
         {
-            try
-            {
-                var result = await _tradingDbContext.Orders
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.Orders
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.ClientOrderId == clientOrderId);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "DatabaseError | Failed to get order | ClientOrderId: {ClientOrderId}",
-                    clientOrderId);
-                throw;
-            }
+                    .SingleOrDefaultAsync(x => x.ClientOrderId == clientOrderId),
+                $"{nameof(GetOrderByClientOrderIdAsync)}:Fetch:{clientOrderId}");
         }
 
         public async Task<IEnumerable<Order>> GetOrdersAsync()
         {
-            try
-            {
-                var result = await _tradingDbContext.Orders.AsNoTracking().ToListAsync();
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve orders");
-                throw;
-            }
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.Orders.AsNoTracking().ToListAsync(),
+                nameof(GetOrdersAsync) + ":Fetch");
         }
 
         public async Task<bool> DeleteOrderAsync(Guid orderId)
         {
-            try
-            {
-                var order = await _tradingDbContext.Orders
+            var order = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.Orders
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == orderId);
+                    .SingleOrDefaultAsync(x => x.Id == orderId),
+                $"{nameof(DeleteOrderAsync)}:Fetch:{orderId}");
 
-                if (order == null)
-                {
-                    return false;
-                }
+            if (order == null)
+            {
+                return false;
+            }
 
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            {
                 _tradingDbContext.Orders.Remove(order);
                 await _tradingDbContext.SaveChangesAsync();
+            },
+            $"{nameof(DeleteOrderAsync)}:Delete:{orderId}");
 
-                return true;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to delete order | OrderId: {OrderId}",
-                    orderId);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to delete order | OrderId: {OrderId}",
-                    orderId);
-                throw;
-            }
+            return true;
         }
 
         public async Task<int> DeleteAllOrdersAsync()
         {
-            try
-            {
-                var orders = await _tradingDbContext.Orders.AsNoTracking().ToListAsync();
-                var count = orders.Count;
+            var orders = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.Orders.AsNoTracking().ToListAsync(),
+                nameof(DeleteAllOrdersAsync) + ":Fetch");
 
-                if (count > 0)
+            var count = orders.Count;
+
+            if (count > 0)
+            {
+                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
                     _tradingDbContext.Orders.RemoveRange(orders);
                     await _tradingDbContext.SaveChangesAsync();
-                }
+                },
+                nameof(DeleteAllOrdersAsync) + ":Delete");
+            }
 
-                return count;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx, "DatabaseError | Failed to delete all orders");
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "UnexpectedError | Failed to delete all orders");
-                throw;
-            }
+            return count;
         }
     }
 }

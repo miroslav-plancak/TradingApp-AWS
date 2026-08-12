@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Outbox;
 using TradingApp.Business.Interfaces.Repositories;
+using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OutboxMessage;
 
@@ -14,227 +14,149 @@ namespace TradingApp.Business.Repositories
     public class OutboxMessageRepository : IOutboxMessageRepository
     {
         private readonly TradingDbContext _tradingDbContext;
-        private readonly ILogger<OutboxMessageRepository> _logger;
+        private readonly IResiliencePolicyGuard _resiliencePolicyGuard;
 
-        public OutboxMessageRepository(ILogger<OutboxMessageRepository> logger, TradingDbContext tradingDbContext)
+        public OutboxMessageRepository(TradingDbContext tradingDbContext, IResiliencePolicyGuard resiliencePolicyGuard)
         {
-            _logger = logger;
             _tradingDbContext = tradingDbContext;
+            _resiliencePolicyGuard = resiliencePolicyGuard;
         }
 
         public async Task<OutboxMessage> GetByIdAsync(Guid id)
         {
-            try
-            {
-                var result = await _tradingDbContext.OutboxMessages
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == id);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "DatabaseError | Failed to get outbox message | Id: {Id}",
-                    id);
-                throw;
-            }
+                    .SingleOrDefaultAsync(x => x.Id == id),
+                $"{nameof(GetByIdAsync)}:Fetch:{id}");
         }
 
         public async Task<OutboxMessage> GetByClientOrderIdAsync(Guid clientOrderId)
         {
-            try
-            {
-                var result = await _tradingDbContext.OutboxMessages
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .AsNoTracking()
                     .Where(x => x.Payload == clientOrderId.ToString())
                     .OrderByDescending(x => x.CreatedAt)
-                    .FirstOrDefaultAsync();
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "DatabaseError | Failed to get outbox message | ClientOrderId: {ClientOrderId}",
-                    clientOrderId);
-                throw;
-            }
+                    .FirstOrDefaultAsync(),
+                $"{nameof(GetByClientOrderIdAsync)}:Fetch:{clientOrderId}");
         }
 
         public async Task<IEnumerable<OutboxMessage>> GetAllAsync()
         {
-            try
-            {
-                var result = await _tradingDbContext.OutboxMessages
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .AsNoTracking()
                     .OrderByDescending(x => x.CreatedAt)
-                    .ToListAsync();
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve all outbox messages");
-                throw;
-            }
+                    .ToListAsync(),
+                nameof(GetAllAsync) + ":Fetch");
         }
 
         public async Task<IEnumerable<OutboxMessage>> GetUnprocessedAsync()
         {
-            try
-            {
-                var result = await _tradingDbContext.OutboxMessages
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .AsNoTracking()
                     .Where(x => x.ProcessedAt == null)
                     .OrderByDescending(x => x.CreatedAt)
-                    .ToListAsync();
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve unprocessed outbox messages");
-                throw;
-            }
+                    .ToListAsync(),
+                nameof(GetUnprocessedAsync) + ":Fetch");
         }
 
         public async Task<IEnumerable<OutboxMessage>> GetProcessedAsync()
         {
-            try
-            {
-                var result = await _tradingDbContext.OutboxMessages
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .AsNoTracking()
                     .Where(x => x.ProcessedAt != null)
                     .OrderByDescending(x => x.CreatedAt)
-                    .ToListAsync();
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve processed outbox messages");
-                throw;
-            }
+                    .ToListAsync(),
+                nameof(GetProcessedAsync) + ":Fetch");
         }
 
         public async Task<OutboxMessage> MarkAsProcessedAsync(Guid id)
         {
-            try
+            var outboxMessage = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
+                    .SingleOrDefaultAsync(x => x.Id == id),
+                $"{nameof(MarkAsProcessedAsync)}:Fetch:{id}");
+
+            if (outboxMessage == null)
             {
-                var outboxMessage = await _tradingDbContext.OutboxMessages
-                    .SingleOrDefaultAsync(x => x.Id == id);
+                return null;
+            }
 
-                if (outboxMessage == null)
-                {
-                    return null;
-                }
-
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            {
                 outboxMessage.ProcessedAt = DateTimeOffset.UtcNow;
                 await _tradingDbContext.SaveChangesAsync();
+            },
+            $"{nameof(MarkAsProcessedAsync)}:Save:{id}");
 
-                return outboxMessage;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to mark outbox message as processed | Id: {Id}",
-                    id);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to mark outbox message as processed | Id: {Id}",
-                    id);
-                throw;
-            }
+            return outboxMessage;
         }
 
         public async Task<bool> DeleteAsync(Guid id)
         {
-            try
-            {
-                var outboxMessage = await _tradingDbContext.OutboxMessages
+            var outboxMessage = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == id);
+                    .SingleOrDefaultAsync(x => x.Id == id),
+                $"{nameof(DeleteAsync)}:Fetch:{id}");
 
-                if (outboxMessage == null)
-                {
-                    return false;
-                }
+            if (outboxMessage == null)
+            {
+                return false;
+            }
 
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            {
                 _tradingDbContext.OutboxMessages.Remove(outboxMessage);
                 await _tradingDbContext.SaveChangesAsync();
+            },
+            $"{nameof(DeleteAsync)}:Delete:{id}");
 
-                return true;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to delete outbox message | Id: {Id}",
-                    id);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to delete outbox message | Id: {Id}",
-                    id);
-                throw;
-            }
+            return true;
         }
 
         public async Task<int> DeleteAllAsync()
         {
-            try
-            {
-                var outboxMessages = await _tradingDbContext.OutboxMessages.AsNoTracking().ToListAsync();
-                var count = outboxMessages.Count;
+            var outboxMessages = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages.AsNoTracking().ToListAsync(),
+                nameof(DeleteAllAsync) + ":Fetch");
 
-                if (count > 0)
+            var count = outboxMessages.Count;
+
+            if (count > 0)
+            {
+                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
                     _tradingDbContext.OutboxMessages.RemoveRange(outboxMessages);
                     await _tradingDbContext.SaveChangesAsync();
-                }
+                },
+                nameof(DeleteAllAsync) + ":Delete");
+            }
 
-                return count;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx, "DatabaseError | Failed to delete all outbox messages");
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "UnexpectedError | Failed to delete all outbox messages");
-                throw;
-            }
+            return count;
         }
 
         public async Task<OutboxMessageStatsDTO> GetStatsAsync()
         {
-            try
-            {
-                var allMessages = await _tradingDbContext.OutboxMessages
+            var allMessages = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .AsNoTracking()
-                    .ToListAsync();
+                    .ToListAsync(),
+                nameof(GetStatsAsync) + ":Fetch");
 
-                var stats = new OutboxMessageStatsDTO
-                {
-                    TotalCount = allMessages.Count,
-                    ProcessedCount = allMessages.Count(x => x.ProcessedAt.HasValue),
-                    UnprocessedCount = allMessages.Count(x => !x.ProcessedAt.HasValue),
-                    Last24Hours = allMessages.Count(x => x.CreatedAt >= DateTimeOffset.UtcNow.AddHours(-24))
-                };
-
-                return stats;
-            }
-            catch (Exception ex)
+            var stats = new OutboxMessageStatsDTO
             {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve outbox message stats");
-                throw;
-            }
+                TotalCount = allMessages.Count,
+                ProcessedCount = allMessages.Count(x => x.ProcessedAt.HasValue),
+                UnprocessedCount = allMessages.Count(x => !x.ProcessedAt.HasValue),
+                Last24Hours = allMessages.Count(x => x.CreatedAt >= DateTimeOffset.UtcNow.AddHours(-24))
+            };
+
+            return stats;
         }
     }
 }

@@ -89,6 +89,7 @@ namespace TradingApp.Infrastructure
             services.AddSingleton<HttpClient>();
             return services;
         }
+
         public static IServiceCollection AddIntegrationEventPublisherServices(this IServiceCollection services)
         {
             services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();

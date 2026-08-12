@@ -1,12 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using TradingApp.Business.DTOs;
 using TradingApp.Business.DTOs.DeadLetter;
 using TradingApp.Business.Interfaces.Repositories;
+using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.DeadLetterLog;
 
@@ -15,17 +14,21 @@ namespace TradingApp.Business.Repositories
     public class DeadLetterRepository : IDeadLetterRepository
     {
         private readonly TradingDbContext _tradingDbContext;
-        private readonly ILogger<DeadLetterRepository> _logger;
+        private readonly IResiliencePolicyGuard _resiliencePolicyGuard;
 
-        public DeadLetterRepository(ILogger<DeadLetterRepository> logger, TradingDbContext tradingDbContext)
+        public DeadLetterRepository
+        (
+            TradingDbContext tradingDbContext,
+            IResiliencePolicyGuard resiliencePolicyGuard
+        )
         {
-            _logger = logger;
             _tradingDbContext = tradingDbContext;
+            _resiliencePolicyGuard = resiliencePolicyGuard;
         }
 
         public async Task<DeadLetterLog> CreateDeadLetterLogAsync(DeadLetterLog deadLetterLog)
         {
-            try
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
                 deadLetterLog.Id = Guid.NewGuid();
                 deadLetterLog.CreatedAt = DateTimeOffset.UtcNow;
@@ -33,250 +36,155 @@ namespace TradingApp.Business.Repositories
 
                 _tradingDbContext.DeadLetterLogs.Add(deadLetterLog);
                 await _tradingDbContext.SaveChangesAsync();
+            },
+            $"{nameof(CreateDeadLetterLogAsync)}:Save:{deadLetterLog.ClientOrderId}");
 
-                return deadLetterLog;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to create dead letter log | ClientOrderId: {ClientOrderId}",
-                    deadLetterLog.ClientOrderId);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to create dead letter log | ClientOrderId: {ClientOrderId}",
-                    deadLetterLog.ClientOrderId);
-                throw;
-            }
+            return deadLetterLog;
         }
 
         public async Task<DeadLetterLog> GetDeadLetterLogByIdAsync(Guid id)
         {
-            try
-            {
-                var result = await _tradingDbContext.DeadLetterLogs
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.DeadLetterLogs
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == id);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "DatabaseError | Failed to get dead letter log | Id: {Id}",
-                    id);
-                throw;
-            }
+                    .SingleOrDefaultAsync(x => x.Id == id),
+                $"{nameof(GetDeadLetterLogByIdAsync)}:Fetch:{id}");
         }
 
         public async Task<IEnumerable<DeadLetterLog>> GetAllDeadLetterLogsAsync()
         {
-            try
-            {
-                var result = await _tradingDbContext.DeadLetterLogs
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.DeadLetterLogs
                     .AsNoTracking()
                     .OrderByDescending(x => x.CreatedAt)
-                    .ToListAsync();
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve all dead letter logs");
-                throw;
-            }
+                    .ToListAsync(),
+                nameof(GetAllDeadLetterLogsAsync) + ":Fetch");
         }
 
         public async Task<IEnumerable<DeadLetterLog>> GetUnresolvedDeadLetterLogsAsync()
         {
-            try
-            {
-                var result = await _tradingDbContext.DeadLetterLogs
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.DeadLetterLogs
                     .AsNoTracking()
                     .Where(x => !x.IsResolved)
                     .OrderByDescending(x => x.CreatedAt)
-                    .ToListAsync();
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve unresolved dead letter logs");
-                throw;
-            }
+                    .ToListAsync(),
+                nameof(GetUnresolvedDeadLetterLogsAsync) + ":Fetch");
         }
 
         public async Task<DeadLetterLog> MarkAsResolvedAsync(Guid id, string resolutionNotes, string resolvedBy)
         {
-            try
+            var deadLetterLog = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.DeadLetterLogs
+                    .SingleOrDefaultAsync(x => x.Id == id),
+                $"{nameof(MarkAsResolvedAsync)}:Fetch:{id}");
+
+            if (deadLetterLog == null)
             {
-                var deadLetterLog = await _tradingDbContext.DeadLetterLogs
-                    .SingleOrDefaultAsync(x => x.Id == id);
+                return null;
+            }
 
-                if (deadLetterLog == null)
-                {
-                    return null;
-                }
-
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            {
                 deadLetterLog.IsResolved = true;
                 deadLetterLog.ResolutionNotes = resolutionNotes;
                 deadLetterLog.ResolvedBy = resolvedBy;
                 deadLetterLog.ResolvedAt = DateTimeOffset.UtcNow;
 
                 await _tradingDbContext.SaveChangesAsync();
+            }, $"{nameof(MarkAsResolvedAsync)}:Save:{id}");
 
-                return deadLetterLog;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to mark dead letter log as resolved | Id: {Id}",
-                    id);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to mark dead letter log as resolved | Id: {Id}",
-                    id);
-                throw;
-            }
+            return deadLetterLog;
         }
 
         public async Task<DeadLetterLog> GetByClientOrderIdAsync(Guid clientOrderId)
         {
-            try
-            {
-                var result = await _tradingDbContext.DeadLetterLogs
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.DeadLetterLogs
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.ClientOrderId == clientOrderId);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "DatabaseError | Failed to get dead letter log | ClientOrderId: {ClientOrderId}",
-                    clientOrderId);
-                throw;
-            }
+                    .FirstOrDefaultAsync(x => x.ClientOrderId == clientOrderId),
+                $"{nameof(GetByClientOrderIdAsync)}:Fetch:{clientOrderId}");
         }
 
         public async Task<DeadLetterStatsDTO> GetStatsAsync()
         {
-            try
-            {
-                var allDeadLetters = await _tradingDbContext.DeadLetterLogs.AsNoTracking().ToListAsync();
+            var allDeadLetters = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.DeadLetterLogs.AsNoTracking().ToListAsync(),
+                nameof(GetStatsAsync) + ":Fetch");
 
-                var stats = new DeadLetterStatsDTO
-                {
-                    TotalCount = allDeadLetters.Count,
-                    UnresolvedCount = allDeadLetters.Count(x => !x.IsResolved),
-                    ResolvedCount = allDeadLetters.Count(x => x.IsResolved),
-                    Last24Hours = allDeadLetters.Count(x => x.CreatedAt >= DateTimeOffset.UtcNow.AddHours(-24))
-                };
-
-                return stats;
-            }
-            catch (Exception ex)
+            var stats = new DeadLetterStatsDTO
             {
-                _logger.LogError(ex, "DatabaseError | Failed to retrieve dead letter stats");
-                throw;
-            }
+                TotalCount = allDeadLetters.Count,
+                UnresolvedCount = allDeadLetters.Count(x => !x.IsResolved),
+                ResolvedCount = allDeadLetters.Count(x => x.IsResolved),
+                Last24Hours = allDeadLetters.Count(x => x.CreatedAt >= DateTimeOffset.UtcNow.AddHours(-24))
+            };
+
+            return stats;
         }
 
         public async Task MarkOutboxMessageAsProcessedAsync(Guid clientOrderId)
         {
-            try
-            {
-                var outboxMessage = await _tradingDbContext.OutboxMessages
+            var outboxMessage = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.OutboxMessages
                     .FirstOrDefaultAsync(x =>
                         x.Payload == clientOrderId.ToString() &&
-                        x.ProcessedAt == null);
+                        x.ProcessedAt == null),
+                $"{nameof(MarkOutboxMessageAsProcessedAsync)}:Fetch:{clientOrderId}");
 
-                if (outboxMessage != null)
+            if (outboxMessage != null)
+            {
+                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
                     outboxMessage.ProcessedAt = DateTimeOffset.UtcNow;
                     await _tradingDbContext.SaveChangesAsync();
-                }
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to mark outbox message as processed | ClientOrderId: {ClientOrderId}",
-                    clientOrderId);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to mark outbox message as processed | ClientOrderId: {ClientOrderId}",
-                    clientOrderId);
-                throw;
+                },
+                $"{nameof(MarkOutboxMessageAsProcessedAsync)}:Save:{clientOrderId}");
             }
         }
 
         public async Task<bool> DeleteDeadLetterLogAsync(Guid id)
         {
-            try
-            {
-                var deadLetterLog = await _tradingDbContext.DeadLetterLogs
+            var deadLetterLog = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.DeadLetterLogs
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == id);
+                    .SingleOrDefaultAsync(x => x.Id == id),
+                $"{nameof(DeleteDeadLetterLogAsync)}:Fetch:{id}");
 
-                if (deadLetterLog == null)
-                {
-                    return false;
-                }
+            if (deadLetterLog == null)
+            {
+                return false;
+            }
 
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            {
                 _tradingDbContext.DeadLetterLogs.Remove(deadLetterLog);
                 await _tradingDbContext.SaveChangesAsync();
+            },
+            $"{nameof(DeleteDeadLetterLogAsync)}:Delete:{id}");
 
-                return true;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx,
-                    "DatabaseError | Failed to delete dead letter log | Id: {Id}",
-                    id);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "UnexpectedError | Failed to delete dead letter log | Id: {Id}",
-                    id);
-                throw;
-            }
+            return true;
         }
 
         public async Task<int> DeleteAllDeadLetterLogsAsync()
         {
-            try
-            {
-                var deadLetterLogs = await _tradingDbContext.DeadLetterLogs.AsNoTracking().ToListAsync();
-                var count = deadLetterLogs.Count;
+            var deadLetterLogs = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                 await _tradingDbContext.DeadLetterLogs.AsNoTracking().ToListAsync(),
+                 nameof(DeleteAllDeadLetterLogsAsync) + ":Fetch");
 
-                if (count > 0)
+            var count = deadLetterLogs.ToList().Count;
+
+            if (count > 0)
+            {
+                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
                     _tradingDbContext.DeadLetterLogs.RemoveRange(deadLetterLogs);
                     await _tradingDbContext.SaveChangesAsync();
-                }
+                },
+                nameof(DeleteAllDeadLetterLogsAsync) + ":Delete");
+            }
 
-                return count;
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogError(dbEx, "DatabaseError | Failed to delete all dead letter logs");
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "UnexpectedError | Failed to delete all dead letter logs");
-                throw;
-            }
+            return count;
         }
     }
 }
