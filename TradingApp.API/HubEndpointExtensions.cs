@@ -8,7 +8,7 @@ namespace TradingApp.API
     {
         public static void MapAppHubs(this IEndpointRouteBuilder endpoints)
         {
-            endpoints.MapHub<OrderStatusHub>("hubs/orders");
+            endpoints.MapHub<EventsHub>("hubs/events");
         }
     }
 }

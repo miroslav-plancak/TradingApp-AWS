@@ -18,7 +18,7 @@ namespace TradingApp.API.BackgroundServices
 {
     public class SignalRPushBackgroundService : BackgroundService
     {
-        private readonly IHubContext<OrderStatusHub> _hubContext;
+        private readonly IHubContext<EventsHub> _hubContext;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<SignalRPushBackgroundService> _logger;
         private readonly IAmazonSQS _sqsClient;
@@ -26,7 +26,7 @@ namespace TradingApp.API.BackgroundServices
 
         public SignalRPushBackgroundService
         (
-            IHubContext<OrderStatusHub> hubContext,
+            IHubContext<EventsHub> hubContext,
             IServiceScopeFactory scopeFactory,
             ILogger<SignalRPushBackgroundService> logger
         )
