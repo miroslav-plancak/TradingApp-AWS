@@ -34,7 +34,7 @@ namespace TradingApp.API.Hubs
             catch (KeyNotFoundException ex)
             {
                 // We deliberately throw HubException here because it is the only exception type SignalR sends
-                // the real message for via socket connection - anything else is stripped to a generic error by 
+                // the real message for via socket connection - anything else is stripped to a generic error by
                 // default "An unexpected error occurred invoking 'MethodName' on the server."
                 throw new HubException(ex.Message);
             }

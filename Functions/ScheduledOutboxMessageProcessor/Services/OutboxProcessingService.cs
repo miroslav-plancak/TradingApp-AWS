@@ -59,6 +59,7 @@ namespace Handler.Services
 
             var outboxMessages = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 await _tradingDbContext.OutboxMessages
+                 .AsNoTracking()
                  .Where(x => x.ProcessedAt == null && x.RetryCount < 5)
                  .OrderBy(x => x.CreatedAt)
                  .Take(50)

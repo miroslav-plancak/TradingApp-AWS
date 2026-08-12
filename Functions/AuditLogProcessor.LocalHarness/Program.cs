@@ -8,7 +8,7 @@ var serviceProvider = services.BuildServiceProvider();
 
 var queueUrl = "https://sqs.eu-north-1.amazonaws.com/465861110788/audit_log_queue.fifo";
 
-await SqsHarness.RunAsync(queueUrl, serviceProvider, async (sp, sqsEvent, context) => 
+await SqsHarness.RunAsync(queueUrl, serviceProvider, async (sp, sqsEvent, context) =>
 {
     var function = sp.GetRequiredService<AuditLogProcessor.AuditLogProcessor>();
     return await function.FunctionHandler(sqsEvent, context);

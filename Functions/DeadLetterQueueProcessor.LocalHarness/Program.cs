@@ -12,7 +12,5 @@ await SqsHarness.RunAsync(queueUrl, serviceProvider, async (sp, sqsEvent, contex
 {
     var function = sp.GetRequiredService<DeadLetterQueueProcessor.DeadLetterQueueProcessor>();
     return await function.FunctionHandler(sqsEvent, context);
-},"Listening for dead-lettered messages on CREATE_ORDER_QUEUE-DLQ.fifo... (Ctrl+C to stop)");
-
-
+}, "Listening for dead-lettered messages on CREATE_ORDER_QUEUE-DLQ.fifo... (Ctrl+C to stop)");
 

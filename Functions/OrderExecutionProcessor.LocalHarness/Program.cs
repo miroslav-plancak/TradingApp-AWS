@@ -14,6 +14,7 @@ await SqsHarness.RunAsync(queueUrl, serviceProvider, async (sp, sqsEvent, contex
     return await function.FunctionHandler(sqsEvent, context);
 },
 "Listening for real messages on CREATE_ORDER_QUEUE.fifo... (Ctrl+C to stop)",
-// Only matters for a message that actually fails queue's real 120s VisibilityTimeout
-// applies to every other message untouched. Works only when SimulateRedirectToDeadLetterQueue(true);
+// This applies only to the failed messages, which we artificially divert to DeadLetterQueue via
+// SimulateRedirectToDeadLetterQueue(true). Every other message still respects the native queue
+// 120sec VisibilityTimeout.
 failureVisibilityTimeoutSeconds: 10);

@@ -5,18 +5,17 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using TradingApp.Business.Constants;
-using TradingApp.Business.Interfaces.Logger;
 namespace TradingApp.Business.Logger
 {
     public class TradingAppLogger : Interfaces.Logger.ILogger
     {
-        private readonly ILogger<TradingAppLogger>  _logger;
+        private readonly ILogger<TradingAppLogger> _logger;
         private static readonly AsyncLocal<Dictionary<string, object>> _scopeData = new();
-        private Dictionary<string, object> Scope 
+        private Dictionary<string, object> Scope
         {
             get
             {
-                if(_scopeData.Value == null)
+                if (_scopeData.Value == null)
                 {
                     _scopeData.Value = new Dictionary<string, object>();
                 }
@@ -55,9 +54,9 @@ namespace TradingApp.Business.Logger
             _logger.LogInformation(message, arguments);
         }
 
-        public void LogWarning(string message)  
+        public void LogWarning(string message)
         {
-           _logger.LogWarning(message);
+            _logger.LogWarning(message);
         }
 
         public void SetClassScope(string className)
@@ -134,14 +133,14 @@ namespace TradingApp.Business.Logger
         //Note: unused for now, might need it in the future
         private string GetScopeValue(string key)
         {
-            if(Scope.TryGetValue(key, out var value))
+            if (Scope.TryGetValue(key, out var value))
             {
-                return value?.ToString();   
+                return value?.ToString();
             }
             return null;
         }
-        
-        private void SetScopeValue(string key, object value) 
+
+        private void SetScopeValue(string key, object value)
         {
             Scope[key] = value;
         }

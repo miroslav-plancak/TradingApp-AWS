@@ -92,7 +92,7 @@ namespace TradingApp.Business.Repositories
         {
             try
             {
-                var result = await _tradingDbContext.Orders.ToListAsync();
+                var result = await _tradingDbContext.Orders.AsNoTracking().ToListAsync();
                 return result;
             }
             catch (Exception ex)
@@ -107,6 +107,7 @@ namespace TradingApp.Business.Repositories
             try
             {
                 var order = await _tradingDbContext.Orders
+                    .AsNoTracking()
                     .SingleOrDefaultAsync(x => x.Id == orderId);
 
                 if (order == null)
@@ -139,7 +140,7 @@ namespace TradingApp.Business.Repositories
         {
             try
             {
-                var orders = await _tradingDbContext.Orders.ToListAsync();
+                var orders = await _tradingDbContext.Orders.AsNoTracking().ToListAsync();
                 var count = orders.Count;
 
                 if (count > 0)

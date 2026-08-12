@@ -156,6 +156,7 @@ namespace TradingApp.Business.Repositories
             try
             {
                 var outboxMessage = await _tradingDbContext.OutboxMessages
+                    .AsNoTracking()
                     .SingleOrDefaultAsync(x => x.Id == id);
 
                 if (outboxMessage == null)
@@ -188,7 +189,7 @@ namespace TradingApp.Business.Repositories
         {
             try
             {
-                var outboxMessages = await _tradingDbContext.OutboxMessages.ToListAsync();
+                var outboxMessages = await _tradingDbContext.OutboxMessages.AsNoTracking().ToListAsync();
                 var count = outboxMessages.Count;
 
                 if (count > 0)

@@ -13,7 +13,7 @@ namespace Handler
         private readonly string _createOrderQueueUrl;
         private readonly IAmazonSQS _sqsClient;
 
-        private readonly IOutboxQuarantineService _outboxQuarantineService; 
+        private readonly IOutboxQuarantineService _outboxQuarantineService;
         private readonly IOutboxProcessingService _outboxProcessingService;
         private readonly IOutboxRecoveryService _outboxRecoveryService;
 
@@ -46,7 +46,7 @@ namespace Handler
             if (isQueueReachable)
             {
                 await _outboxProcessingService.ProcessOutboxMessagesConcurrentlyAsync(context, MaxDegreeOfParallelism);
-                await _outboxRecoveryService.AutoRecoverResurrectedMessagesAsync(context , MaxDegreeOfParallelism);
+                await _outboxRecoveryService.AutoRecoverResurrectedMessagesAsync(context, MaxDegreeOfParallelism);
             }
             else
             {

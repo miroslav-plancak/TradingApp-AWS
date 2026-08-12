@@ -25,7 +25,7 @@ namespace Handler
         private readonly IIntegrationEventPublisher _integrationEventPublisher;
         private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IAsyncPolicy _sqlResiliencePolicy;
-      
+
         private const bool UseConcurrentProcessing = false;
         private static int _topicFailureCount = 0;
         private const int MaxDegreeOfParallelism = 5;
@@ -41,7 +41,7 @@ namespace Handler
             _tradingDbContext = tradingDbContext;
             _integrationEventPublisher = integrationEventPublisher;
             _dbContextFactory = dbContextFactory;
-        
+
             _sqlResiliencePolicy = sqlResiliencePolicy;
         }
 
@@ -52,6 +52,7 @@ namespace Handler
 
             var orders = await _sqlResiliencePolicy.ExecuteAsync(async () =>
                 await _tradingDbContext.Orders
+                    .AsNoTracking()
                     .Where(ao => ao.Status == OrderStatus.ACKNOWLEDGED)
                     .OrderBy(x => x.CreatedAt)
                     .Take(50)
@@ -178,7 +179,6 @@ namespace Handler
             return (filledAndPublished, filledPublishDeferred, filledButNotSavedNorPublished, saveFailed, sqlCircuitOpenedFlag == 1);
         }
 
-
         // One order, start to finish: save first, only publish after the saving is confirmed.
         // Uses its own TradingDbContext (from the factory) so this is safe to call from concurrent tasks as well.
         private async Task<ProcessedOrderStatusOutcome> TryPromoteOrderAsync(Order order, ILambdaContext context)
@@ -189,7 +189,7 @@ namespace Handler
             {
                 orderrDbContext = await _dbContextFactory.CreateDbContextAsync();
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 context.Logger.LogError(
                     $"DbContextCreationFailed | CorrelationId: {order.CorrelationId} | Order stays ACKNOWLEDGED | Error: {ex.Message}");
@@ -303,7 +303,6 @@ namespace Handler
                 {
                     StatusCode = System.Net.HttpStatusCode.ServiceUnavailable
                 };
-                //return ProcessedOrderStatusOutcome.SqlCircuitOpen; we probably need to add this
             }
         }
     }

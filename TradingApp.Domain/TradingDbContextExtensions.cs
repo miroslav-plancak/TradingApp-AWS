@@ -1,14 +1,14 @@
-﻿  using Microsoft.EntityFrameworkCore;
-  using System;
-  using System.Text.Json;
-  using System.Threading.Tasks;
-  using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
-  using TradingApp.Events.Events;
+﻿using Microsoft.EntityFrameworkCore;
+using System;
+using System.Text.Json;
+using System.Threading.Tasks;
+using TradingApp.Domain.Models.Entities.UnpublishedTopicMessages;
+using TradingApp.Events.Events;
 
-  namespace TradingApp.Domain
-  {
-      public static class TradingDbContextExtensions
-      {
+namespace TradingApp.Domain
+{
+    public static class TradingDbContextExtensions
+    {
         public async static Task<UnpublishedTopicMessage?> CheckIfUnpublishedTopicMessageExistsAsync<TEvent>
         (
            this TradingDbContext dbContext,
@@ -20,6 +20,7 @@
             var eventType = typeof(TEvent).Name;
 
             var result = await dbContext.UnpublishedTopicMessages
+                 .AsNoTracking()
                  .FirstOrDefaultAsync(x =>
                      x.ClientOrderId == clientOrderId &&
                      x.EventType == eventType &&
@@ -47,5 +48,5 @@
 
             return dbContext.SaveChangesAsync();
         }
-      }
-  }
+    }
+}

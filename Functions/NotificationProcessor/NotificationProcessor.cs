@@ -73,6 +73,7 @@ namespace NotificationProcessor
 
                 var rowExists = await _resiliencePolicy.ExecuteAsync(async () =>
                     await _tradingDbContext.PendingFilledNotifications
+                        .AsNoTracking()
                         .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId));
 
                 if (rowExists != null)
@@ -108,6 +109,7 @@ namespace NotificationProcessor
 
             var pendingFilledOrder = await _resiliencePolicy.ExecuteAsync(async () =>
                     await _tradingDbContext.PendingFilledNotifications
+                         .AsNoTracking()
                          .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId));
 
             if (pendingFilledOrder != null)
@@ -123,7 +125,8 @@ namespace NotificationProcessor
                     await ProcessNotification(deserializedPendingFilledOrder, correlationId, context);
                 }
 
-                await _resiliencePolicy.ExecuteAsync(async () => {
+                await _resiliencePolicy.ExecuteAsync(async () =>
+                {
                     _tradingDbContext.PendingFilledNotifications.Remove(pendingFilledOrder);
 
                     if (tracking != null)
@@ -133,7 +136,7 @@ namespace NotificationProcessor
 
                     await _tradingDbContext.SaveChangesAsync();
                 });
-            
+
                 return;
             }
 
@@ -141,6 +144,7 @@ namespace NotificationProcessor
             {
                 var rowExists = await _resiliencePolicy.ExecuteAsync(async () =>
                     await _tradingDbContext.OrderNotificationSequences
+                        .AsNoTracking()
                         .FirstOrDefaultAsync(x => x.ClientOrderId == orderStatusEvent.ClientOrderId));
 
                 if (rowExists != null)
