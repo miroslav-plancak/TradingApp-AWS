@@ -27,8 +27,8 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.RegisterBusiness();
 builder.Services.AddResiliencePolicy("TradingApp.Business-repository");
-
-builder.Services.AddSignalR();
+//docker run -p 6379:6379 redis to run local redis instance
+builder.Services.AddSignalR().AddStackExchangeRedis("localhost:6379"); 
 builder.Services.AddHostedService<SignalRPushBackgroundService>();
 
 builder.Services.AddCors(options =>
