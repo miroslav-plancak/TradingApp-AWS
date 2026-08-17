@@ -9,6 +9,7 @@ namespace TradingApp.API
         public static void MapAppHubs(this IEndpointRouteBuilder endpoints)
         {
             endpoints.MapHub<EventsHub>("hubs/events");
+            endpoints.MapHub<AiChatHub>("hubs/assistant");
         }
     }
 }

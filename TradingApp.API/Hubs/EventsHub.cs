@@ -19,7 +19,7 @@ namespace TradingApp.API.Hubs
 
         public override Task OnConnectedAsync()
         {
-            _logger.LogInformation("SignalR client connected | ConnectionId: {ConnectionId}", Context.ConnectionId);
+            _logger.LogInformation("EventsHub client connected | ConnectionId: {ConnectionId}", Context.ConnectionId);
 
             return base.OnConnectedAsync();
         }

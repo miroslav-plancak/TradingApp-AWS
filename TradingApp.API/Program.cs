@@ -1,6 +1,7 @@
 ﻿using Amazon;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
+using Anthropic;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -30,6 +31,11 @@ builder.Services.AddResiliencePolicy("TradingApp.Business-repository");
 //docker run -p 6379:6379 redis to run local redis instance
 builder.Services.AddSignalR().AddStackExchangeRedis("localhost:6379"); 
 builder.Services.AddHostedService<SignalRPushBackgroundService>();
+
+builder.Services.AddSingleton(new AnthropicClient
+{
+    ApiKey = builder.Configuration["Anthropic:ApiKey"]
+});
 
 builder.Services.AddCors(options =>
 {
