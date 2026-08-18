@@ -37,6 +37,8 @@ builder.Services.AddSingleton(new AnthropicClient
     ApiKey = builder.Configuration["Anthropic:ApiKey"]
 });
 
+builder.Services.AddVoyageEmbeddingServices();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",

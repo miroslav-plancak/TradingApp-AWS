@@ -4,12 +4,14 @@ using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
 using System.Net;
+using System.Net.Http.Headers;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Repositories;
@@ -93,6 +95,21 @@ namespace TradingApp.Infrastructure
         public static IServiceCollection AddIntegrationEventPublisherServices(this IServiceCollection services)
         {
             services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
+            return services;
+        }
+
+        public static IServiceCollection AddVoyageEmbeddingServices(this IServiceCollection services)
+        {
+            services.AddHttpClient<IVoyageEmbeddingService, VoyageEmbeddingService>((sp, client) =>
+            {
+                var configuration = sp.GetRequiredService<IConfiguration>();
+                var apiKey = configuration["Voyage:ApiKey"]
+                    ?? throw new InvalidOperationException("Voyage:ApiKey configuration value is not set.");
+
+                client.BaseAddress = new Uri("https://api.voyageai.com/v1/");
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            });
+
             return services;
         }
 
