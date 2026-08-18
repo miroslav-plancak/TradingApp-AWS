@@ -38,6 +38,14 @@ builder.Services.AddSingleton(new AnthropicClient
 });
 
 builder.Services.AddVoyageEmbeddingServices();
+// This is a separate IConnectionMultiplexer connection from SignalR's AddStackExchangeRedis backplane
+// connection above (that one is pub/sub for fanning Hub messages out across multiple API instances.
+// This one is used for storing embedded float vectors to redis: ChunkIngestionService/ChunkRetrievalService
+// use it to write chunk hashes and run FT.SEARCH ... KNN queries for RAG retrieval. They both currently point
+// at the same local Redis Stack container (localhost:6379) but are logically unrelated connections serving
+// unrelated purposes.
+builder.Services.AddRedisConnection();
+builder.Services.AddChunkingRetrievalService();
 
 builder.Services.AddCors(options =>
 {

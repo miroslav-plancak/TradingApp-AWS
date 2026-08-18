@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+	<UserSecretsId>73288403-587c-4950-8194-e37dc325365a</UserSecretsId>
+  </PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+	  <PackageReference Include="StackExchange.Redis" Version="3.1.13" />
+	</ItemGroup>
+</Project>

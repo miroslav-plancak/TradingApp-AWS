@@ -15,7 +15,7 @@
     <PackageReference Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="4.0.100.7" />
 	<PackageReference Include="AWSSDK.SQS" Version="4.0.100.3" />
-	<PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+	<PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="1.1.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.5">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
