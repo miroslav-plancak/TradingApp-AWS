@@ -14,10 +14,11 @@ namespace TradingApp.Infrastructure.Services
         private readonly ILogger<ChunkIngestionService> _logger;
 
         private readonly List<ChunkRecord> chunkedRecords = [];
+        private readonly List<FullFileRecord> fullFileRecords = [];
 
         public ChunkIngestionService
         (
-            IVoyageEmbeddingService voyageEmbeddingService, 
+            IVoyageEmbeddingService voyageEmbeddingService,
             IConnectionMultiplexer connectionMultiplexer,
             ILogger<ChunkIngestionService> logger
         )
@@ -28,26 +29,37 @@ namespace TradingApp.Infrastructure.Services
             _database = _connectionMultiplexer.GetDatabase();
         }
 
-        public List<ChunkRecord> ReadAndChunkSourceFiles(string[] sourceFiles)
+        public async Task<List<ChunkRecord>> ReadAndChunkSourceFiles(string[] sourceFiles)
         {
-            foreach (var filePath in sourceFiles)
+            var processedSourceFiles = BuildProcessedSourceFiles(sourceFiles);
+
+            if (processedSourceFiles.Count != 0)
             {
-                var fileText = File.ReadAllText(filePath);
-                var chunks = TextChunker.ChunkText(fileText);
+                var fullFileRecords = BuildFullFileRecordList(processedSourceFiles.Where(x => !x.ExceedsFullIndexCap).ToList());
+                await PersistFullFileRecordsAsync(fullFileRecords);
 
-                foreach (var chunk in chunks)
+                foreach (var file in processedSourceFiles)
                 {
-                    chunkedRecords.Add(new ChunkRecord
-                    {
-                        Id = chunkedRecords.Count,
-                        SourceFile = Path.GetFileName(filePath),
-                        Content = chunk
-                    });
-                }
-                
-            }
+                    var chunks = TextChunker.ChunkText(file.FileContent);
 
-            _logger.LogInformation("Total chunks across all files: {ChunkedRecordsCount}", chunkedRecords.Count);
+                    foreach (var chunk in chunks)
+                    {
+                        chunkedRecords.Add(new ChunkRecord
+                        {
+                            Id = chunkedRecords.Count,
+                            SourceFile = file.FileName,
+                            Content = chunk
+                        });
+                    }
+
+                }
+
+                _logger.LogInformation("Total chunks across all files: {ChunkedRecordsCount}", chunkedRecords.Count);
+            }
+            else
+            {
+                _logger.LogError("SourceFiles array is empty: {SourceFilesLength}", sourceFiles.Length);
+            }
 
             return chunkedRecords;
         }
@@ -67,7 +79,7 @@ namespace TradingApp.Infrastructure.Services
         public async Task PersistChunkedRecordsToRedisAsync(List<ChunkRecord> chunkedRecords)
         {
             foreach (var chunkRecord in chunkedRecords)
-            { 
+            {
                 await _database.HashSetAsync($"chunk:{chunkRecord.Id}",
                     [
                         new HashEntry("content", chunkRecord.Content),
@@ -77,5 +89,49 @@ namespace TradingApp.Infrastructure.Services
             }
             _logger.LogInformation("Wrote {ChunkedRecordsCount} chunks to Redis.", chunkedRecords.Count);
         }
+
+        private List<FullFileRecord> BuildFullFileRecordList(List<ProcessedSourceFile> processedSourceFiles)
+        {
+            foreach (var file in processedSourceFiles)
+            {
+                fullFileRecords.Add(new FullFileRecord
+                {
+                    FileName = file.FileName,
+                    Content = file.FileContent
+                });
+            }
+
+            return fullFileRecords;
+        }
+
+        private async Task PersistFullFileRecordsAsync(List<FullFileRecord> fullFileRecords)
+        {
+            foreach (var fullFileRecord in fullFileRecords)
+            {
+                await _database.HashSetAsync($"file:{fullFileRecord.FileName}",
+                    [
+                        new HashEntry("content", fullFileRecord.Content),
+                    ]);
+            }
+            _logger.LogInformation("Wrote {FullFileRecordsCount} to Redis.", fullFileRecords.Count);
+        }
+
+        // 2500 is roughly the average .cs file size in this codebase - though "average" is a bit misleading 
+        // here, since a handful of huge files (OutboxProcessingService,ScheduledOrderStatusProcessor etc..)
+        // drag the number way up. Most files are nowhere near this size. This cap only decides whether we
+        // bother indexing the whole file text in addition to chunking it - chunking itself always happens
+        // regardless of where a file lands against this number.
+        private static List<ProcessedSourceFile> BuildProcessedSourceFiles(string[] sourceFiles) =>
+
+            sourceFiles.Select(sourceFile =>
+            {
+                var fileContent = File.ReadAllText(sourceFile);
+                return new ProcessedSourceFile
+                {
+                    FileName = Path.GetFileName(sourceFile),
+                    FileContent = fileContent,
+                    ExceedsFullIndexCap = fileContent.Length >= 2500
+                };
+            }).ToList();
     }
 }

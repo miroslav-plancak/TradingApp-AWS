@@ -125,7 +125,7 @@ namespace TradingApp.Infrastructure
 
             return services;
         }
-        
+
         public static IServiceCollection AddChunkingIngestionService(this IServiceCollection services)
         {
             services.AddScoped<IChunkIngestionService, ChunkIngestionService>();

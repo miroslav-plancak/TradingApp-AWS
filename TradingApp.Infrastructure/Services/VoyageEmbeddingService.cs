@@ -33,7 +33,7 @@ namespace TradingApp.Infrastructure.Services
                 Model = EmbeddingModel
             };
 
-            try 
+            try
             {
                 var response = await _httpClient.PostAsJsonAsync("embeddings", request, cancellationToken);
                 response.EnsureSuccessStatusCode();
@@ -45,10 +45,10 @@ namespace TradingApp.Infrastructure.Services
                     .OrderBy(pd => pd.Index)
                     .Select(pd => pd.Embedding)
                     .ToList();
-            } 
-            catch (HttpRequestException httpEx) 
+            }
+            catch (HttpRequestException httpEx)
             {
-                _logger.LogError(httpEx,"Voyage embeddings request failed | ChunkCount: {ChunkCount}", texts.Count);
+                _logger.LogError(httpEx, "Voyage embeddings request failed | ChunkCount: {ChunkCount}", texts.Count);
                 throw;
             }
         }
