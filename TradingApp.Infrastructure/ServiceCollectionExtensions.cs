@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
+using StackExchange.Redis;
 using System.Net;
 using System.Net.Http.Headers;
 using TradingApp.Business.Interfaces.Repositories;
@@ -92,6 +93,18 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddRedisConnection(this IServiceCollection services)
+        {
+            services.AddSingleton<IConnectionMultiplexer>((sp) =>
+            {
+                var configuration = ConfigurationOptions.Parse("localhost:6379");
+                configuration.Protocol = RedisProtocol.Resp2;
+                return ConnectionMultiplexer.Connect(configuration);
+            });
+
+            return services;
+        }
+
         public static IServiceCollection AddIntegrationEventPublisherServices(this IServiceCollection services)
         {
             services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
@@ -110,6 +123,18 @@ namespace TradingApp.Infrastructure
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             });
 
+            return services;
+        }
+        
+        public static IServiceCollection AddChunkingIngestionService(this IServiceCollection services)
+        {
+            services.AddScoped<IChunkIngestionService, ChunkIngestionService>();
+            return services;
+        }
+
+        public static IServiceCollection AddChunkingRetrievalService(this IServiceCollection services)
+        {
+            services.AddScoped<IChunkRetrievalService, ChunkRetrievalService>();
             return services;
         }
 
