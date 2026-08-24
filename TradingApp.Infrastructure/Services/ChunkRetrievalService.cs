@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
+using System.Text;
 using System.Threading.Tasks;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
@@ -12,21 +13,22 @@ namespace TradingApp.Infrastructure.Services
         private readonly IVoyageEmbeddingService _voyageEmbeddingService;
         private readonly IConnectionMultiplexer _connectionMultiplexer;
         private readonly ILogger<ChunkRetrievalService> _logger;
+        private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IDatabase _database;
-        // Empirically observed 2026-08-21: off-topic questions scored 0.756-0.786 on their
-        // best chunk, genuinely relevant questions scored 0.43-0.6. Not yet validated against
-        // a larger sample - see task #40. Treat as a hypothesis, not a settled number.
-        private const double RelevanceCutoff = 0.76;
+       
+        private const double RelevanceCutoff = 0.485;
         public ChunkRetrievalService
         (
             IVoyageEmbeddingService voyageEmbeddingService,
             IConnectionMultiplexer connectionMultiplexer,
-            ILogger<ChunkRetrievalService> logger
+            ILogger<ChunkRetrievalService> logger,
+            IFileDebugLogger fileDebugLogger
         )
         {
             _voyageEmbeddingService = voyageEmbeddingService;
             _connectionMultiplexer = connectionMultiplexer;
             _logger = logger;
+            _fileDebugLogger = fileDebugLogger;
             _database = connectionMultiplexer.GetDatabase();
         }
 
@@ -86,8 +88,10 @@ namespace TradingApp.Infrastructure.Services
             var totalMatches = searchResult[0];
             LogRedisSearchResults(retrievedChunks, userQuestion, totalMatches);
 
-            return new RetrievalResult { ChunkFallbacks = filteredRetrievedChunks, FullFileContents = filesEligibleForExpansion };
+            var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunks, FullFileContents = filesEligibleForExpansion };
+            await _fileDebugLogger.LogSectionAsync("rag-retrieval", $"Query: {userQuestion}", FormatRetrievalResultIntoFileLog(retrievalResult));
 
+            return retrievalResult;
         }
 
         private async Task<byte[]> EmbedQuestionAsync(string userQuestion)
@@ -128,6 +132,55 @@ namespace TradingApp.Infrastructure.Services
             var results = await Task.WhenAll(fetchTasks);
 
             return results.ToDictionary(r => r.sourceFile, r => (string?)r.content ?? string.Empty);
+        }
+
+        private static string FormatRetrievalResultIntoFileLog(RetrievalResult retrievalResult)
+        {
+            var helperDivider = new string('-', 80);
+            var sb = new StringBuilder();
+            var maxChunks = retrievalResult.ChunkFallbacks.Count();
+            var maxFullFiles = retrievalResult.FullFileContents.Count();
+
+            if (retrievalResult.ChunkFallbacks.Count != 0)
+            {
+                sb.AppendLine(helperDivider);
+                var chunkNumber = 1;
+                foreach (var chunk in retrievalResult.ChunkFallbacks)
+                {
+                    sb.AppendLine($"CHUNK #{chunkNumber}");
+                    sb.AppendLine($"SOURCEFILE: {chunk.SourceFile}");
+                    sb.AppendLine($"SCORE: {chunk.Score}");
+                    sb.AppendLine($"CONTENT:\n{chunk.Content}");
+                    chunkNumber++;
+
+                    if(maxChunks >= chunkNumber)
+                    {
+                        sb.AppendLine(helperDivider);
+                    }
+                }
+              
+            }
+
+            if (retrievalResult.FullFileContents.Count != 0)
+            {
+                sb.AppendLine(helperDivider);
+                var fileNumber = 1;
+                foreach (var file in retrievalResult.FullFileContents)
+                {
+                    sb.AppendLine($"FILE #{fileNumber}");
+                    sb.AppendLine($"FILE: {file.Key}");
+                    sb.AppendLine($"CONTENT:\n{file.Value}");
+                    fileNumber++;
+
+                    if (maxFullFiles >= fileNumber)
+                    {
+                        sb.AppendLine(helperDivider);
+                    }
+                }
+              
+            }
+
+            return sb.ToString();
         }
     }
 }

@@ -11,6 +11,8 @@ using TradingApp.API.BackgroundServices;
 using TradingApp.Business;
 using TradingApp.Business.Middleware;
 using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +29,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.RegisterBusiness();
+builder.Services.AddSingleton<IFileDebugLogger, FileDebugLogger>();
 builder.Services.AddResiliencePolicy("TradingApp.Business-repository");
 //docker run -p 6379:6379 redis to run local redis instance
 builder.Services.AddSignalR().AddStackExchangeRedis("localhost:6379");
