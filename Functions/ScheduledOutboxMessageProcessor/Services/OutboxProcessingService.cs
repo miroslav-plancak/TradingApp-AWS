@@ -1,5 +1,4 @@
 ﻿using Amazon.Lambda.Core;
-using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;

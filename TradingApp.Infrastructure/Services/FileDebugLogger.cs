@@ -24,11 +24,11 @@ namespace TradingApp.Infrastructure.Services
 
             await _writeLogLock.WaitAsync();
 
-            try 
+            try
             {
                 await File.AppendAllTextAsync(filePath, block);
-            } 
-            finally 
+            }
+            finally
             {
                 _writeLogLock.Release();
             }

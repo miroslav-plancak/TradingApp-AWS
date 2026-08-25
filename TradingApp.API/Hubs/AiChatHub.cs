@@ -36,7 +36,7 @@ namespace TradingApp.API.Hubs
 
         public async IAsyncEnumerable<string> Ask(string userQuestion)
         {
-            var retrievalResult = await _chunkRetrievalService.RetrieveRelevantChunksAsync(userQuestion);
+            var retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuestion);
             LogRetrievalResult(retrievalResult);
 
             var parameters = new MessageCreateParams
@@ -74,7 +74,7 @@ namespace TradingApp.API.Hubs
             {
                 _logger.LogInformation("AiChatHub | RetrievedRelevantChunk | SourceFile [{i}]: {ChunkProperty}", i, chunk.SourceFile);
                 _logger.LogInformation("AiChatHub | RetrievedRelevantChunk | Content [{i}]: {ChunkProperty}", i, chunk.Content);
-                _logger.LogInformation("AiChatHub | RetrievedRelevantChunk | Score [{i}]: {ChunkProperty}", i, chunk.Score);
+                _logger.LogInformation("AiChatHub | RetrievedRelevantChunk | Score [{i}]: {ChunkProperty}", i, chunk.KnnScore);
                 i++;
             }
 
