@@ -19,7 +19,7 @@ namespace TradingApp.Business
                     .AddScoped<IDeadLetterRepository, DeadLetterRepository>()
                     .AddScoped<IOutboxMessageService, OutboxMessageService>()
                     .AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
-           
+
             services.AddSingleton<IResiliencePolicyGuard, ResiliencePolicyGuard>();
 
             return services;
