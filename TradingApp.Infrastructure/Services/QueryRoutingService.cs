@@ -1,8 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Anthropic;
+using Anthropic.Models.Messages;
+using Microsoft.Extensions.Logging;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Interfaces;
-using Anthropic;
-using Anthropic.Models.Messages;
 
 namespace TradingApp.Infrastructure.Services
 {
@@ -31,18 +31,26 @@ namespace TradingApp.Infrastructure.Services
                 Messages = [new() { Role = Role.User, Content = userQuestion }]
             };
 
-            var messageResponse = await _anthropicClient.Messages.Create(parameters);
-            var firstBlock = messageResponse.Content.FirstOrDefault();
-
-            if (firstBlock is not null && firstBlock.TryPickText(out var textblock))
+            try
             {
-                var classificationResponseText = textblock.Text.Trim();
+                var messageResponse = await _anthropicClient.Messages.Create(parameters);
+                var firstBlock = messageResponse.Content.FirstOrDefault();
 
-                if (classificationResponseText.ToUpper() == LlmQueryClassification.NARROW.ToString()) return LlmQueryClassification.NARROW;
-                if (classificationResponseText.ToUpper() == LlmQueryClassification.BROAD.ToString()) return LlmQueryClassification.BROAD;
+                if (firstBlock is not null && firstBlock.TryPickText(out var textblock))
+                {
+                    var classificationResponseText = textblock.Text.Trim();
+
+                    if (classificationResponseText.ToUpper() == LlmQueryClassification.NARROW.ToString()) return LlmQueryClassification.NARROW;
+                    if (classificationResponseText.ToUpper() == LlmQueryClassification.BROAD.ToString()) return LlmQueryClassification.BROAD;
+                }
+
+                return LlmQueryClassification.INCONCLUSIVE;
             }
-
-            return LlmQueryClassification.INCONCLUSIVE;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error occurred while dispatching query classification for question: {UserQuestion}", userQuestion);
+                return LlmQueryClassification.INCONCLUSIVE;
+            }
         }
     }
 }

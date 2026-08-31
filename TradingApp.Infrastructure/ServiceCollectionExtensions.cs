@@ -57,12 +57,6 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
-        public static IServiceCollection AddFileDebugLogger(this IServiceCollection services)
-        {
-            services.AddSingleton<IFileDebugLogger>(new FileDebugLogger());
-            return services;
-        }
-
         public static IServiceCollection AddTradingDbContext(this IServiceCollection services)
         {
             services.AddDbContext<TradingDbContext>(options =>

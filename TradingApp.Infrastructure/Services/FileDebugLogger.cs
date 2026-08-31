@@ -1,7 +1,7 @@
-﻿using System.Text;
+﻿using Microsoft.Extensions.Logging;
+using System.Text;
 using System.Text.Json;
 using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Services
 {
@@ -9,9 +9,11 @@ namespace TradingApp.Infrastructure.Services
     {
         private readonly string _logDirectory;
         private readonly SemaphoreSlim _writeLogLock = new SemaphoreSlim(1, 1);
+        private readonly ILogger<FileDebugLogger> _logger;
 
-        public FileDebugLogger()
+        public FileDebugLogger(ILogger<FileDebugLogger> logger)
         {
+            _logger = logger;
             _logDirectory = Path.Combine(AppContext.BaseDirectory, "debug-logs");
             Directory.CreateDirectory(_logDirectory);
         }
@@ -27,6 +29,11 @@ namespace TradingApp.Infrastructure.Services
             try
             {
                 await File.AppendAllTextAsync(filePath, block);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to write debug log section | LogName: {LogName} | Title: {Title} | FilePath: {FilePath}",
+                    logName, title, filePath);
             }
             finally
             {
