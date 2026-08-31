@@ -133,7 +133,7 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
-        public static IServiceCollection AddVoyageRerankingservices(this IServiceCollection services)
+        public static IServiceCollection AddVoyageRerankingServices(this IServiceCollection services)
         {
             services.AddHttpClient<IVoyageRerankService, VoyageRerankService>((sp, client) =>
             {
@@ -160,6 +160,30 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddChunkRerankingService(this IServiceCollection services)
+        {
+            services.AddScoped<IChunkRerankingService, ChunkRerankingService>();
+            return services;
+        }
+
+        public static IServiceCollection AddKnowledgeBaseQueryService(this IServiceCollection services)
+        {
+            services.AddScoped<IKnowledgeBaseQueryService, KnowledgeBaseQueryService>();
+            return services;
+        }
+
+        public static IServiceCollection AddQueryRoutingServices(this IServiceCollection services)
+        {
+            services.AddScoped<IQueryRoutingService, QueryRoutingService>();
+            return services;
+        }
+
+        public static IServiceCollection AddFileExpansionService(this IServiceCollection services)
+        {
+            services.AddScoped<IFileExpansionService, FileExpansionService>();
+            return services;
+        }
+
         public static IServiceCollection AddAnthropicClient(this IServiceCollection services)
         {
             services.AddSingleton(sp =>
@@ -171,12 +195,6 @@ namespace TradingApp.Infrastructure
                 return new AnthropicClient { ApiKey = apiKey };
             });
 
-            return services;
-        }
-
-        public static IServiceCollection AddQueryRoutingServices(this IServiceCollection services)
-        {
-            services.AddScoped<IQueryRoutingService, QueryRoutingService>();
             return services;
         }
 
