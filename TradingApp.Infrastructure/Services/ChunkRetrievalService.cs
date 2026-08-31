@@ -2,6 +2,7 @@
 using StackExchange.Redis;
 using System.Text;
 using System.Text.RegularExpressions;
+using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Models;
@@ -12,6 +13,7 @@ namespace TradingApp.Infrastructure.Services
     {
         private readonly IVoyageEmbeddingService _voyageEmbeddingService;
         private readonly IVoyageRerankService _voyageRerankService;
+        private readonly IQueryRoutingService _queryRoutingService;
         private readonly IConnectionMultiplexer _connectionMultiplexer;
         private readonly ILogger<ChunkRetrievalService> _logger;
         private readonly IFileDebugLogger _fileDebugLogger;
@@ -24,6 +26,7 @@ namespace TradingApp.Infrastructure.Services
         (
             IVoyageEmbeddingService voyageEmbeddingService,
             IVoyageRerankService voyageRerankService,
+            IQueryRoutingService queryRoutingService,
             IConnectionMultiplexer connectionMultiplexer,
             ILogger<ChunkRetrievalService> logger,
             IFileDebugLogger fileDebugLogger
@@ -31,20 +34,29 @@ namespace TradingApp.Infrastructure.Services
         {
             _voyageEmbeddingService = voyageEmbeddingService;
             _voyageRerankService = voyageRerankService;
+            _queryRoutingService = queryRoutingService;
             _connectionMultiplexer = connectionMultiplexer;
             _logger = logger;
             _fileDebugLogger = fileDebugLogger;
-            _database = connectionMultiplexer.GetDatabase();
+            _database = _connectionMultiplexer.GetDatabase();
         }
 
         public async Task<RetrievalResult> RetrieveRelevantContextAsync(string userQuestion)
         {
+            var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(userQuestion);
+
             var retrievedKNNChunks = await SearchKnnChunksAsync(userQuestion);
 
             var retrievedLexicalChunks = await SearchLexicalChunksAsync(userQuestion);
 
             var unifiedChunks = UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
-
+            // NOTE: ComputeChunksRankMaps and SortUnifiedChunksByRrfScore are an exercise in unification of two completely independent
+            // search score results: KNN search score result + Lexical search score result, into a ReciprocalRankFusionScore, normallized
+            // by the ReciprocalRankFusionK constant. This resulting score is then used to re-sort the input RetrievedChunks by it for no
+            // other reason other than to demonstrate how it would look like if we had the need for the unification of search score results,
+            // nothing, except the log downstream of it, is dependent on this sorting. It is left here as a reminder particularly because it 
+            // does not affect anything downstream of it as the RerankRetrievedChunksAsync does not care in which order are the RetrievedChunks
+            // fed to it and the RelevanceFloor cut off is based off of RetrievedChunk's RelevanceScore which is set downstream of these two methods.
             var (knnChunksRankMap, lexicalChunksRankMap) = ComputeChunksRankMaps(retrievedKNNChunks, retrievedLexicalChunks);
 
             var unifiedChunksSortedByRrfScore = SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
@@ -65,7 +77,7 @@ namespace TradingApp.Infrastructure.Services
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
 
-            var filesEligibleForExpansion = await DetermineFilesEligibleForExpansionAsync(rerankedChunks);
+            var filesEligibleForExpansion = await DetermineFilesEligibleForExpansionAsync(rerankedChunks, routedLlmQueryResponse);
 
             rerankedChunks.RemoveAll(chunk => filesEligibleForExpansion.Keys.Contains(chunk.SourceFile ?? string.Empty));
 
@@ -372,18 +384,36 @@ namespace TradingApp.Infrastructure.Services
             return sb.ToString();
         }
 
-        private async Task<Dictionary<string, string>> DetermineFilesEligibleForExpansionAsync(List<RetrievedChunk> rerankedChunks)
+        private async Task<Dictionary<string, string>> DetermineFilesEligibleForExpansionAsync
+        (
+            List<RetrievedChunk> rerankedChunks, 
+            LlmQueryClassification routedLlmQUeryResponse
+        )
         {
             var fileOccurrenceMap = rerankedChunks.GroupBy(x => x.SourceFile ?? string.Empty).ToDictionary(g => g.Key, g => g.Count());
 
             var distinctFileNames = rerankedChunks.DistinctBy(x => x.SourceFile).Select(x => x.SourceFile);
             var filesWithFullContent = await GetExistingFullFileContentsMapAsync(distinctFileNames);
 
+
             var filesEligibleForExpansion = filesWithFullContent
-                        .Where(kvp => fileOccurrenceMap[kvp.Key] >= 2)
+                        .Where(kvp => fileOccurrenceMap[kvp.Key] >= MinimumOccurenceTreshhold(routedLlmQUeryResponse))
                         .ToDictionary(x => x.Key, x => x.Value);
 
             return filesEligibleForExpansion;
+        }
+
+        private static int MinimumOccurenceTreshhold(LlmQueryClassification routedLlmQUeryResponse)
+        {
+            switch (routedLlmQUeryResponse)
+            {
+                case LlmQueryClassification.BROAD:
+                    return 1;
+                case LlmQueryClassification.NARROW:
+                    return 2;
+                default:
+                    return 2;
+            }
         }
 
         private async Task<Dictionary<string, string>> GetExistingFullFileContentsMapAsync(IEnumerable<string?> distinctFileNames)

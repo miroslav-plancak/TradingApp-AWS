@@ -2,6 +2,7 @@
 using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
+using Anthropic;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -116,7 +117,7 @@ namespace TradingApp.Infrastructure
             services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
             return services;
         }
-
+   
         public static IServiceCollection AddVoyageEmbeddingServices(this IServiceCollection services)
         {
             services.AddHttpClient<IVoyageEmbeddingService, VoyageEmbeddingService>((sp, client) =>
@@ -156,6 +157,26 @@ namespace TradingApp.Infrastructure
         public static IServiceCollection AddChunkingRetrievalService(this IServiceCollection services)
         {
             services.AddScoped<IChunkRetrievalService, ChunkRetrievalService>();
+            return services;
+        }
+
+        public static IServiceCollection AddAnthropicClient(this IServiceCollection services)
+        {
+            services.AddSingleton(sp =>
+            {
+                var configuration = sp.GetRequiredService<IConfiguration>();
+                var apiKey = configuration["Anthropic:ApiKey"]
+                    ?? throw new InvalidOperationException("Anthropic:ApiKey configuration value is not set.");
+
+                return new AnthropicClient { ApiKey = apiKey };
+            });
+
+            return services;
+        }
+
+        public static IServiceCollection AddQueryRoutingServices(this IServiceCollection services)
+        {
+            services.AddScoped<IQueryRoutingService, QueryRoutingService>();
             return services;
         }
 

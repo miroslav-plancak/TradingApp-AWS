@@ -1,7 +1,6 @@
 ﻿using Amazon;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
-using Anthropic;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,10 +34,8 @@ builder.Services.AddResiliencePolicy("TradingApp.Business-repository");
 builder.Services.AddSignalR().AddStackExchangeRedis("localhost:6379");
 builder.Services.AddHostedService<SignalRPushBackgroundService>();
 
-builder.Services.AddSingleton(new AnthropicClient
-{
-    ApiKey = builder.Configuration["Anthropic:ApiKey"]
-});
+builder.Services.AddAnthropicClient();
+builder.Services.AddQueryRoutingServices();
 
 builder.Services.AddVoyageEmbeddingServices();
 builder.Services.AddVoyageRerankingservices();

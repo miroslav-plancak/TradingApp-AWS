@@ -15,6 +15,7 @@ namespace TradingApp.API.Hubs
         private readonly ILogger<AiChatHub> _logger;
         private readonly AnthropicClient _anthropicClient;
         private readonly IChunkRetrievalService _chunkRetrievalService;
+
         public AiChatHub
         (
             ILogger<AiChatHub> logger,
@@ -37,6 +38,7 @@ namespace TradingApp.API.Hubs
         public async IAsyncEnumerable<string> Ask(string userQuestion)
         {
             var retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuestion);
+
             LogRetrievalResult(retrievalResult);
 
             var parameters = new MessageCreateParams
