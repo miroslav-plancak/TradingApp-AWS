@@ -1,4 +1,5 @@
-﻿using StackExchange.Redis;
+﻿using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using System.Text.RegularExpressions;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
@@ -6,36 +7,52 @@ using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Services
 {
-    //TODO: revise logging 
     public class KnowledgeBaseQueryService : IKnowledgeBaseQueryService
     {
+        private readonly ILogger<KnowledgeBaseQueryService> _logger;
         private readonly IDatabase _database;
         private readonly IConnectionMultiplexer _connectionMultiplexer;
         private readonly IVoyageEmbeddingService _voyageEmbeddingService;
 
-        public KnowledgeBaseQueryService(IConnectionMultiplexer connectionMultiplexer, IVoyageEmbeddingService voyageEmbeddingService)
+        public KnowledgeBaseQueryService
+        (
+            IConnectionMultiplexer connectionMultiplexer,
+            IVoyageEmbeddingService voyageEmbeddingService,
+            ILogger<KnowledgeBaseQueryService> logger
+        )
         {
             _connectionMultiplexer = connectionMultiplexer;
             _database = _connectionMultiplexer.GetDatabase();
             _voyageEmbeddingService = voyageEmbeddingService;
+            _logger = logger;
         }
 
         public async Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userQuestion)
         {
-            var queryBytes = await EmbedQuestionAsync(userQuestion);
+            try
+            {
+                var queryBytes = await EmbedQuestionAsync(userQuestion);
 
-            var searchResult = await _database.ExecuteAsync(
-             "FT.SEARCH", "idx:chunks",
-             "*=>[KNN 10 @embedding $BLOB AS score]",
-             "PARAMS", "2", "BLOB", queryBytes,
-             "SORTBY", "score",
-             "DIALECT", "2",
-             "RETURN", "3", "sourceFile", "content", "score");
+                var searchResult = await _database.ExecuteAsync(
+                 "FT.SEARCH", "idx:chunks",
+                 "*=>[KNN 10 @embedding $BLOB AS score]",
+                 "PARAMS", "2", "BLOB", queryBytes,
+                 "SORTBY", "score",
+                 "DIALECT", "2",
+                 "RETURN", "3", "sourceFile", "content", "score");
 
-            var retrievedKNNChunks = MapKnnSearchResultToRetrievedChunkList(searchResult);
+                var retrievedKNNChunks = MapKnnSearchResultToRetrievedChunkList(searchResult);
 
-            return retrievedKNNChunks;
+                return retrievedKNNChunks;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Database or embedding error for user question: {UserQuestion}", userQuestion);
+                return new List<RetrievedChunk>();
+            }
+
         }
+
         private async Task<byte[]> EmbedQuestionAsync(string userQuestion)
         {
             var queryEmbedding = await _voyageEmbeddingService.EmbedAsync(userQuestion);
@@ -74,18 +91,29 @@ namespace TradingApp.Infrastructure.Services
 
         public async Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userQuestion)
         {
-            var parsedUserQuestion = ParseUserQuestion(userQuestion);
+            try
+            {
+                var parsedUserQuestion = ParseUserQuestion(userQuestion);
 
-            var lexicalSearchResult = await _database.ExecuteAsync(
-                   "FT.SEARCH", "idx:chunks",
-                   $"@content:({parsedUserQuestion})",
-                   "SCORER", "BM25",
-                   "WITHSCORES",
-                   "RETURN", "2", "sourceFile", "content",
-                   "LIMIT", "0", "10",
-                   "DIALECT", "2");
-            var retrievedLexicalChunks = MapLexicalSearchResultToRetrievedChunkList(lexicalSearchResult);
-            return retrievedLexicalChunks;
+                var lexicalSearchResult = await _database.ExecuteAsync(
+                       "FT.SEARCH", "idx:chunks",
+                       $"@content:({parsedUserQuestion})",
+                       "SCORER", "BM25",
+                       "WITHSCORES",
+                       "RETURN", "2", "sourceFile", "content",
+                       "LIMIT", "0", "10",
+                       "DIALECT", "2");
+
+                var retrievedLexicalChunks = MapLexicalSearchResultToRetrievedChunkList(lexicalSearchResult);
+
+                return retrievedLexicalChunks;
+            }
+
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Database error for user question: {UserQuestion}", userQuestion);
+                return new List<RetrievedChunk>();
+            }
         }
 
 
@@ -143,13 +171,21 @@ namespace TradingApp.Infrastructure.Services
 
             var fetchTasks = distinctFiles.Select(async sourceFile =>
             {
-                var content = await _database.HashGetAsync($"file:{sourceFile}", "content");
-                return (sourceFile, content);
+                try
+                {
+                    var content = await _database.HashGetAsync($"file:{sourceFile}", "content");
+                    return (sourceFile, content: (string?)content ?? string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching full file content for source file: {SourceFile}", sourceFile);
+                    return (sourceFile, content: string.Empty);
+                }
             });
 
             var results = await Task.WhenAll(fetchTasks);
 
-            return results.ToDictionary(r => r.sourceFile, r => (string?)r.content ?? string.Empty);
+            return results.ToDictionary(r => r.sourceFile, r => r.content);
         }
     }
 }

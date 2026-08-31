@@ -26,7 +26,8 @@ namespace TradingApp.Infrastructure.Services
 
 
             var filesEligibleForExpansion = filesWithFullContent
-                        .Where(kvp => fileOccurrenceMap[kvp.Key] >= MinimumOccurenceTreshhold(routedLlmQUeryResponse))
+                        .Where(kvp => fileOccurrenceMap.TryGetValue(kvp.Key, out var occurrences)
+                            && occurrences >= MinimumOccurenceTreshhold(routedLlmQUeryResponse))
                         .ToDictionary(x => x.Key, x => x.Value);
 
             return filesEligibleForExpansion;
@@ -51,7 +52,5 @@ namespace TradingApp.Infrastructure.Services
             var filesWithContent = allFetchedFileContents.Where(x => x.Value != string.Empty).ToDictionary(x => x.Key, x => x.Value);
             return filesWithContent;
         }
-
-   
     }
 }

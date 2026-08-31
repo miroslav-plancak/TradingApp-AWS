@@ -40,11 +40,15 @@ namespace TradingApp.Infrastructure.Helpers
         {
             var knnChunksRankMap = retrievedKnnChunks
                .Select((chunk, index) => (chunk.Key, Rank: index + 1))
-               .ToDictionary(kvp => kvp.Key!, kvp => kvp.Rank);
+               .Where(x => x.Key is not null)
+               .GroupBy(x => x.Key)
+               .ToDictionary(g => g.Key!, g => g.Min(x => x.Rank));
 
             var lexicalChunksRankMap = retrievedLexicalChunks
-                .Select((chunk, index) => (chunk.Key, Rank: index + 1))
-                .ToDictionary(kvp => kvp.Key!, kvp => kvp.Rank);
+               .Select((chunk, index) => (chunk.Key, Rank: index + 1))
+               .Where(x => x.Key is not null)
+               .GroupBy(x => x.Key)
+               .ToDictionary(g => g.Key!, g => g.Min(x => x.Rank));
 
             return (knnChunksRankMap, lexicalChunksRankMap);
         }
