@@ -30,10 +30,20 @@ builder.Services.AddSwaggerGen();
 builder.Services.RegisterBusiness();
 builder.Services.AddSingleton<IFileDebugLogger, FileDebugLogger>();
 builder.Services.AddResiliencePolicy("TradingApp.Business-repository");
+
+builder.Services.AddResiliencePolicy(ResiliencePolicyKey.AnthropicAPI, "AnthropicAPI", 2,
+    _ => { return TimeSpan.FromMilliseconds(200); });
+
+builder.Services.AddResiliencePolicy(ResiliencePolicyKey.VoyageAPI, "VoyageAPI", 2,
+    _ => { return TimeSpan.FromMilliseconds(200); });
+
+builder.Services.AddResiliencePolicy(ResiliencePolicyKey.RedisAPI, "RedisAPI", 2,
+    _ => { return TimeSpan.FromMilliseconds(200); });
+
 //docker run -p 6379:6379 redis to run local redis instance
 builder.Services.AddSignalR().AddStackExchangeRedis("localhost:6379");
 builder.Services.AddHostedService<SignalRPushBackgroundService>();
-
+//---------RAG retrieval pipeline dependencies ---------
 builder.Services.AddAnthropicClient();
 builder.Services.AddQueryRoutingServices();
 builder.Services.AddVoyageEmbeddingServices();
@@ -41,6 +51,7 @@ builder.Services.AddKnowledgeBaseQueryService();
 builder.Services.AddVoyageRerankingServices();
 builder.Services.AddChunkRerankingService();
 builder.Services.AddFileExpansionService();
+builder.Services.AddChunkingRetrievalService();
 // This is a separate IConnectionMultiplexer connection from SignalR's AddStackExchangeRedis backplane
 // connection above (that one is pub/sub for fanning Hub messages out across multiple API instances.
 // This one is used for storing embedded float vectors to redis: ChunkIngestionService/ChunkRetrievalService
@@ -48,7 +59,7 @@ builder.Services.AddFileExpansionService();
 // at the same local Redis Stack container (localhost:6379) but are logically unrelated connections serving
 // unrelated purposes.
 builder.Services.AddRedisConnection();
-builder.Services.AddChunkingRetrievalService();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll",

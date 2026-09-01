@@ -13,7 +13,7 @@ namespace LambdaBootstrap
             services.AddTradingDbContext();
             services.AddDeadLetterServices();
             services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "DeadLetterQueueProcessor-Sql");
-            services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Aws, "order_events_topic");
             services.AddSnsClient();
             services.AddIntegrationEventPublisherServices();
 

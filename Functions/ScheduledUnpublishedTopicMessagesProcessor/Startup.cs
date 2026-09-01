@@ -15,7 +15,7 @@ namespace LambdaBootstrap
             services.AddTradingDbContextFactory();
             services.AddSnsClient();
             services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "ScheduledUnpublishedTopicMessagesProcessor-Sql");
-            services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Aws, "order_events_topic");
 
             // Overrides the generator's default AddSingleton<ScheduledUnpublishedTopicMessagesProcessor>()
             // (registered before this method runs) - without this, the Scoped TradingDbContext it

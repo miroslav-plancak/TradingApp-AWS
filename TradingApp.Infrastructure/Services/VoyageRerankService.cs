@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Polly;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using TradingApp.Infrastructure.Interfaces;
@@ -10,11 +12,18 @@ namespace TradingApp.Infrastructure.Services
     {
         private readonly HttpClient _httpClient;
         private readonly ILogger<VoyageRerankService> _logger;
+        private readonly IAsyncPolicy _resiliencePolicy;
 
-        public VoyageRerankService(HttpClient httpClient, ILogger<VoyageRerankService> logger)
+        public VoyageRerankService
+        (
+            HttpClient httpClient,
+            ILogger<VoyageRerankService> logger,
+            [FromKeyedServices(ResiliencePolicyKey.VoyageAPI)] IAsyncPolicy resiliencePolicy
+        )
         {
             _httpClient = httpClient;
             _logger = logger;
+            _resiliencePolicy = resiliencePolicy;
         }
 
         public async Task<IReadOnlyList<RerankResult>> RerankAsync(string query, IReadOnlyList<string> documents, CancellationToken ct = default)
@@ -29,8 +38,12 @@ namespace TradingApp.Infrastructure.Services
 
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("rerank", request, ct);
-                response.EnsureSuccessStatusCode();
+                var response = await _resiliencePolicy.ExecuteAsync(async () =>
+                {
+                    var httpResponse = await _httpClient.PostAsJsonAsync("rerank", request, ct);
+                    httpResponse.EnsureSuccessStatusCode();
+                    return httpResponse;
+                });
 
                 var payload = await response.Content.ReadFromJsonAsync<VoyageRerankResponse>(cancellationToken: ct)
                     ?? throw new InvalidOperationException("Voyage API returned an empty response.");
@@ -44,8 +57,13 @@ namespace TradingApp.Infrastructure.Services
                 _logger.LogError(httpEx, "Voyage rerank request failed | DocumentCount: {DocumentCount}", documents.Count);
                 throw;
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected failture occurred while dispatching Voyage rerank request | DocumentCount: {DocumentCount}",
+                    documents.Count);
+                throw;
+            }
         }
-
 
         private class VoyageRerankRequest
         {

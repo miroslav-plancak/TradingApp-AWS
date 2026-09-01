@@ -85,7 +85,7 @@ namespace TradingApp.Infrastructure.Services
 
                 return retrievalResult;
             }
-            catch(Exception ex) 
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving context for question: {UserQuestion}", userQuestion);
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
