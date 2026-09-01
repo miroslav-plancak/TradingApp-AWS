@@ -19,7 +19,7 @@ namespace LambdaBootstrap
             services.AddSqsClient();
             services.AddSnsClient();
             services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "OutboxProcessingService-Sql");
-            services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "CREATE_ORDER_QUEUE");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Aws, "CREATE_ORDER_QUEUE");
             services.AddIntegrationEventPublisherServices();
 
             services.AddScoped<IOutboxQuarantineService, OutboxQuarantineService>();

@@ -14,7 +14,7 @@ namespace LambdaBootstrap
             services.AddTradingDbContextFactory();
             services.AddSnsClient();
             services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "ScheduledOrderStatusProcessor-Sql");
-            services.AddResiliencePolicy(ResiliencePolicyKey.Messaging, "order_events_topic");
+            services.AddResiliencePolicy(ResiliencePolicyKey.Aws, "order_events_topic");
             services.AddIntegrationEventPublisherServices();
 
             // Overrides the generator's default AddSingleton<ScheduledOrderStatusProcessor>()

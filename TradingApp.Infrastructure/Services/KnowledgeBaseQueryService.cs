@@ -1,4 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Anthropic.Exceptions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.CircuitBreaker;
 using StackExchange.Redis;
 using System.Text.RegularExpressions;
 using TradingApp.Infrastructure.Helpers;
@@ -13,18 +17,20 @@ namespace TradingApp.Infrastructure.Services
         private readonly IDatabase _database;
         private readonly IConnectionMultiplexer _connectionMultiplexer;
         private readonly IVoyageEmbeddingService _voyageEmbeddingService;
+        private readonly IAsyncPolicy _resiliencePolicy;
 
         public KnowledgeBaseQueryService
         (
             IConnectionMultiplexer connectionMultiplexer,
             IVoyageEmbeddingService voyageEmbeddingService,
-            ILogger<KnowledgeBaseQueryService> logger
-        )
+            ILogger<KnowledgeBaseQueryService> logger,
+            [FromKeyedServices(ResiliencePolicyKey.RedisAPI)] IAsyncPolicy resiliencePolicy)
         {
             _connectionMultiplexer = connectionMultiplexer;
             _database = _connectionMultiplexer.GetDatabase();
             _voyageEmbeddingService = voyageEmbeddingService;
             _logger = logger;
+            _resiliencePolicy = resiliencePolicy;
         }
 
         public async Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userQuestion)
@@ -33,17 +39,25 @@ namespace TradingApp.Infrastructure.Services
             {
                 var queryBytes = await EmbedQuestionAsync(userQuestion);
 
-                var searchResult = await _database.ExecuteAsync(
-                 "FT.SEARCH", "idx:chunks",
-                 "*=>[KNN 10 @embedding $BLOB AS score]",
-                 "PARAMS", "2", "BLOB", queryBytes,
-                 "SORTBY", "score",
-                 "DIALECT", "2",
-                 "RETURN", "3", "sourceFile", "content", "score");
+                var searchResult = await _resiliencePolicy.ExecuteAsync(async () =>
+                {
+                    return await _database.ExecuteAsync(
+                     "FT.SEARCH", "idx:chunks",
+                     "*=>[KNN 10 @embedding $BLOB AS score]",
+                     "PARAMS", "2", "BLOB", queryBytes,
+                     "SORTBY", "score",
+                     "DIALECT", "2",
+                     "RETURN", "3", "sourceFile", "content", "score");
+                });
 
                 var retrievedKNNChunks = MapKnnSearchResultToRetrievedChunkList(searchResult);
 
                 return retrievedKNNChunks;
+            }
+            catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
+            {
+                _logger.LogWarning(ex, "Redis database exception for user question: {UserQuestion}", userQuestion);
+                return new List<RetrievedChunk>();
             }
             catch (Exception ex)
             {
@@ -95,27 +109,33 @@ namespace TradingApp.Infrastructure.Services
             {
                 var parsedUserQuestion = ParseUserQuestion(userQuestion);
 
-                var lexicalSearchResult = await _database.ExecuteAsync(
-                       "FT.SEARCH", "idx:chunks",
-                       $"@content:({parsedUserQuestion})",
-                       "SCORER", "BM25",
-                       "WITHSCORES",
-                       "RETURN", "2", "sourceFile", "content",
-                       "LIMIT", "0", "10",
-                       "DIALECT", "2");
+                var lexicalSearchResult = await _resiliencePolicy.ExecuteAsync(async () =>
+                {
+                    return await _database.ExecuteAsync(
+                                           "FT.SEARCH", "idx:chunks",
+                                           $"@content:({parsedUserQuestion})",
+                                           "SCORER", "BM25",
+                                           "WITHSCORES",
+                                           "RETURN", "2", "sourceFile", "content",
+                                           "LIMIT", "0", "10",
+                                           "DIALECT", "2");
+                });
 
                 var retrievedLexicalChunks = MapLexicalSearchResultToRetrievedChunkList(lexicalSearchResult);
 
                 return retrievedLexicalChunks;
             }
-
+            catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
+            {
+                _logger.LogWarning(ex, "Redis database exception for user question: {UserQuestion}", userQuestion);
+                return new List<RetrievedChunk>();
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Database error for user question: {UserQuestion}", userQuestion);
                 return new List<RetrievedChunk>();
             }
         }
-
 
         private static string ParseUserQuestion(string userQuestion)
         {
@@ -173,8 +193,17 @@ namespace TradingApp.Infrastructure.Services
             {
                 try
                 {
-                    var content = await _database.HashGetAsync($"file:{sourceFile}", "content");
+                    var content = await _resiliencePolicy.ExecuteAsync(async () =>
+                    {
+                        return await _database.HashGetAsync($"file:{sourceFile}", "content");
+                    });
+
                     return (sourceFile, content: (string?)content ?? string.Empty);
+                }
+                catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
+                {
+                    _logger.LogWarning(ex, "Redis database exception for fetching full file content for source file: {SourceFile}", sourceFile);
+                    return (sourceFile, content: string.Empty);
                 }
                 catch (Exception ex)
                 {
@@ -187,5 +216,6 @@ namespace TradingApp.Infrastructure.Services
 
             return results.ToDictionary(r => r.sourceFile, r => r.content);
         }
+
     }
 }

@@ -33,7 +33,7 @@ namespace Handler
             IDbContextFactory<TradingDbContext> dbContextFactory,
             IAmazonSimpleNotificationService snsClient,
             [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
-            [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy)
+            [FromKeyedServices(ResiliencePolicyKey.Aws)] IAsyncPolicy messagingResiliencePolicy)
         {
             _tradingDbContext = tradingDbContext;
             _dbContextFactory = dbContextFactory;

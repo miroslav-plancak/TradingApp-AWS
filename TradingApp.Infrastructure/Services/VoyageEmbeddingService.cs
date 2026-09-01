@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Polly;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using TradingApp.Infrastructure.Interfaces;
@@ -9,13 +11,20 @@ namespace TradingApp.Infrastructure.Services
     {
         private readonly HttpClient _httpClient;
         private readonly ILogger<VoyageEmbeddingService> _logger;
+        private readonly IAsyncPolicy _resiliencePolicy;
 
         private const string EmbeddingModel = "voyage-4-lite";
 
-        public VoyageEmbeddingService(HttpClient httpClient, ILogger<VoyageEmbeddingService> logger)
+        public VoyageEmbeddingService
+        (
+            HttpClient httpClient,
+            ILogger<VoyageEmbeddingService> logger,
+            [FromKeyedServices(ResiliencePolicyKey.VoyageAPI)] IAsyncPolicy resiliencePolicy
+        )
         {
             _httpClient = httpClient;
             _logger = logger;
+            _resiliencePolicy = resiliencePolicy;
         }
 
         public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
@@ -34,8 +43,12 @@ namespace TradingApp.Infrastructure.Services
 
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("embeddings", request, cancellationToken);
-                response.EnsureSuccessStatusCode();
+                var response = await _resiliencePolicy.ExecuteAsync(async () =>
+                {
+                    var httpResponse = await _httpClient.PostAsJsonAsync("embeddings", request, cancellationToken);
+                    httpResponse.EnsureSuccessStatusCode();
+                    return httpResponse;
+                });
 
                 var payload = await response.Content.ReadFromJsonAsync<VoyageEmbeddingResponse>(cancellationToken: cancellationToken)
                     ?? throw new InvalidOperationException("Voyage API returned an empty response.");
@@ -48,6 +61,12 @@ namespace TradingApp.Infrastructure.Services
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "Voyage embeddings request failed | ChunkCount: {ChunkCount}", texts.Count);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected failture occurred while dispatching Voyage embeddings request | ChunkCount: {ChunkCount}",
+                    texts.Count);
                 throw;
             }
         }
@@ -75,6 +94,4 @@ namespace TradingApp.Infrastructure.Services
             public int Index { get; set; }
         }
     }
-
-
 }

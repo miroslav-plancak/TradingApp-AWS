@@ -3,6 +3,9 @@ namespace TradingApp.Infrastructure
     public enum ResiliencePolicyKey
     {
         Sql,
-        Messaging
+        Aws,
+        AnthropicAPI,
+        VoyageAPI,
+        RedisAPI
     }
 }

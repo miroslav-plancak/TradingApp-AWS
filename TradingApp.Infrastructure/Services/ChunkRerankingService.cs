@@ -13,8 +13,8 @@ namespace TradingApp.Infrastructure.Services
 
         public ChunkRerankingService
         (
-            IFileDebugLogger fileDebugLogger, 
-            IVoyageRerankService voyageRerankService, 
+            IFileDebugLogger fileDebugLogger,
+            IVoyageRerankService voyageRerankService,
             ILogger<ChunkRerankingService> logger
         )
         {
@@ -30,7 +30,7 @@ namespace TradingApp.Infrastructure.Services
 
             try
             {
-               
+
                 var rerankResults = await _voyageRerankService.RerankAsync(userQuestion, retrievedChunks.Select(x => x.Content ?? string.Empty).ToList());
                 var rerankedChunks = rerankResults
                     .OrderByDescending(r => r.RelevanceScore)
@@ -47,7 +47,7 @@ namespace TradingApp.Infrastructure.Services
 
                 return rerankedChunks;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "Reranking failed for user question: {UserQuestion}", userQuestion);
                 return new List<RetrievedChunk>();

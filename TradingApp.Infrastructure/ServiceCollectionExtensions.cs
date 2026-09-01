@@ -1,24 +1,20 @@
 ﻿using Amazon;
-using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Anthropic;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
-using Polly.CircuitBreaker;
-using Polly.Retry;
 using StackExchange.Redis;
-using System.Net;
 using System.Net.Http.Headers;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Repositories;
 using TradingApp.Business.Services.Regular;
 using TradingApp.Domain;
+using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Services;
 
@@ -27,23 +23,6 @@ namespace TradingApp.Infrastructure
     public static class ServiceCollectionExtensions
     {
         private const int SqlCommandTimeoutSeconds = 10;
-
-        private static readonly HashSet<int> _sqlServerTransientErrorNumbers = new()
-        {
-            4060,   // Cannot open database requested by the login
-            10928,  // Resource limit reached
-            10929,
-            40197,  // The service has encountered an error processing your request
-            40501,  // The service is currently busy
-            40613,  // Database unavailable
-            49918,  // Cannot process request. Not enough resources
-            49919,
-            49920,
-            1205,   // Deadlock
-            233,    // Connection initialization error
-            64,     // Network-related error
-            -2      // Timeout
-        };
 
         private static string GetSqlConnectionString()
         {
@@ -111,7 +90,7 @@ namespace TradingApp.Infrastructure
             services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
             return services;
         }
-   
+
         public static IServiceCollection AddVoyageEmbeddingServices(this IServiceCollection services)
         {
             services.AddHttpClient<IVoyageEmbeddingService, VoyageEmbeddingService>((sp, client) =>
@@ -186,7 +165,7 @@ namespace TradingApp.Infrastructure
                 var apiKey = configuration["Anthropic:ApiKey"]
                     ?? throw new InvalidOperationException("Anthropic:ApiKey configuration value is not set.");
 
-                return new AnthropicClient { ApiKey = apiKey };
+                return new AnthropicClient { ApiKey = apiKey, MaxRetries = 0 };
             });
 
             return services;
@@ -208,8 +187,8 @@ namespace TradingApp.Infrastructure
             {
                 var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("ResiliencePolicy");
 
-                var retryPolicy = BuildRetryPolicy(logger, protectedResourceName);
-                var circuitBreakerPolicy = BuildCircuitBreakerPolicy(logger, protectedResourceName);
+                var retryPolicy = ResiliencePolicyBuilder.BuildRetryPolicy(logger, protectedResourceName);
+                var circuitBreakerPolicy = ResiliencePolicyBuilder.BuildCircuitBreakerPolicy(logger, protectedResourceName);
 
                 var resiliencePolicy = circuitBreakerPolicy.WrapAsync(retryPolicy);
 
@@ -222,14 +201,21 @@ namespace TradingApp.Infrastructure
         // For classes that do BOTH SQL writes and an SNS/SQS call - registers a separate, independently
         // circuited IAsyncPolicy per policyKey, so a downed SQL Server can't trip the same breaker that
         // guards the topic/queue publish (or vice versa). This is resolved via [FromKeyedServices(policyKey)].
-        public static IServiceCollection AddResiliencePolicy(this IServiceCollection services, ResiliencePolicyKey policyKey, string protectedResourceName)
+        public static IServiceCollection AddResiliencePolicy
+        (
+            this IServiceCollection services,
+            ResiliencePolicyKey policyKey,
+            string protectedResourceName,
+            int retryCount = 3,
+            Func<int, TimeSpan>? sleepDurationProvider = null
+        )
         {
             services.AddKeyedSingleton<IAsyncPolicy>(policyKey, (sp, _) =>
             {
                 var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("ResiliencePolicy");
 
-                var retryPolicy = BuildRetryPolicy(logger, protectedResourceName, policyKey);
-                var circuitBreakerPolicy = BuildCircuitBreakerPolicy(logger, protectedResourceName);
+                var retryPolicy = ResiliencePolicyBuilder.BuildRetryPolicy(logger, protectedResourceName, policyKey, retryCount, sleepDurationProvider);
+                var circuitBreakerPolicy = ResiliencePolicyBuilder.BuildCircuitBreakerPolicy(logger, protectedResourceName);
 
                 var resiliencePolicy = circuitBreakerPolicy.WrapAsync(retryPolicy);
 
@@ -237,100 +223,6 @@ namespace TradingApp.Infrastructure
             });
 
             return services;
-        }
-
-        private static AsyncCircuitBreakerPolicy BuildCircuitBreakerPolicy(ILogger logger, string protectedResourceName)
-        {
-            return Policy
-                .Handle<Exception>()
-                .CircuitBreakerAsync(
-                    exceptionsAllowedBeforeBreaking: 3,
-                    durationOfBreak: TimeSpan.FromMinutes(2),
-                    onBreak: (exception, duration) =>
-                        logger.LogWarning(
-                            "CircuitBreaker OPENED | {Resource} unreachable | Will retry in {Duration}s | Error: {Error}",
-                            protectedResourceName, duration.TotalSeconds, exception.Message),
-                    onReset: () =>
-                        logger.LogWarning("CircuitBreaker CLOSED | {Resource} connectivity restored", protectedResourceName),
-                    onHalfOpen: () =>
-                        logger.LogWarning("CircuitBreaker HALF-OPEN | Testing {Resource} connectivity...", protectedResourceName));
-        }
-
-        private static AsyncRetryPolicy BuildRetryPolicy(ILogger logger, string protectedResourceName, ResiliencePolicyKey? policyKey = null)
-        {
-            return Policy
-                .Handle<Exception>(exception => IsTransientException(exception, policyKey))
-                .WaitAndRetryAsync(
-                    retryCount: 3,
-                    sleepDurationProvider: CalculateSleepDuration,
-                    onRetry: (exception, delay, attempt, ctx) =>
-                        logger.LogWarning(
-                            "RetryAttempt {Attempt} | {Resource} | Waiting {Delay}ms | Error: {Error}",
-                            attempt, protectedResourceName, delay.TotalMilliseconds, exception.Message));
-        }
-
-        private static bool IsTransientException(Exception exception, ResiliencePolicyKey? policyKey)
-        {
-            return policyKey == ResiliencePolicyKey.Messaging
-                ? IsTransientAWSException(exception)
-                : IsTransientSQLException(exception);
-        }
-
-        private static bool IsTransientAWSException(Exception exception)
-        {
-            if (exception is AmazonServiceException awsEx)
-            {
-                if (awsEx.ErrorType == ErrorType.Receiver)
-                    return true;
-
-                return awsEx.StatusCode == HttpStatusCode.TooManyRequests ||     // 429 - throttling
-                       awsEx.StatusCode == HttpStatusCode.ServiceUnavailable ||  // 503
-                       awsEx.StatusCode == HttpStatusCode.BadGateway ||          // 502
-                       awsEx.StatusCode == HttpStatusCode.GatewayTimeout ||      // 504
-                       awsEx.StatusCode == HttpStatusCode.RequestTimeout;        // 408
-            }
-
-            return AreThereAnyTransientHttpExceptions(exception);
-        }
-
-        private static bool IsTransientSQLException(Exception exception)
-        {
-            if (exception is SqlException sqlEx)
-            {
-                return _sqlServerTransientErrorNumbers.Contains(sqlEx.Number);
-            }
-
-            return AreThereAnyTransientHttpExceptions(exception);
-        }
-
-        private static bool AreThereAnyTransientHttpExceptions(Exception exception)
-        {
-            if (exception is HttpRequestException || exception is TimeoutException)
-                return true;
-
-            if (ContainsTransientKeyword(exception.Message))
-                return true;
-
-            if (exception.GetType().Name.Contains("Transient", StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            return false;
-        }
-
-        private static bool ContainsTransientKeyword(string message)
-        {
-            if (string.IsNullOrEmpty(message))
-                return false;
-
-            string[] transientKeywords = { "transient", "retryable", "temporarily unavailable", "timeout", "throttl" };
-
-            return transientKeywords.Any(keyWord => message.Contains(keyWord, StringComparison.OrdinalIgnoreCase));
-        }
-
-        private static TimeSpan CalculateSleepDuration(int attempt)
-        {
-            var delaySeconds = Math.Pow(2, attempt);
-            return TimeSpan.FromSeconds(delaySeconds);
         }
     }
 }

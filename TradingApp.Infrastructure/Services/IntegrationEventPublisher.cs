@@ -25,7 +25,7 @@ namespace TradingApp.Infrastructure.Services
         (
             TradingDbContext tradingDbContext,
             IAmazonSimpleNotificationService snsClient,
-            [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy,
+            [FromKeyedServices(ResiliencePolicyKey.Aws)] IAsyncPolicy messagingResiliencePolicy,
             [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy
         )
         {

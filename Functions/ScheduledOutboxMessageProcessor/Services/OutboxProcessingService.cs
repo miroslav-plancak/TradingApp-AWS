@@ -38,7 +38,7 @@ namespace Handler.Services
             IIntegrationEventPublisher integrationEventPublisher,
             IDbContextFactory<TradingDbContext> dbContextFactory,
             [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy sqlResiliencePolicy,
-            [FromKeyedServices(ResiliencePolicyKey.Messaging)] IAsyncPolicy messagingResiliencePolicy,
+            [FromKeyedServices(ResiliencePolicyKey.Aws)] IAsyncPolicy messagingResiliencePolicy,
             IAmazonSQS sqsClient,
             OutboxMessageProcessorSettings settings
         )

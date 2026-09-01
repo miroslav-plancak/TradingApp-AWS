@@ -1,10 +1,14 @@
 ﻿using Anthropic;
 using Anthropic.Models.Messages;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Polly;
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
+using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Models;
 
@@ -15,17 +19,20 @@ namespace TradingApp.API.Hubs
         private readonly ILogger<AiChatHub> _logger;
         private readonly AnthropicClient _anthropicClient;
         private readonly IChunkRetrievalService _chunkRetrievalService;
+        private readonly IAsyncPolicy _resiliencePolicy;
 
         public AiChatHub
         (
             ILogger<AiChatHub> logger,
             AnthropicClient anthropicClient,
-            IChunkRetrievalService chunkRetrievalService
+            IChunkRetrievalService chunkRetrievalService,
+            [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy
         )
         {
             _logger = logger;
             _anthropicClient = anthropicClient;
             _chunkRetrievalService = chunkRetrievalService;
+            _resiliencePolicy = resiliencePolicy;
         }
 
         public override Task OnConnectedAsync()
@@ -37,52 +44,31 @@ namespace TradingApp.API.Hubs
 
         public async IAsyncEnumerable<string> Ask(string userQuestion)
         {
-            var retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuestion);
+            var retrievalResult = new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
 
-            LogRetrievalResult(retrievalResult);
+            try
+            {
+                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuestion);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected failure retrieving context for question: {UserQuestion}", userQuestion);
+            }
 
             var parameters = new MessageCreateParams
             {
                 Model = "claude-sonnet-5",
                 MaxTokens = 4096,
-                System = BuildSystemPrompt(retrievalResult),
+                System = SystemPromptBuilder.BuildSystemPrompt(retrievalResult),
                 Messages = [new() { Role = Role.User, Content = userQuestion }]
             };
-
+            //TODO: need to find a way to wrap this in a _resiliencePolicy
             await foreach (var streamEvent in _anthropicClient.Messages.CreateStreaming(parameters))
             {
                 if (streamEvent.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
                 {
                     yield return text.Text;
                 }
-            }
-        }
-
-        private static string BuildSystemPrompt(RetrievalResult retrievalResult)
-        {
-            var chunks = string.Join("\n\n", retrievalResult.ChunkFallbacks.Select(c => $"Source: {c.SourceFile}\n{c.Content}"));
-            var fullFiles = string.Join("\n\n", retrievalResult.FullFileContents.Select(c => $"FullFiles - FileName: {c.Key}\n{c.Value}"));
-            var fullContext = string.Join("\n\n", new[] { chunks, fullFiles }.Where(section => !string.IsNullOrWhiteSpace(section)));
-
-            return $"Answer the user's question using the following code context if it's relevant." +
-                $" If the context doesn't contain the answer, say so instead of guessing.\n\n{fullContext}";
-        }
-
-        private void LogRetrievalResult(RetrievalResult retrievalResult)
-        {
-            var i = 1;
-
-            foreach (var chunk in retrievalResult.ChunkFallbacks)
-            {
-                _logger.LogInformation("AiChatHub | RetrievedRelevantChunk | SourceFile [{i}]: {ChunkProperty}", i, chunk.SourceFile);
-                _logger.LogInformation("AiChatHub | RetrievedRelevantChunk | Content [{i}]: {ChunkProperty}", i, chunk.Content);
-                _logger.LogInformation("AiChatHub | RetrievedRelevantChunk | Score [{i}]: {ChunkProperty}", i, chunk.KnnScore);
-                i++;
-            }
-
-            foreach (var fileName in retrievalResult.FullFileContents.Keys)
-            {
-                _logger.LogInformation("AiChatHub | ExpandedToFullFile | SourceFile: {SourceFile}", fileName);
             }
         }
     }
