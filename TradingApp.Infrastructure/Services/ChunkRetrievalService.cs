@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Models;
@@ -73,7 +74,7 @@ namespace TradingApp.Infrastructure.Services
                 var filteredRetrievedChunks = rerankedChunks
                      .GroupBy(x => x.SourceFile ?? string.Empty)
                      .SelectMany(group => group
-                     .Take(3))
+                     .Take(MaxChunksPerFIle(routedLlmQueryResponse)))
                      .ToList();
 
                 LogRedisSearchResults(filteredRetrievedChunks, filesEligibleForExpansion, userQuestion);
@@ -105,6 +106,21 @@ namespace TradingApp.Infrastructure.Services
             foreach (var expandedFile in filesEligibleForExpansion.Keys)
             {
                 _logger.LogInformation("Expanded full file: {SourceFile}", expandedFile);
+            }
+        }
+
+        private static int MaxChunksPerFIle(LlmQueryClassification routedLlmQueryResponse)
+        {
+            switch (routedLlmQueryResponse)
+            {
+                case LlmQueryClassification.NARROW:
+                    return 3;
+                case LlmQueryClassification.BROAD:
+                    return 5;
+                case LlmQueryClassification.INCONCLUSIVE:
+                    return 3;
+                default:
+                    return 3;
             }
         }
     }
