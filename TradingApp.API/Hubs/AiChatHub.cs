@@ -62,12 +62,72 @@ namespace TradingApp.API.Hubs
                 System = SystemPromptBuilder.BuildSystemPrompt(retrievalResult),
                 Messages = [new() { Role = Role.User, Content = userQuestion }]
             };
-            //TODO: need to find a way to wrap this in a _resiliencePolicy
-            await foreach (var streamEvent in _anthropicClient.Messages.CreateStreaming(parameters))
+
+            IAsyncEnumerator<RawMessageStreamEvent> enumerator = null;
+            string firstText = null;
+            var bootstrapFailed = false;
+
+            try
             {
-                if (streamEvent.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                (enumerator, firstText) = await _resiliencePolicy.ExecuteAsync(async () =>
                 {
-                    yield return text.Text;
+                    var e = _anthropicClient.Messages.CreateStreaming(parameters).GetAsyncEnumerator();
+
+                    while (await e.MoveNextAsync())
+                    {
+                        if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                        {
+                            return (e, text.Text); 
+                        }
+                    }
+
+                    return (e, (string)null);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Streaming failure before any content was produced for question: {UserQuestion}", userQuestion);
+                bootstrapFailed = true;
+            }
+
+            if (bootstrapFailed || enumerator is null)
+                yield break;  
+
+            await using (enumerator)
+            {
+                var hasYieldedAnyContent = false;
+
+                if (firstText is not null)
+                {
+                    hasYieldedAnyContent = true;
+                    yield return firstText;
+                }
+
+                while (true)
+                {
+                    bool hasNext;
+                    var streamFailed = false;
+
+                    try
+                    {
+                        hasNext = await enumerator.MoveNextAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Streaming failure while answering question: {UserQuestion} | AnyContentYielded: {HasYieldedAnyContent}",
+                            userQuestion, hasYieldedAnyContent);
+                        streamFailed = true;
+                        hasNext = false;
+                    }
+
+                    if (streamFailed || !hasNext)
+                        yield break;
+
+                    if (enumerator.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                    {
+                        hasYieldedAnyContent = true;
+                        yield return text.Text;
+                    }
                 }
             }
         }
