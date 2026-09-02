@@ -91,7 +91,7 @@ namespace TradingApp.API.Hubs
             }
 
             if (bootstrapFailed || enumerator is null)
-                yield break;  
+                throw new HubException("There was an error processing your request. Please try again.");
 
             await using (enumerator)
             {
