@@ -120,7 +120,10 @@ namespace TradingApp.API.Hubs
                         hasNext = false;
                     }
 
-                    if (streamFailed || !hasNext)
+                    if (streamFailed)
+                        throw new HubException("The response was interrupted partway through. Please try again.");
+
+                    if (!hasNext)
                         yield break;
 
                     if (enumerator.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
