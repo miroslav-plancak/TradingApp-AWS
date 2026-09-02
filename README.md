@@ -140,17 +140,22 @@ expire and be re-claimed by a genuinely still-running invocation.
 
 ### Resilience Policies (Polly: retry + circuit breaker)
 
-Registered via `TradingApp.Infrastructure.ServiceCollectionExtensions.AddResiliencePolicy(...)`. Two
-independently-circuited policies exist per resource-touching Lambda, keyed by `ResiliencePolicyKey`
-(`Sql` / `Messaging`) so a downed SQL Server can't trip the same breaker guarding an SNS/SQS call.
-Each policy wraps a 3-attempt exponential-backoff retry inside a circuit breaker (opens after 3
-consecutive failures, 2-minute cooldown). The retry predicate is split by domain:
-`IsTransientAWSException` (checks `AmazonServiceException`, e.g. throttling/503/502/504/408) and
-`IsTransientSQLException` (checks known-transient SQL Server error numbers) — both fall back to a
-shared `AreThereAnyTransientHttpExceptions` check for generic HTTP-level transience. A small facade,
-`IsTransientException(exception, policyKey)`, picks the right one; the call site hands
-`Policy.Handle<Exception>` a lambda that closes over `policyKey` rather than a bare method group,
-since the facade's own signature doesn't match `Func<Exception, bool>` directly.
+Registered via `TradingApp.Infrastructure.ServiceCollectionExtensions.AddResiliencePolicy(...)`
+(policy-building logic itself lives in `Helpers/ResiliencePolicyBuilder.cs`). Independently-circuited
+policies are keyed by `ResiliencePolicyKey` — `Sql` / `Aws` for the order-processing Lambdas above, plus
+`AnthropicAPI` / `VoyageAPI` / `RedisAPI` for the [AI Chat](#ai-chat--retrieval-augmented-code-assistant)
+pipeline below — so a downed SQL Server can't trip the same breaker guarding an SNS/SQS call, and a
+struggling Voyage API can't trip the one guarding Redis. Each policy wraps a 3-attempt
+exponential-backoff retry inside a circuit breaker (opens after 3 consecutive failures, 2-minute
+cooldown). The retry predicate is split by domain, one classifier per key —
+`IsTransientAWSException` (checks `AmazonServiceException`, e.g. throttling/503/502/504/408),
+`IsTransientSQLException` (known-transient SQL Server error numbers), `IsTransientAnthropicApiException`
+(Anthropic's typed exception hierarchy), `IsTransientVoyageApiException` (raw `HttpRequestException`
+status codes, since Voyage has no SDK), `IsTransientRedisApiException` (`RedisConnectionException`/
+`RedisTimeoutException` unconditionally, `RedisServerException` gated on the message containing
+`LOADING`/`OOM` so a genuine command bug like a malformed query isn't silently retried) — all falling
+back to a shared `AreThereAnyTransientHttpExceptions` check for generic HTTP-level transience. A small
+dispatcher, `IsTransientException(exception, policyKey)`, picks the right one per key.
 
 ### SQS Partial-Batch-Failure Reporting
 
@@ -315,6 +320,107 @@ warm Lambda execution environment.
 
 ---
 
+## AI Chat — Retrieval-Augmented Code Assistant
+
+A RAG-grounded chat feature (`AiChatHub`, a SignalR streaming Hub) that answers questions about this
+codebase, backed by real retrieval over the actual `.cs` source rather than the model's own training
+data. Built as a hands-on practice exercise — a genuinely separate subsystem from the order-processing
+domain above, sharing only the DI container and resilience infrastructure.
+
+### Pipeline
+
+```
+User question
+     │
+     ▼
+Query routing (Claude Haiku 4.5) ── classifies BROAD vs NARROW, feeds file-expansion below
+     │
+     ├──► KNN search (Redis Stack, Voyage voyage-4-lite embeddings, K=10)
+     └──► Lexical/BM25 search (RediSearch, identifier-shaped-token filter)
+                    │
+                    ▼
+          Reciprocal Rank Fusion (dedup only — see note below)
+                    │
+                    ▼
+          Re-ranking (Voyage rerank-2.5, cross-encoder)
+                    │
+                    ▼
+          Relevance floor (0.53 on rerank score) ── below floor on everything → honest "no context" answer
+                    │
+                    ▼
+          Adaptive parent-file expansion (threshold set by query routing: 1 for BROAD, 2 for NARROW)
+                    │
+                    ▼
+          Per-file chunk cap (Take(3) for files not fully expanded)
+                    │
+                    ▼
+          System prompt assembly → Claude Sonnet 5 → streamed back over SignalR
+```
+
+RRF's fusion step deduplicates chunks found by both search methods, but its own ranking is provably
+inert downstream — re-ranking fully overrides it (`ChunkRerankingService`'s own
+`OrderByDescending(r => r.RelevanceScore)` discards whatever order RRF produced). Kept for the dedup
+value and as a documented, deliberate piece of infrastructure, not because the ranking itself does
+anything further down the pipeline.
+
+Query rewriting (HyDE — embedding a generated hypothetical answer instead of the raw question) was
+evaluated and rejected: tested against a 55-question labeled batch through the real pipeline, it
+improved 0 of 29 relevant questions and regressed one, with re-ranking already recovering what raw KNN
+misses on its own.
+
+### Services (`TradingApp.Infrastructure`)
+
+| Service | Owns |
+|---|---|
+| `QueryRoutingService` | LLM-based BROAD/NARROW classification (Claude Haiku 4.5) |
+| `KnowledgeBaseQueryService` | Every Redis read — KNN search, lexical search, full-file content lookup |
+| `ChunkFusion` (static helper) | RRF scoring + dedup, no dependencies |
+| `ChunkRerankingService` | Voyage rerank-2.5 wrapper |
+| `FileExpansionService` | Decides which files get expanded to full text, adaptively |
+| `SystemPromptBuilder` | Assembles the final context sent to Claude |
+| `IFileDebugLogger` | Generic, reusable file-based debug logger (retrieval tuning, not app logging) |
+
+`AiChatHub.Ask(string userQuestion)` (`TradingApp.API/Hubs/AiChatHub.cs`) is the orchestrating SignalR
+streaming Hub method — `async IAsyncEnumerable<string>`, one `yield return` per streamed text chunk —
+calling `ChunkRetrievalService.RetrieveRelevantContextAsync` (the thin orchestrator composing the
+services above) before streaming Claude's answer back.
+
+### Streaming resilience
+
+Every outbound call in the pipeline (Redis, Voyage embed/rerank, the Anthropic router call, and the
+main Anthropic streaming call) is wrapped in a keyed Polly `IAsyncPolicy`, same retry-plus-circuit-breaker
+shape as the order-processing Lambdas above but with its own vendor-specific transient-exception
+classifier per resource (see [Resilience Policies](#resilience-policies-polly-retry--circuit-breaker)).
+
+`Ask()` can't use `await foreach` for the streaming call — C# forbids `yield` inside a `try` block that
+has a `catch` (CS1626), so the original `await foreach` + `yield return` loop had no way to catch
+anything at all. Fixed by manually driving the stream's `IAsyncEnumerator` instead: a retry-wrapped
+bootstrap phase pulls (with Polly retry) until the first real text delta — safe to retry since nothing
+has reached the client yet — then an unretried per-chunk loop for the rest of the stream, since content
+may already be flowing to the client by then. A genuine failure in either phase throws `HubException`
+(not a plain exception — SignalR suppresses a plain exception's message into a generic string by
+default; `HubException` is the one type documented to send its message to the client unmodified), which
+the frontend's error signal and Retry button pick up.
+
+### Frontend (`TradingApp-Frontend`, `features/ai-chat/`)
+
+Angular chat UI over its own SignalR connection (`AssistantHubService`, separate from the
+order-events push Hub): streamed answers rendered with VS Code Dark+-styled fenced code blocks and
+per-token syntax coloring (a hand-rolled C# tokenizer in `code-highlight.ts` — the same coloring applies
+to inline `` `code` `` spans as fenced blocks), a Retry button on the error banner, copy-and-ask example
+prompts grounded in what's actually indexed, and a collapsed placeholder rail reserved for conversation
+history (not built yet — single-shot only today).
+
+### Full write-ups
+
+Detailed, code-quoted design docs live in the sibling `fis learning/TradingApp-AWS/` folder (a personal
+learning-docs project, outside this repo) — `ChunkRetrievalStrategy.html` (every retrieval strategy and
+why it exists), `AiChatHubResilientStreaming.html` (the streaming/error-handling mechanism, with traced
+scenarios), `AskStateMachineLiveTrace.html` (an interactive step-through of `Ask()`'s real code next to
+its compiled state machine).
+
+---
+
 ## Prerequisites
 
 - .NET 8 SDK
@@ -324,6 +430,9 @@ warm Lambda execution environment.
   the local harnesses both use the standard AWS SDK credential chain
 - A Microsoft Teams workspace (for webhook notifications) — optional, both webhook env vars are
   required at startup but functionality degrades gracefully if the URL is unreachable
+- For [AI Chat](#ai-chat--retrieval-augmented-code-assistant) only: a local Redis Stack container
+  (`redis/redis-stack-server`, not plain Redis — the vector index and full-text search both need
+  RediSearch), a Voyage AI API key, and an Anthropic API key
 
 ---
 
@@ -376,6 +485,27 @@ Server, fully debuggable in an IDE. See [Local Development Harnesses](#local-dev
 above. A full cloud deployment (`dotnet lambda deploy-function` or equivalent) is only needed to
 verify the actual deployed artifact, not for routine development.
 
+### 4. AI Chat setup (optional)
+
+Only needed for [AI Chat](#ai-chat--retrieval-augmented-code-assistant) — the order-processing flow
+above doesn't touch any of this.
+
+```
+docker run -d --name redis-stack -p 6379:6379 redis/redis-stack-server:latest
+```
+
+Set both API keys via `dotnet user-secrets` on `TradingApp.API` (not plain environment variables, unlike
+the Lambda functions above — these are developer-machine secrets, not deployed config):
+
+```
+dotnet user-secrets set "Anthropic:ApiKey" "<your key>" --project TradingApp.API
+dotnet user-secrets set "Voyage:ApiKey" "<your key>" --project TradingApp.API
+```
+
+The corpus itself (which `.cs` files get embedded and indexed) is populated by
+`TradingApp.EmbeddingsIngestor`, a separate console project — run it once against a running Redis
+Stack to build `idx:chunks` before asking any real questions.
+
 ---
 
 ## Notes
@@ -415,11 +545,13 @@ TradingApp-AWS/
 │   ├── RiskAnalysisProcessor.LocalHarness/
 │   ├── AuditLogProcessor/                              # Topic subscriber (stub)
 │   └── AuditLogProcessor.LocalHarness/
-├── TradingApp.API/                                     # ASP.NET Core REST API
+├── TradingApp.API/                                     # ASP.NET Core REST API + AiChatHub (Hubs/AiChatHub.cs)
 ├── TradingApp.Business/                                # Services, repositories, DTOs, mappers
 ├── TradingApp.Domain/                                  # Entities, enums, DbContext
+├── TradingApp.EmbeddingsIngestor/                      # Console app: chunks + embeds + indexes .cs files into Redis
 ├── TradingApp.Events/                                  # Shared event/payload contracts (plain project reference)
-├── TradingApp.Infrastructure/                           # DI registration, resilience policies, SqsBatchHandler
+├── TradingApp.Infrastructure/                           # DI registration, resilience policies, SqsBatchHandler,
+│                                                          #   RAG pipeline services (Services/, Helpers/)
 ├── TradingApp.LocalHarnessCore/                         # SqsHarness + ScheduledHarness — shared local-debug plumbing
 └── UI/
     └── TradingAppUI.html                                # Single-file ops/testing dashboard
@@ -433,5 +565,5 @@ TradingApp-AWS/
 OrderStatus:        0 = PENDING_ACK  |  1 = ACKNOWLEDGED  |  2 = REJECTED  |  3 = FILLED
 OutboxRetryReason:  0 = None  |  1 = SimpleQueueServiceUnavailable  |  2 = InvalidPayload  |  3 = DatabaseError  |  4 = Unknown
 DeadLetterCategory: 0 = BusinessFailure  |  1 = InfrastructureFailure
-ResiliencePolicyKey: Sql  |  Messaging
+ResiliencePolicyKey: Sql  |  Aws  |  AnthropicAPI  |  VoyageAPI  |  RedisAPI
 ```
