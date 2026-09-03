@@ -1,4 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using TradingApp.Domain.Models.Entities.Conversation;
+using TradingApp.Domain.Models.Entities.ConversationChunk;
+using TradingApp.Domain.Models.Entities.ConversationMessage;
 using TradingApp.Domain.Models.Entities.DeadLetterLog;
 using TradingApp.Domain.Models.Entities.Order;
 using TradingApp.Domain.Models.Entities.OrderNotificationSequences;
@@ -20,7 +23,10 @@ namespace TradingApp.Domain
         public DbSet<UnpublishedTopicMessage> UnpublishedTopicMessages { get; set; }
         public DbSet<OrderNotificationSequence> OrderNotificationSequences { get; set; }
         public DbSet<PendingFilledNotification> PendingFilledNotifications { get; set; }
-
+        public DbSet<Conversation> Conversations { get; set; }
+        public DbSet<ConversationMessage> ConversationMessages { get; set; }
+        public DbSet<ConversationChunk> ConversationChunks { get; set; }
+ 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -146,6 +152,40 @@ namespace TradingApp.Domain
                 entity.Property(e => e.EventPayload).IsRequired();
                 entity.Property(e => e.CorrelationId).IsRequired().HasMaxLength(100);
                 entity.Property(e => e.StoredAt).IsRequired();
+            });
+
+            modelBuilder.Entity<Conversation>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.CreatedAt).IsRequired();
+                entity.Property(e => e.UpdatedAt);
+
+            });
+
+            modelBuilder.Entity<ConversationMessage>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasIndex(e => e.ConversationId);
+                entity.Property(e => e.ConversationId).IsRequired();
+
+                entity.Property(e => e.Role).IsRequired();
+                entity.Property(e => e.Body).IsRequired();
+                entity.Property(e => e.CreatedAt).IsRequired();
+            });
+
+            modelBuilder.Entity<ConversationChunk>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasIndex(e => new { e.ConversationId, e.Key }).IsUnique();
+                entity.Property(e => e.ConversationId).IsRequired();
+                entity.Property(e => e.Key).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.SourceFile).IsRequired().HasMaxLength(500);
+                entity.Property(e => e.Content).IsRequired();
+                entity.Property(e => e.CreatedAt).IsRequired();
             });
         }
     }
