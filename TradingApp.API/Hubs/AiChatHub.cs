@@ -7,6 +7,8 @@ using Polly;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using TradingApp.Business.DTOs.Conversation;
+using TradingApp.Business.Interfaces.Services;
 using TradingApp.Infrastructure;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
@@ -20,19 +22,21 @@ namespace TradingApp.API.Hubs
         private readonly AnthropicClient _anthropicClient;
         private readonly IChunkRetrievalService _chunkRetrievalService;
         private readonly IAsyncPolicy _resiliencePolicy;
-
+        private readonly IConversationService _conversationService;
         public AiChatHub
         (
             ILogger<AiChatHub> logger,
             AnthropicClient anthropicClient,
             IChunkRetrievalService chunkRetrievalService,
-            [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy
+            [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy,
+            IConversationService conversationService
         )
         {
             _logger = logger;
             _anthropicClient = anthropicClient;
             _chunkRetrievalService = chunkRetrievalService;
             _resiliencePolicy = resiliencePolicy;
+            _conversationService = conversationService;
         }
 
         public override Task OnConnectedAsync()
@@ -41,10 +45,50 @@ namespace TradingApp.API.Hubs
 
             return base.OnConnectedAsync();
         }
+        private async Task NotifyConversationStartedAsync(Guid newConversationId)
+        {
+            try
+            {
+                await Clients.Caller.SendAsync("ConversationStarted", newConversationId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to notify client of new conversation {ConversationId}", newConversationId);
+                //await _conversationService.DeleteConversationAsync(newConversationId); //TODO: implement this delete
+                throw;
+            }
+        }
 
-        public async IAsyncEnumerable<string> Ask(string userQuestion)
+        public async IAsyncEnumerable<string> Ask(string userQuestion, Guid? conversationId, Guid? clientRequestId)
         {
             var retrievalResult = new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
+            CreatedConversationResponseDTO existingConversation;
+
+            try
+            {
+                if(conversationId is null)
+                {
+                    existingConversation = await _conversationService.CreateConversationAsync(userQuestion, clientRequestId);
+                    await NotifyConversationStartedAsync(existingConversation.ConversationId);
+                }
+                else
+                {
+                    try 
+                    {
+                        existingConversation = await _conversationService.GetConversationByIdAsync(conversationId.Value);
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        existingConversation = await _conversationService.CreateConversationAsync(userQuestion, clientRequestId);
+                        await NotifyConversationStartedAsync(existingConversation.ConversationId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to establish conversation context for question: {UserQuestion}", userQuestion);
+                throw new HubException("There was an error processing your request. Please try again.");
+            }
 
             try
             {

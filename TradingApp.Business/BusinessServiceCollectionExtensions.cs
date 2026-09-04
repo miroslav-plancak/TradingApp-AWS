@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Helpers;
 using TradingApp.Business.Middleware;
 using TradingApp.Business.Repositories;
 using TradingApp.Business.Services.Helpers;
@@ -13,14 +14,19 @@ namespace TradingApp.Business
         public static IServiceCollection RegisterBusiness(this IServiceCollection services)
         {
             services.AddTransient<ExceptionHandlingMiddleware>();
-            services.AddScoped<IOrderService, OrderService>()
-                    .AddScoped<IOrderRepository, OrderRepository>()
-                    .AddScoped<IDeadLetterService, DeadLetterService>()
+
+            services.AddScoped<IOrderRepository, OrderRepository>()
                     .AddScoped<IDeadLetterRepository, DeadLetterRepository>()
+                    .AddScoped<IOutboxMessageRepository, OutboxMessageRepository>()
+                    .AddScoped<IConversationRepository, ConversationRepository>();
+
+            services.AddScoped<IOrderService, OrderService>()
+                    .AddScoped<IDeadLetterService, DeadLetterService>()
                     .AddScoped<IOutboxMessageService, OutboxMessageService>()
-                    .AddScoped<IOutboxMessageRepository, OutboxMessageRepository>();
+                    .AddScoped<IConversationService, ConversationService>();
 
             services.AddSingleton<IResiliencePolicyGuard, ResiliencePolicyGuard>();
+            services.AddSingleton<IResilienceConversationPolicyGuard, ResilienceConversationPolicyGuard>();
 
             return services;
         }

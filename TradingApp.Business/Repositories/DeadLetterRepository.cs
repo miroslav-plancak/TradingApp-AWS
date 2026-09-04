@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.DeadLetter;
 using TradingApp.Business.Interfaces.Repositories;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Helpers;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.DeadLetterLog;
 

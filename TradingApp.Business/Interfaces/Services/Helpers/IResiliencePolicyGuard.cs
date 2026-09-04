@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 
-namespace TradingApp.Business.Interfaces.Services
+namespace TradingApp.Business.Interfaces.Services.Helpers
 {
     public interface IResiliencePolicyGuard
     {
