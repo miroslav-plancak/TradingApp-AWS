@@ -158,6 +158,9 @@ namespace TradingApp.Domain
             {
                 entity.HasKey(e => e.Id);
 
+                entity.Property(e => e.ClientRequestId);
+                entity.HasIndex(e => e.ClientRequestId).IsUnique().HasFilter("[ClientRequestId] IS NOT NULL");
+
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
                 entity.Property(e => e.CreatedAt).IsRequired();
                 entity.Property(e => e.UpdatedAt);

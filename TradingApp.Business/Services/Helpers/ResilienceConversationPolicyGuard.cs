@@ -9,15 +9,15 @@ using TradingApp.Infrastructure;
 
 namespace TradingApp.Business.Services.Helpers
 {
-    public class ResiliencePolicyGuard : IResiliencePolicyGuard
+    public class ResilienceConversationPolicyGuard : IResilienceConversationPolicyGuard
     {
         private readonly IAsyncPolicy _resiliencePolicy;
-        private readonly ILogger<ResiliencePolicyGuard> _logger;
+        private readonly ILogger<ResilienceConversationPolicyGuard> _logger;
 
-        public ResiliencePolicyGuard
+        public ResilienceConversationPolicyGuard
         (
-            [FromKeyedServices(ResiliencePolicyKey.Sql)]IAsyncPolicy resiliencePolicy, 
-            ILogger<ResiliencePolicyGuard> logger
+            [FromKeyedServices(ResiliencePolicyKey.SqlFast)] IAsyncPolicy resiliencePolicy,
+            ILogger<ResilienceConversationPolicyGuard> logger
         )
         {
             _resiliencePolicy = resiliencePolicy;

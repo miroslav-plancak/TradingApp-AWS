@@ -29,7 +29,12 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.RegisterBusiness();
 builder.Services.AddSingleton<IFileDebugLogger, FileDebugLogger>();
-builder.Services.AddResiliencePolicy("TradingApp.Business-repository");
+
+//---------Resilience policy dependencies ---------
+builder.Services.AddResiliencePolicy(ResiliencePolicyKey.Sql, "TradingApp.Business-repository-others");
+
+builder.Services.AddResiliencePolicy(ResiliencePolicyKey.SqlFast, "TradingApp.Business-repository-conversation", 2,
+     _ => { return TimeSpan.FromMilliseconds(200); });
 
 builder.Services.AddResiliencePolicy(ResiliencePolicyKey.AnthropicAPI, "AnthropicAPI", 2,
     _ => { return TimeSpan.FromMilliseconds(200); });
