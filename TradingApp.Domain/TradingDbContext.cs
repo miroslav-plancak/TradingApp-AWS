@@ -171,6 +171,8 @@ namespace TradingApp.Domain
             {
                 entity.HasKey(e => e.Id);
 
+                entity.HasIndex(e => new { e.ConversationId, e.ClientRequestId }).IsUnique().HasFilter("[ClientRequestId] IS NOT NULL");
+
                 entity.HasIndex(e => e.ConversationId);
                 entity.Property(e => e.ConversationId).IsRequired();
 

@@ -1,6 +1,4 @@
-﻿using Microsoft.AspNetCore.Http.HttpResults;
-using System;
-using TradingApp.Business.DTOs.Conversation;
+﻿using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Domain.Models.Entities.Conversation;
 
 namespace TradingApp.Business.Mappers
