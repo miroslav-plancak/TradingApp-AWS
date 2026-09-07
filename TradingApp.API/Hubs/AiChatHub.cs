@@ -6,9 +6,12 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
+using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Services;
+using TradingApp.Domain.Models.Enums;
 using TradingApp.Infrastructure;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
@@ -45,6 +48,7 @@ namespace TradingApp.API.Hubs
 
             return base.OnConnectedAsync();
         }
+
         private async Task NotifyConversationStartedAsync(Guid newConversationId)
         {
             try
@@ -54,19 +58,33 @@ namespace TradingApp.API.Hubs
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to notify client of new conversation {ConversationId}", newConversationId);
-                //await _conversationService.DeleteConversationAsync(newConversationId); //TODO: implement this delete
+
+                try
+                {
+                    await _conversationService.DeleteConversationByIdAsync(newConversationId);
+                } 
+                catch (Exception deleteEx)
+                {
+                    _logger.LogError(deleteEx, "Failed to clean up orphaned conversation {ConversationId} after notify failure", newConversationId);
+                }
+               
                 throw;
             }
         }
 
         public async IAsyncEnumerable<string> Ask(string userQuestion, Guid? conversationId, Guid? clientRequestId)
         {
+            if (string.IsNullOrWhiteSpace(userQuestion))
+                throw new HubException("Question cannot be empty.");
+
             var retrievalResult = new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             CreatedConversationResponseDTO existingConversation;
+            CreatedConversationMessageResponseDTO userCreatedConversationMessage;
+            CreatedConversationMessageResponseDTO assistantCreatedConversationMessage;
 
             try
             {
-                if(conversationId is null)
+                if(conversationId == null)
                 {
                     existingConversation = await _conversationService.CreateConversationAsync(userQuestion, clientRequestId);
                     await NotifyConversationStartedAsync(existingConversation.ConversationId);
@@ -137,12 +155,28 @@ namespace TradingApp.API.Hubs
             if (bootstrapFailed || enumerator is null)
                 throw new HubException("There was an error processing your request. Please try again.");
 
+        
+
             await using (enumerator)
             {
+                try
+                {
+                    userCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
+                        existingConversation.ConversationId, clientRequestId, ConversationMessageRole.User, userQuestion);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to add the conversation message for conversation: {ConversationId}", existingConversation.ConversationId);
+                    throw new HubException("There was an error processing your request. Please try again.");
+                }
+
                 var hasYieldedAnyContent = false;
+                var stringBuilder = new StringBuilder();
+                var assistantMessageAccumulated = "";
 
                 if (firstText is not null)
                 {
+                    assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, firstText);
                     hasYieldedAnyContent = true;
                     yield return firstText;
                 }
@@ -168,15 +202,30 @@ namespace TradingApp.API.Hubs
                         throw new HubException("The response was interrupted partway through. Please try again.");
 
                     if (!hasNext)
+                    {
+                        _logger.LogInformation("RESULT{Result}", assistantMessageAccumulated);
+
+                        assistantCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
+                            existingConversation.ConversationId, null, ConversationMessageRole.Assistant, assistantMessageAccumulated); 
+
                         yield break;
+                    }
 
                     if (enumerator.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
                     {
                         hasYieldedAnyContent = true;
+                        assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder,text.Text);
                         yield return text.Text;
                     }
                 }
             }
+        }
+
+        private static string BuildAssistantConversationMessage(StringBuilder stringBuilder, string assistantMessage)
+        {
+            stringBuilder.Append(assistantMessage);
+
+            return stringBuilder.ToString();
         }
     }
 }

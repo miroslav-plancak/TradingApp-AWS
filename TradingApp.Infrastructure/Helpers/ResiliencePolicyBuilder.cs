@@ -77,6 +77,7 @@ namespace TradingApp.Infrastructure.Helpers
             switch (policyKey)
             {
                 case ResiliencePolicyKey.Sql:
+                case ResiliencePolicyKey.SqlFast:
                     return IsTransientSQLException(exception);
                 case ResiliencePolicyKey.Aws:
                     return IsTransientAWSException(exception);
