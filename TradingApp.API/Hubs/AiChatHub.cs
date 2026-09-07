@@ -86,7 +86,8 @@ namespace TradingApp.API.Hubs
             CreatedConversationResponseDTO existingConversation;
             CreatedConversationMessageResponseDTO userCreatedConversationMessage;
             CreatedConversationMessageResponseDTO assistantCreatedConversationMessage;
-            List<ConversationMessageDTO> conversationMessages = [];
+            List<ConversationMessageDTO> conversationMessagesHistory = [];
+            var isNewConversation = false;
 
             //1. we create a conversation or load existing
             try
@@ -95,17 +96,20 @@ namespace TradingApp.API.Hubs
                 {
                     existingConversation = await _conversationService.CreateConversationAsync(userQuestion, clientRequestId);
                     await NotifyConversationStartedAsync(existingConversation.ConversationId);
+                    isNewConversation = true;
                 }
                 else
                 {
                     try 
                     {
                         existingConversation = await _conversationService.GetConversationByIdAsync(conversationId.Value);
+                        isNewConversation = false;
                     }
                     catch (KeyNotFoundException)
                     {
                         existingConversation = await _conversationService.CreateConversationAsync(userQuestion, clientRequestId);
                         await NotifyConversationStartedAsync(existingConversation.ConversationId);
+                        isNewConversation = true;
                     }
                 }
             }
@@ -127,15 +131,14 @@ namespace TradingApp.API.Hubs
             //4. retrieve from the permanence source rows of role/content (role/body in db) for both user/assistant, sorted by createdAt ascending + append to the end current input question from the Ask
             try 
             {
-                conversationMessages = await _conversationService.GetConversationMessagesAsync(existingConversation.ConversationId);
+                conversationMessagesHistory = await _conversationService.GetConversationMessagesAsync(existingConversation.ConversationId);
             }
             catch(Exception ex) 
             {
-                //TODO: investigate whether or not do we delete the conversation for an edge case of initial question where conversation gets created but no messages added to it yet.
                 _logger.LogError(ex, "Unexpected failure retrieving conversation messages for question: {UserQuestion}", userQuestion);
             }
 
-            conversationMessages.Add(
+            conversationMessagesHistory.Add(
               new ConversationMessageDTO
               {
                   Role = ConversationMessageRole.User.ToString().ToLower(),
@@ -144,14 +147,14 @@ namespace TradingApp.API.Hubs
             );
 
             await _fileDebugLogger.LogSectionAsync("current-conversation-messages", $"Current user/assistant correspodence:",
-                            RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessages));
+                            RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
 
             var parameters = new MessageCreateParams
             {
                 Model = "claude-sonnet-5",
                 MaxTokens = 4096,
                 System = SystemPromptBuilder.BuildSystemPrompt(retrievalResult),
-                Messages = ToAnthropicMessageParams(conversationMessages) 
+                Messages = ToAnthropicMessageParams(conversationMessagesHistory)
             };
 
             IAsyncEnumerator<RawMessageStreamEvent> enumerator = null;
@@ -182,9 +185,21 @@ namespace TradingApp.API.Hubs
             }
 
             if (bootstrapFailed || enumerator is null)
-                throw new HubException("There was an error processing your request. Please try again.");
+            {
+                if (isNewConversation)
+                {
+                    try
+                    {
+                        await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        _logger.LogError(deleteEx, "Failed to clean up orphaned conversation {ConversationId} after bootstrap failure", existingConversation.ConversationId);
+                    }
+                }
 
-        
+                throw new HubException("There was an error processing your request. Please try again.");
+            }
 
             await using (enumerator)
             {   //2. we persist user message into the existing conversation
