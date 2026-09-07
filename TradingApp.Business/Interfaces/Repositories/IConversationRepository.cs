@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Domain.Models.Entities.Conversation;
@@ -12,5 +13,6 @@ namespace TradingApp.Business.Interfaces.Repositories
         Task<Conversation> GetConversationById(Guid conversationId);
         Task<bool> DeleteConversationByIdAsync(Guid conversationId);
         Task<ConversationMessage> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request);
+        Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId);
     }
 }

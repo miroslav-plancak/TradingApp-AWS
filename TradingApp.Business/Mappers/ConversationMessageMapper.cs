@@ -1,7 +1,7 @@
-﻿using System;
+﻿using System.Collections.Generic;
+using System.Linq;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Domain.Models.Entities.ConversationMessage;
-using TradingApp.Domain.Models.Enums;
 
 namespace TradingApp.Business.Mappers
 {
@@ -18,16 +18,28 @@ namespace TradingApp.Business.Mappers
             };
         }
 
-        public static CreateConversationMessageRequestDTO ToCreateConversationMessageRequestDTO(Guid conversationId, Guid? clientRequestId, ConversationMessageRole role, string body)
+        public static CreateConversationMessageRequestDTO ToCreateConversationMessageRequestDTO(CreateConversationMessageRequestDTO request)
         {
-            //TODO: Claude please do the checks for me here before build this object
             return new CreateConversationMessageRequestDTO
             {
-                ConversationId = conversationId,
-                ClientRequestId = clientRequestId,
-                Role = role,
-                Body = body
+                ConversationId = request.ConversationId,
+                ClientRequestId = request.ClientRequestId,
+                Role = request.Role,
+                Body = request.Body
             };
+        }
+
+        public static List<ConversationMessageDTO> ToConversationMessagesDTO(IEnumerable<ConversationMessage> conversationMessages)
+        {
+            if (!conversationMessages.Any()) return [];
+
+            return conversationMessages
+                .Select(x => new ConversationMessageDTO
+                {
+                    Role = x.Role.ToString().ToLowerInvariant(),
+                    Content = x.Body
+                })
+                .ToList();
         }
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
@@ -26,9 +27,12 @@ namespace TradingApp.API.Hubs
         private readonly IChunkRetrievalService _chunkRetrievalService;
         private readonly IAsyncPolicy _resiliencePolicy;
         private readonly IConversationService _conversationService;
+        private readonly IFileDebugLogger _fileDebugLogger;
+
         public AiChatHub
         (
             ILogger<AiChatHub> logger,
+            IFileDebugLogger fileDebugLogger,
             AnthropicClient anthropicClient,
             IChunkRetrievalService chunkRetrievalService,
             [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy,
@@ -36,6 +40,7 @@ namespace TradingApp.API.Hubs
         )
         {
             _logger = logger;
+            _fileDebugLogger = fileDebugLogger;
             _anthropicClient = anthropicClient;
             _chunkRetrievalService = chunkRetrievalService;
             _resiliencePolicy = resiliencePolicy;
@@ -81,7 +86,9 @@ namespace TradingApp.API.Hubs
             CreatedConversationResponseDTO existingConversation;
             CreatedConversationMessageResponseDTO userCreatedConversationMessage;
             CreatedConversationMessageResponseDTO assistantCreatedConversationMessage;
+            List<ConversationMessageDTO> conversationMessages = [];
 
+            //1. we create a conversation or load existing
             try
             {
                 if(conversationId == null)
@@ -117,12 +124,34 @@ namespace TradingApp.API.Hubs
                 _logger.LogError(ex, "Unexpected failure retrieving context for question: {UserQuestion}", userQuestion);
             }
 
+            //4. retrieve from the permanence source rows of role/content (role/body in db) for both user/assistant, sorted by createdAt ascending + append to the end current input question from the Ask
+            try 
+            {
+                conversationMessages = await _conversationService.GetConversationMessagesAsync(existingConversation.ConversationId);
+            }
+            catch(Exception ex) 
+            {
+                //TODO: investigate whether or not do we delete the conversation for an edge case of initial question where conversation gets created but no messages added to it yet.
+                _logger.LogError(ex, "Unexpected failure retrieving conversation messages for question: {UserQuestion}", userQuestion);
+            }
+
+            conversationMessages.Add(
+              new ConversationMessageDTO
+              {
+                  Role = ConversationMessageRole.User.ToString().ToLower(),
+                  Content = userQuestion
+              }
+            );
+
+            await _fileDebugLogger.LogSectionAsync("current-conversation-messages", $"Current user/assistant correspodence:",
+                            RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessages));
+
             var parameters = new MessageCreateParams
             {
                 Model = "claude-sonnet-5",
                 MaxTokens = 4096,
                 System = SystemPromptBuilder.BuildSystemPrompt(retrievalResult),
-                Messages = [new() { Role = Role.User, Content = userQuestion }]
+                Messages = ToAnthropicMessageParams(conversationMessages) 
             };
 
             IAsyncEnumerator<RawMessageStreamEvent> enumerator = null;
@@ -158,11 +187,17 @@ namespace TradingApp.API.Hubs
         
 
             await using (enumerator)
-            {
+            {   //2. we persist user message into the existing conversation
                 try
                 {
-                    userCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
-                        existingConversation.ConversationId, clientRequestId, ConversationMessageRole.User, userQuestion);
+                    userCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync( 
+                        new CreateConversationMessageRequestDTO()
+                        {
+                            ConversationId = existingConversation.ConversationId,
+                            ClientRequestId = clientRequestId,
+                            Role = ConversationMessageRole.User,
+                            Body = userQuestion
+                        });
                 }
                 catch (Exception ex)
                 {
@@ -183,7 +218,7 @@ namespace TradingApp.API.Hubs
 
                 while (true)
                 {
-                    bool hasNext;
+                    var hasNext = false;
                     var streamFailed = false;
 
                     try
@@ -195,19 +230,24 @@ namespace TradingApp.API.Hubs
                         _logger.LogError(ex, "Streaming failure while answering question: {UserQuestion} | AnyContentYielded: {HasYieldedAnyContent}",
                             userQuestion, hasYieldedAnyContent);
                         streamFailed = true;
-                        hasNext = false;
                     }
-
+              
                     if (streamFailed)
                         throw new HubException("The response was interrupted partway through. Please try again.");
-
+                    //3. we persist assistant message into the existing conversation
                     if (!hasNext)
                     {
                         _logger.LogInformation("RESULT{Result}", assistantMessageAccumulated);
 
                         assistantCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
-                            existingConversation.ConversationId, null, ConversationMessageRole.Assistant, assistantMessageAccumulated); 
-
+                            new CreateConversationMessageRequestDTO()
+                            {
+                                ConversationId = existingConversation.ConversationId,
+                                ClientRequestId = null,
+                                Role = ConversationMessageRole.Assistant,
+                                Body = assistantMessageAccumulated
+                            });
+                           
                         yield break;
                     }
 
@@ -219,6 +259,17 @@ namespace TradingApp.API.Hubs
                     }
                 }
             }
+        }
+
+        private IReadOnlyList<MessageParam> ToAnthropicMessageParams(List<ConversationMessageDTO> conversationMessages)
+        {
+            if (conversationMessages.Count == 0) return [];
+
+            return conversationMessages
+                .Select(x => new MessageParam()
+                {
+                    Role = x.Role, Content = x.Content
+                }).ToList();
         }
 
         private static string BuildAssistantConversationMessage(StringBuilder stringBuilder, string assistantMessage)
