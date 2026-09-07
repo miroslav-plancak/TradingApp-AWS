@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿using Anthropic.Models.Messages;
+using System.Text;
+using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Helpers
@@ -83,6 +85,23 @@ namespace TradingApp.Infrastructure.Helpers
                     }
                 }
             }
+
+            return sb.ToString();
+        }
+
+        public static string FormatCurrentConversationMessagesIntoFileLog(List<ConversationMessageDTO> messages)
+        {
+            var helperDivider = new string('-', 80);
+            var sb = new StringBuilder();
+
+                sb.AppendLine(helperDivider);
+
+                foreach (var message in messages)
+                {
+                    sb.AppendLine($"ROLE: {message.Role}");
+                    sb.AppendLine($"CONTENT: {message.Content}");
+                    sb.AppendLine(helperDivider);
+                }
 
             return sb.ToString();
         }

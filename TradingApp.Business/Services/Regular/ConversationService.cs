@@ -8,7 +8,6 @@ using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Mappers;
-using TradingApp.Domain.Models.Enums;
 
 namespace TradingApp.Business.Services.Regular
 {
@@ -128,19 +127,19 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
-        public async Task<CreatedConversationMessageResponseDTO> CreateConversationMessageAsync(Guid conversationId, Guid? clientRequestId, ConversationMessageRole role, string body)
+        public async Task<CreatedConversationMessageResponseDTO> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request)
         {
-            _logger.LogInformation("ConversationMessageCreationStarted | ConversationId: {ConversationId}", conversationId);
+            _logger.LogInformation("ConversationMessageCreationStarted | ConversationId: {ConversationId}", request.ConversationId);
 
             try
             {
-                var createConversationMessageRequestDTO = ConversationMessageMapper.ToCreateConversationMessageRequestDTO(conversationId, clientRequestId, role, body);
+                var createConversationMessageRequestDTO = ConversationMessageMapper.ToCreateConversationMessageRequestDTO(request);
                 var conversationMessage = await _conversationRepository.CreateConversationMessageAsync(createConversationMessageRequestDTO);
 
                 var createdConversationMessageResponseDTO = ConversationMessageMapper.ToCreatedConversationMessageResponseDTO(conversationMessage);
 
                 _logger.LogInformation("ConversationMessageCreationSuccessful | ConversationId: {ConversationId} | MessageId: {MessageId}",
-                    conversationId, conversationMessage.Id);
+                    request.ConversationId, conversationMessage.Id);
 
                 return createdConversationMessageResponseDTO;
 
@@ -150,6 +149,28 @@ namespace TradingApp.Business.Services.Regular
                 _logger.LogError(ex, "ConversationMessageCreationFailed  | Error: {Message}", ex.Message);
 
                 throw new Exception("Failed to create conversation message", ex);
+            }
+        }
+
+        public async Task<List<ConversationMessageDTO>> GetConversationMessagesAsync(Guid conversationId)
+        {
+            _logger.LogInformation("ConversationMessagesFetchingStarted | ConversationId: {ConversationId}", conversationId);
+
+            try
+            {
+                var conversationMessages = await _conversationRepository.GetConversationMessagesAsync(conversationId);
+
+                var anthropicMessages = ConversationMessageMapper.ToConversationMessagesDTO(conversationMessages);
+
+                _logger.LogInformation("ConversationMessagesFetchingSuccessful | ConversationId: {ConversationId}", conversationId);
+
+                return anthropicMessages;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ConversationMessagesFetchingFailed  | Error: {Message}", ex.Message);
+
+                throw new Exception("Failed to fetch conversation messages", ex);
             }
         }
     }

@@ -1,5 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Repositories;
@@ -108,6 +110,21 @@ namespace TradingApp.Business.Repositories
 
                return  newConversationMessage;
             },$"{nameof(CreateConversationMessageAsync)}:Create:{request.ConversationId}");
+        }
+
+        public async Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId)
+        {
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () => 
+            {
+                var allConversationMessages = await _tradingDbContext.ConversationMessages
+                            .AsNoTracking()
+                            .Where(x => x.ConversationId == conversationId)
+                            .OrderBy(x => x.CreatedAt)
+                            .ToListAsync();
+
+                return allConversationMessages;
+
+            },$"{nameof(GetConversationMessagesAsync)}:FetchAll:{conversationId}");
         }
     }
 }
