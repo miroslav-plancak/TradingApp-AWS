@@ -41,6 +41,8 @@ namespace TradingApp.Infrastructure.Services
                     return 1;
                 case LlmQueryClassification.NARROW:
                     return 2;
+                case LlmQueryClassification.INCONCLUSIVE:
+                    return 2;
                 default:
                     return 2;
             }
