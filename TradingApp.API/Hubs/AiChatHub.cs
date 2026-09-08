@@ -121,7 +121,8 @@ namespace TradingApp.API.Hubs
 
             try
             {
-                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuestion);
+                //TODO: implement ConversationChunkService:IConversationChunkService and persist the chunks retrieved (probably inside chunkRetrievalService), or maybe here after the service call? think about this.
+                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuestion, existingConversation.ConversationId);
             }
             catch (Exception ex)
             {

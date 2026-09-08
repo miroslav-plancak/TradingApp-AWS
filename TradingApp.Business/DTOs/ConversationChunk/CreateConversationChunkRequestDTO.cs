@@ -1,14 +1,12 @@
 ﻿using System;
 
-namespace TradingApp.Domain.Models.Entities.ConversationChunk
+namespace TradingApp.Business.DTOs.ConversationChunk
 {
-    public class ConversationChunk
+    public class CreateConversationChunkRequestDTO
     {
-        public Guid Id { get; set; }
         public required Guid ConversationId { get; set; }
         public required string Key { get; set; }
         public required string SourceFile { get; set; }
         public required string Content { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
     }
 }

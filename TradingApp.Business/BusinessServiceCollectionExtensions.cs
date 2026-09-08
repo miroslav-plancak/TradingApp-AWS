@@ -18,12 +18,14 @@ namespace TradingApp.Business
             services.AddScoped<IOrderRepository, OrderRepository>()
                     .AddScoped<IDeadLetterRepository, DeadLetterRepository>()
                     .AddScoped<IOutboxMessageRepository, OutboxMessageRepository>()
-                    .AddScoped<IConversationRepository, ConversationRepository>();
+                    .AddScoped<IConversationRepository, ConversationRepository>()
+                    .AddScoped<IConversationChunkRepository, ConversationChunkRepository>();
 
             services.AddScoped<IOrderService, OrderService>()
                     .AddScoped<IDeadLetterService, DeadLetterService>()
                     .AddScoped<IOutboxMessageService, OutboxMessageService>()
-                    .AddScoped<IConversationService, ConversationService>();
+                    .AddScoped<IConversationService, ConversationService>()
+                    .AddScoped<IConversationChunkService, ConversationChunkService>();
 
             services.AddSingleton<IResiliencePolicyGuard, ResiliencePolicyGuard>();
             services.AddSingleton<IResilienceConversationPolicyGuard, ResilienceConversationPolicyGuard>();

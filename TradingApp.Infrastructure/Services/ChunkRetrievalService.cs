@@ -1,4 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
+using TradingApp.Business.DTOs.ConversationChunk;
+using TradingApp.Business.Interfaces.Services;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
@@ -14,6 +16,7 @@ namespace TradingApp.Infrastructure.Services
         private readonly IChunkRerankingService _chunkRerankingService;
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IFileExpansionService _fileExpansionService;
+        private readonly IConversationChunkService _conversationChunkService;
 
         private const double RelevanceFloor = 0.53;
 
@@ -24,8 +27,8 @@ namespace TradingApp.Infrastructure.Services
             IKnowledgeBaseQueryService knowledgeBaseQueryService,
             IChunkRerankingService chunkRerankingService,
             IFileDebugLogger fileDebugLogger,
-            IFileExpansionService fileExpansionService
-            )
+            IFileExpansionService fileExpansionService,
+            IConversationChunkService conversationChunkService)
         {
             _logger = logger;
             _queryRoutingService = queryRoutingService;
@@ -33,9 +36,10 @@ namespace TradingApp.Infrastructure.Services
             _chunkRerankingService = chunkRerankingService;
             _fileDebugLogger = fileDebugLogger;
             _fileExpansionService = fileExpansionService;
+            _conversationChunkService = conversationChunkService;
         }
 
-        public async Task<RetrievalResult> RetrieveRelevantContextAsync(string userQuestion)
+        public async Task<RetrievalResult> RetrieveRelevantContextAsync(string userQuestion, Guid conversationId)
         {
             try
             {
@@ -81,6 +85,9 @@ namespace TradingApp.Infrastructure.Services
 
                 var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunks, FullFileContents = filesEligibleForExpansion };
 
+                await _conversationChunkService.CreateConversationChunkAsync(
+                    RePackFilteredRetrievedChunks(retrievalResult.ChunkFallbacks, conversationId));
+
                 await _fileDebugLogger.LogSectionAsync("rag-retrieval-after-filtering", $"Query: {userQuestion}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(retrievalResult));
 
@@ -91,6 +98,19 @@ namespace TradingApp.Infrastructure.Services
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving context for question: {UserQuestion}", userQuestion);
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
+        }
+        //TODO: move this to a static helper service that has no dependencies or leave it here?
+        private static List<CreateConversationChunkRequestDTO> RePackFilteredRetrievedChunks(List<RetrievedChunk> chunkFallbacks, Guid conversationId)
+        {
+            if (chunkFallbacks.Count == 0) return [];
+
+            return chunkFallbacks.Select(x => new CreateConversationChunkRequestDTO
+            {
+                ConversationId = conversationId,
+                Key = x.Key,
+                SourceFile = x.SourceFile,
+                Content = x.Content
+            }).ToList();
         }
 
         private void LogRedisSearchResults(List<RetrievedChunk> filteredRetrievedChunks, Dictionary<string, string> filesEligibleForExpansion, string userQuestion)

@@ -4,6 +4,6 @@ namespace TradingApp.Infrastructure.Interfaces
 {
     public interface IChunkRetrievalService
     {
-        Task<RetrievalResult> RetrieveRelevantContextAsync(string userQuestion);
+        Task<RetrievalResult> RetrieveRelevantContextAsync(string userQuestion, Guid conversationId);
     }
 }
