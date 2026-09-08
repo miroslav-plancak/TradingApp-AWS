@@ -1,7 +1,7 @@
-﻿using Anthropic.Models.Messages;
-using System.Text;
+﻿using System.Text;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Infrastructure.Models;
+using static TradingApp.Infrastructure.Services.ConversationContextArbiterService;
 
 namespace TradingApp.Infrastructure.Helpers
 {
@@ -102,6 +102,24 @@ namespace TradingApp.Infrastructure.Helpers
                     sb.AppendLine($"CONTENT: {message.Content}");
                     sb.AppendLine(helperDivider);
                 }
+
+            return sb.ToString();
+        }
+
+        public static string FormatArbiterResponseIntoFileLog(ArbiterResponse? messages)
+        {
+            if (messages == null || messages.ChunkKeys.Count == 0) return "";
+
+            var helperDivider = new string('-', 80);
+            var sb = new StringBuilder();
+
+            sb.AppendLine(helperDivider);
+
+            foreach (var message in messages.ChunkKeys)
+            {
+                sb.AppendLine($"ChunkKey: {message}");
+                sb.AppendLine(helperDivider);
+            }
 
             return sb.ToString();
         }

@@ -17,6 +17,7 @@ namespace TradingApp.Infrastructure.Services
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IFileExpansionService _fileExpansionService;
         private readonly IConversationChunkService _conversationChunkService;
+        private readonly IConversationContextArbiterService _conversationContextArbiterService;
 
         private const double RelevanceFloor = 0.53;
 
@@ -28,7 +29,8 @@ namespace TradingApp.Infrastructure.Services
             IChunkRerankingService chunkRerankingService,
             IFileDebugLogger fileDebugLogger,
             IFileExpansionService fileExpansionService,
-            IConversationChunkService conversationChunkService)
+            IConversationChunkService conversationChunkService,
+            IConversationContextArbiterService conversationContextArbiterService)
         {
             _logger = logger;
             _queryRoutingService = queryRoutingService;
@@ -37,12 +39,31 @@ namespace TradingApp.Infrastructure.Services
             _fileDebugLogger = fileDebugLogger;
             _fileExpansionService = fileExpansionService;
             _conversationChunkService = conversationChunkService;
+            _conversationContextArbiterService = conversationContextArbiterService;
         }
 
         public async Task<RetrievalResult> RetrieveRelevantContextAsync(string userQuestion, Guid conversationId)
         {
             try
             {
+                var allExistingConversationChunks = await _conversationChunkService.GetConversationChunksAsync(conversationId);
+
+                var sufficientPoolChunks = await _conversationContextArbiterService.DetermineSufficientChunksAsync(userQuestion, allExistingConversationChunks);
+
+                if (sufficientPoolChunks.Count > 0)
+                {
+                    var poolRetrievalResult = new RetrievalResult { ChunkFallbacks = MapToRetrievedChunks(sufficientPoolChunks), FullFileContents = [] };
+
+                    _logger.LogInformation(
+                        "Query: {userQuestion} | Existing conversation chunk pool judged sufficient - skipping RAG pipeline",
+                        userQuestion);
+
+                    await _fileDebugLogger.LogSectionAsync("3-arbiter-skip-context", $"Query: {userQuestion}",
+                        RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(poolRetrievalResult));
+
+                    return poolRetrievalResult;
+                }
+
                 var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(userQuestion);
 
                 var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(userQuestion);
@@ -65,7 +86,7 @@ namespace TradingApp.Infrastructure.Services
                         "Query: {userQuestion} | No chunks cleared the relevance floor ({RelevanceFloor}) - returning empty context",
                         userQuestion, RelevanceFloor);
 
-                    await _fileDebugLogger.LogSectionAsync("rag-retrieval-after-filtering", $"Query: {userQuestion}",
+                    await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userQuestion}",
                         "No chunks cleared the relevance floor - returning empty context.");
 
                     return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
@@ -85,10 +106,10 @@ namespace TradingApp.Infrastructure.Services
 
                 var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunks, FullFileContents = filesEligibleForExpansion };
 
-                await _conversationChunkService.CreateConversationChunkAsync(
+                await _conversationChunkService.CreateConversationChunksAsync(
                     RePackFilteredRetrievedChunks(retrievalResult.ChunkFallbacks, conversationId));
 
-                await _fileDebugLogger.LogSectionAsync("rag-retrieval-after-filtering", $"Query: {userQuestion}",
+                await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userQuestion}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(retrievalResult));
 
                 return retrievalResult;
@@ -99,7 +120,21 @@ namespace TradingApp.Infrastructure.Services
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
         }
-        //TODO: move this to a static helper service that has no dependencies or leave it here?
+
+        private static List<RetrievedChunk> MapToRetrievedChunks(List<CreatedConversationChunkResultDTO> chunks)
+        {
+            return chunks.Select(x => new RetrievedChunk
+            {
+                Key = x.Key,
+                SourceFile = x.SourceFile,
+                Content = x.Content,
+                KnnScore = null,
+                LexicalScore = null,
+                RelevanceScore = 0,
+                ReciprocalRankFusionScore = 0
+            }).ToList();
+        }
+
         private static List<CreateConversationChunkRequestDTO> RePackFilteredRetrievedChunks(List<RetrievedChunk> chunkFallbacks, Guid conversationId)
         {
             if (chunkFallbacks.Count == 0) return [];

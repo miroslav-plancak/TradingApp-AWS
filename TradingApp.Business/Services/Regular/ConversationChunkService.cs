@@ -25,7 +25,7 @@ namespace TradingApp.Business.Services.Regular
             _logger = logger;
         }
 
-        public async Task CreateConversationChunkAsync(List<CreateConversationChunkRequestDTO> requests)
+        public async Task CreateConversationChunksAsync(List<CreateConversationChunkRequestDTO> requests)
         {
             _logger.LogInformation("ConversationChunksCreationStarted | TotalRequests: {Requests}", requests.Count);
 
@@ -34,7 +34,7 @@ namespace TradingApp.Business.Services.Regular
                 if (requests.Count == 0) return;
 
                 var existingConversationChunks = await _conversationChunkRepository
-                    .GetAllConversationChunksAsync(requests.FirstOrDefault().ConversationId);
+                    .GetConversationChunksAsync(requests.FirstOrDefault().ConversationId);
 
                 var existingConvChunkKeys = existingConversationChunks.Select(x => x.Key).ToHashSet() ;
 
@@ -60,6 +60,29 @@ namespace TradingApp.Business.Services.Regular
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ConversationChunkCreationFailed  | Error: {Message}", ex.Message);
+            }
+        }
+
+        public async Task<List<CreatedConversationChunkResultDTO>> GetConversationChunksAsync(Guid conversationId)
+        {
+            _logger.LogInformation("ConversationChunksFetchingStarted | ConversationId: {ConversationId}", conversationId);
+
+            try
+            {
+                var conversationChunks = await _conversationChunkRepository.GetConversationChunksAsync(conversationId);
+
+                var conversationChunkDTOs = ConversationChunkMapper.ToCreatedConversationChunkResultDTOs(conversationChunks);
+
+                _logger.LogInformation("ConversationChunksFetchingSuccessful | ConversationId: {ConversationId}", conversationId);
+
+                return conversationChunkDTOs;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ConversationChunksFetchingFailed | returningEmptyResults  | Error: {Message}", ex.Message);
+                return new List<CreatedConversationChunkResultDTO>();
+                //NOTE: we will most likely remove this retrhwo because if we do not we risk this breaking the caller try/catch
+                //throw new Exception("Failed to fetch conversation chunks messages", ex);
             }
         }
     }

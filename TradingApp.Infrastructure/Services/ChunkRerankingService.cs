@@ -25,7 +25,7 @@ namespace TradingApp.Infrastructure.Services
 
         public async Task<List<RetrievedChunk>> RerankRetrievedChunksAsync(string userQuestion, List<RetrievedChunk> retrievedChunks)
         {
-            await _fileDebugLogger.LogSectionAsync("rag-retrieval-pre-reranking", $"Query: {userQuestion}",
+            await _fileDebugLogger.LogSectionAsync("1-rag-candidates", $"Query: {userQuestion}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(new RetrievalResult { ChunkFallbacks = retrievedChunks }));
 
             try
@@ -42,7 +42,7 @@ namespace TradingApp.Infrastructure.Services
                     })
                     .ToList();
 
-                await _fileDebugLogger.LogSectionAsync("rag-retrieval-post-reranking", $"Query: {userQuestion}",
+                await _fileDebugLogger.LogSectionAsync("2-rag-reranked", $"Query: {userQuestion}",
                   RetrievalResultLogFormatter.FormatRerankResultIntoFileLog(rerankResults.ToList()));
 
                 return rerankedChunks;
