@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using TradingApp.Domain.Models.Entities.Conversation;
 using TradingApp.Domain.Models.Entities.ConversationChunk;
+using TradingApp.Domain.Models.Entities.ConversationFullFile;
 using TradingApp.Domain.Models.Entities.ConversationMessage;
 using TradingApp.Domain.Models.Entities.DeadLetterLog;
 using TradingApp.Domain.Models.Entities.Order;
@@ -26,6 +27,7 @@ namespace TradingApp.Domain
         public DbSet<Conversation> Conversations { get; set; }
         public DbSet<ConversationMessage> ConversationMessages { get; set; }
         public DbSet<ConversationChunk> ConversationChunks { get; set; }
+        public DbSet<ConversationFullFile> ConversationFullFiles { get; set; }
  
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -188,6 +190,17 @@ namespace TradingApp.Domain
                 entity.HasIndex(e => new { e.ConversationId, e.Key }).IsUnique();
                 entity.Property(e => e.ConversationId).IsRequired();
                 entity.Property(e => e.Key).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.SourceFile).IsRequired().HasMaxLength(500);
+                entity.Property(e => e.Content).IsRequired();
+                entity.Property(e => e.CreatedAt).IsRequired();
+            });
+
+            modelBuilder.Entity<ConversationFullFile>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasIndex(e => new { e.ConversationId, e.SourceFile }).IsUnique();
+                entity.Property(e => e.ConversationId).IsRequired();
                 entity.Property(e => e.SourceFile).IsRequired().HasMaxLength(500);
                 entity.Property(e => e.Content).IsRequired();
                 entity.Property(e => e.CreatedAt).IsRequired();
