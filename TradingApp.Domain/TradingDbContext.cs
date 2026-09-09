@@ -28,7 +28,7 @@ namespace TradingApp.Domain
         public DbSet<ConversationMessage> ConversationMessages { get; set; }
         public DbSet<ConversationChunk> ConversationChunks { get; set; }
         public DbSet<ConversationFullFile> ConversationFullFiles { get; set; }
- 
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

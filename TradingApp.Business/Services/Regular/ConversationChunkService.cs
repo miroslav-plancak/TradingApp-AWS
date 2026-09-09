@@ -36,24 +36,24 @@ namespace TradingApp.Business.Services.Regular
                 var existingConversationChunks = await _conversationChunkRepository
                     .GetConversationChunksAsync(requests.FirstOrDefault().ConversationId);
 
-                var existingConvChunkKeys = existingConversationChunks.Select(x => x.Key).ToHashSet() ;
+                var existingConvChunkKeys = existingConversationChunks.Select(x => x.Key).ToHashSet();
 
-                if(existingConvChunkKeys.Count != 0)
+                if (existingConvChunkKeys.Count != 0)
                 {
                     requests.RemoveAll(request => existingConvChunkKeys.Contains(request.Key));
                 }
 
                 var conversationChunkEntityRequests = ConversationChunkMapper.ToEntities(requests);
 
-                if(conversationChunkEntityRequests.Count != 0)
+                if (conversationChunkEntityRequests.Count != 0)
                 {
-                    foreach( var request in conversationChunkEntityRequests)
+                    foreach (var request in conversationChunkEntityRequests)
                     {
-                        var conversationChunk  = await _conversationChunkRepository.CreateConversationChunkAsync(request);
+                        var conversationChunk = await _conversationChunkRepository.CreateConversationChunkAsync(request);
 
                         _logger.LogInformation("ConversationChunkCreationSuccessful | ConversationId: {ConversationId}", conversationChunk.Id);
                     }
-                 
+
                 }
 
             }
@@ -63,7 +63,7 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
-        public async Task<List<CreatedConversationChunkResultDTO>> GetConversationChunksAsync(Guid conversationId)
+        public async Task<List<CreatedConversationChunkResponseDTO>> GetConversationChunksAsync(Guid conversationId)
         {
             _logger.LogInformation("ConversationChunksFetchingStarted | ConversationId: {ConversationId}", conversationId);
 
@@ -80,9 +80,8 @@ namespace TradingApp.Business.Services.Regular
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ConversationChunksFetchingFailed | returningEmptyResults  | Error: {Message}", ex.Message);
-                return new List<CreatedConversationChunkResultDTO>();
-                //NOTE: we will most likely remove this retrhwo because if we do not we risk this breaking the caller try/catch
-                //throw new Exception("Failed to fetch conversation chunks messages", ex);
+
+                return new List<CreatedConversationChunkResponseDTO>();
             }
         }
     }

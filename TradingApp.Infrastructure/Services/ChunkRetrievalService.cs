@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using TradingApp.Business.DTOs.ConversationChunk;
+using TradingApp.Business.DTOs.ConversationFullFile;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers;
@@ -17,6 +18,7 @@ namespace TradingApp.Infrastructure.Services
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IFileExpansionService _fileExpansionService;
         private readonly IConversationChunkService _conversationChunkService;
+        private readonly IConversationFullFileService _conversationFullFileService;
         private readonly IConversationContextArbiterService _conversationContextArbiterService;
 
         private const double RelevanceFloor = 0.53;
@@ -30,7 +32,9 @@ namespace TradingApp.Infrastructure.Services
             IFileDebugLogger fileDebugLogger,
             IFileExpansionService fileExpansionService,
             IConversationChunkService conversationChunkService,
-            IConversationContextArbiterService conversationContextArbiterService)
+            IConversationFullFileService conversationFullFileService,
+            IConversationContextArbiterService conversationContextArbiterService
+          )
         {
             _logger = logger;
             _queryRoutingService = queryRoutingService;
@@ -39,6 +43,7 @@ namespace TradingApp.Infrastructure.Services
             _fileDebugLogger = fileDebugLogger;
             _fileExpansionService = fileExpansionService;
             _conversationChunkService = conversationChunkService;
+            _conversationFullFileService = conversationFullFileService;
             _conversationContextArbiterService = conversationContextArbiterService;
         }
 
@@ -50,9 +55,19 @@ namespace TradingApp.Infrastructure.Services
 
                 var sufficientPoolChunks = await _conversationContextArbiterService.DetermineSufficientChunksAsync(userQuestion, allExistingConversationChunks);
 
+                var sufficientPoolFullFiles = await _conversationFullFileService.GetSpecificConversationFullFilesAsync(sufficientPoolChunks);
+
                 if (sufficientPoolChunks.Count > 0)
                 {
-                    var poolRetrievalResult = new RetrievalResult { ChunkFallbacks = MapToRetrievedChunks(sufficientPoolChunks), FullFileContents = [] };
+                    var fullFileContents = MapToFullFileContents(sufficientPoolFullFiles);
+
+                    var poolRetrievalResult = new RetrievalResult
+                    { 
+                        ChunkFallbacks = MapToRetrievedChunks(sufficientPoolChunks)
+                            .Where(x => !fullFileContents.ContainsKey(x.SourceFile ?? string.Empty))
+                            .ToList(), 
+                        FullFileContents = fullFileContents
+                    };
 
                     _logger.LogInformation(
                         "Query: {userQuestion} | Existing conversation chunk pool judged sufficient - skipping RAG pipeline",
@@ -94,20 +109,25 @@ namespace TradingApp.Infrastructure.Services
 
                 var filesEligibleForExpansion = await _fileExpansionService.DetermineFilesEligibleForExpansionAsync(rerankedChunks, routedLlmQueryResponse);
 
-                rerankedChunks.RemoveAll(chunk => filesEligibleForExpansion.Keys.Contains(chunk.SourceFile ?? string.Empty));
-
-                var filteredRetrievedChunks = rerankedChunks
+                var filteredRetrievedChunksForPersistance = rerankedChunks
                      .GroupBy(x => x.SourceFile ?? string.Empty)
                      .SelectMany(group => group
                      .Take(MaxChunksPerFIle(routedLlmQueryResponse)))
                      .ToList();
 
-                LogRedisSearchResults(filteredRetrievedChunks, filesEligibleForExpansion, userQuestion);
+                var filteredRetrievedChunksForContext = filteredRetrievedChunksForPersistance
+                    .Where(x => !filesEligibleForExpansion.ContainsKey(x.SourceFile ?? string.Empty))
+                    .ToList();
 
-                var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunks, FullFileContents = filesEligibleForExpansion };
+                LogRedisSearchResults(filteredRetrievedChunksForContext, filesEligibleForExpansion, userQuestion);
+
+                var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunksForContext, FullFileContents = filesEligibleForExpansion };
 
                 await _conversationChunkService.CreateConversationChunksAsync(
-                    RePackFilteredRetrievedChunks(retrievalResult.ChunkFallbacks, conversationId));
+                    RePackFilteredRetrievedChunks(filteredRetrievedChunksForPersistance, conversationId));
+
+                await _conversationFullFileService.CreateConversationFullFilesAsync(
+                    RePackFilesEligibleForExpansion(retrievalResult.FullFileContents, conversationId));
 
                 await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userQuestion}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(retrievalResult));
@@ -121,7 +141,7 @@ namespace TradingApp.Infrastructure.Services
             }
         }
 
-        private static List<RetrievedChunk> MapToRetrievedChunks(List<CreatedConversationChunkResultDTO> chunks)
+        private static List<RetrievedChunk> MapToRetrievedChunks(List<CreatedConversationChunkResponseDTO> chunks)
         {
             return chunks.Select(x => new RetrievedChunk
             {
@@ -135,6 +155,11 @@ namespace TradingApp.Infrastructure.Services
             }).ToList();
         }
 
+        private static Dictionary<string, string> MapToFullFileContents(List<CreatedConversationFullFileResponseDTO> fullFiles)
+        {
+            return fullFiles.ToDictionary(x => x.SourceFile, x => x.Content);
+        }
+
         private static List<CreateConversationChunkRequestDTO> RePackFilteredRetrievedChunks(List<RetrievedChunk> chunkFallbacks, Guid conversationId)
         {
             if (chunkFallbacks.Count == 0) return [];
@@ -145,6 +170,18 @@ namespace TradingApp.Infrastructure.Services
                 Key = x.Key,
                 SourceFile = x.SourceFile,
                 Content = x.Content
+            }).ToList();
+        }
+
+        private List<CreateConversationFullFileRequestDTO> RePackFilesEligibleForExpansion(Dictionary<string, string> fullFileContents, Guid conversationId)
+        {
+            if (fullFileContents.Count == 0) return [];
+
+            return fullFileContents.Select(x => new CreateConversationFullFileRequestDTO
+            {
+                ConversationId = conversationId,
+                SourceFile = x.Key,
+                Content = x.Value
             }).ToList();
         }
 

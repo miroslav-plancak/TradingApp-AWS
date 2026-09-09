@@ -16,7 +16,7 @@ namespace TradingApp.Business.Services.Helpers
 
         public ResiliencePolicyGuard
         (
-            [FromKeyedServices(ResiliencePolicyKey.Sql)]IAsyncPolicy resiliencePolicy, 
+            [FromKeyedServices(ResiliencePolicyKey.Sql)] IAsyncPolicy resiliencePolicy,
             ILogger<ResiliencePolicyGuard> logger
         )
         {

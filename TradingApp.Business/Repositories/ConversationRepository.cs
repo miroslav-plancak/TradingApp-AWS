@@ -83,7 +83,7 @@ namespace TradingApp.Business.Repositories
         {
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
-                if(request.ClientRequestId != null)
+                if (request.ClientRequestId != null)
                 {
                     var existingConversationMessage = await _tradingDbContext.ConversationMessages
                     .AsNoTracking()
@@ -105,16 +105,16 @@ namespace TradingApp.Business.Repositories
                     CreatedAt = DateTimeOffset.UtcNow
                 };
 
-               _tradingDbContext.ConversationMessages.Add(newConversationMessage);
-               await _tradingDbContext.SaveChangesAsync();
+                _tradingDbContext.ConversationMessages.Add(newConversationMessage);
+                await _tradingDbContext.SaveChangesAsync();
 
-               return  newConversationMessage;
-            },$"{nameof(CreateConversationMessageAsync)}:Create:{request.ConversationId}");
+                return newConversationMessage;
+            }, $"{nameof(CreateConversationMessageAsync)}:Create:{request.ConversationId}");
         }
 
         public async Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () => 
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
                 var allConversationMessages = await _tradingDbContext.ConversationMessages
                             .AsNoTracking()
@@ -124,7 +124,7 @@ namespace TradingApp.Business.Repositories
 
                 return allConversationMessages;
 
-            },$"{nameof(GetConversationMessagesAsync)}:FetchAll:{conversationId}");
+            }, $"{nameof(GetConversationMessagesAsync)}:FetchAll:{conversationId}");
         }
     }
 }

@@ -94,14 +94,14 @@ namespace TradingApp.Infrastructure.Helpers
             var helperDivider = new string('-', 80);
             var sb = new StringBuilder();
 
-                sb.AppendLine(helperDivider);
+            sb.AppendLine(helperDivider);
 
-                foreach (var message in messages)
-                {
-                    sb.AppendLine($"ROLE: {message.Role}");
-                    sb.AppendLine($"CONTENT: {message.Content}");
-                    sb.AppendLine(helperDivider);
-                }
+            foreach (var message in messages)
+            {
+                sb.AppendLine($"ROLE: {message.Role}");
+                sb.AppendLine($"CONTENT: {message.Content}");
+                sb.AppendLine(helperDivider);
+            }
 
             return sb.ToString();
         }

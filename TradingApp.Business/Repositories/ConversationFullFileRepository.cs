@@ -6,16 +6,17 @@ using System.Threading.Tasks;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services.Helpers;
 using TradingApp.Domain;
-using TradingApp.Domain.Models.Entities.ConversationChunk;
+using TradingApp.Domain.Models.Entities.ConversationFullFile;
 
 namespace TradingApp.Business.Repositories
 {
-    public class ConversationChunkRepository : IConversationChunkRepository
+
+    public class ConversationFullFileRepository : IConversationFullFileRepository
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IResilienceConversationPolicyGuard _resiliencePolicyGuard;
 
-        public ConversationChunkRepository
+        public ConversationFullFileRepository
         (
             TradingDbContext tradingDbContext,
             IResilienceConversationPolicyGuard resiliencePolicyGuard
@@ -25,15 +26,15 @@ namespace TradingApp.Business.Repositories
             _resiliencePolicyGuard = resiliencePolicyGuard;
         }
 
-        public async Task<ConversationChunk> CreateConversationChunkAsync(ConversationChunk conversationChunk)
+        public async Task<ConversationFullFile> CreateConversationFullFileAsync(ConversationFullFile conversationFullFile)
         {
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
-                var existingRow = await _tradingDbContext.ConversationChunks
+                var existingRow = await _tradingDbContext.ConversationFullFiles
                         .AsNoTracking()
                         .SingleOrDefaultAsync(x =>
-                            x.ConversationId == conversationChunk.ConversationId &&
-                            x.Key == conversationChunk.Key
+                            x.ConversationId == conversationFullFile.ConversationId &&
+                            x.SourceFile == conversationFullFile.SourceFile
                         );
 
                 if (existingRow != null)
@@ -41,17 +42,17 @@ namespace TradingApp.Business.Repositories
                     return existingRow;
                 }
 
-                conversationChunk.Id = Guid.NewGuid();
-                conversationChunk.CreatedAt = DateTimeOffset.UtcNow;
+                conversationFullFile.Id = Guid.NewGuid();
+                conversationFullFile.CreatedAt = DateTimeOffset.UtcNow;
 
-                _tradingDbContext.ConversationChunks.Add(conversationChunk);
+                _tradingDbContext.ConversationFullFiles.Add(conversationFullFile);
                 await _tradingDbContext.SaveChangesAsync();
 
-                return conversationChunk;
-            }, $"{nameof(CreateConversationChunkAsync)}:Save:{conversationChunk.Id}");
+                return conversationFullFile;
+            }, $"{nameof(CreateConversationFullFileAsync)}:Save:{conversationFullFile.Id}");
         }
 
-        public async Task<IEnumerable<ConversationChunk>> GetConversationChunksAsync(Guid conversationId)
+        public async Task<IEnumerable<ConversationFullFile>> GetConversationFullFilesAsync(Guid? conversationId)
         {
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
@@ -60,15 +61,15 @@ namespace TradingApp.Business.Repositories
                     return [];
                 }
 
-                var allConversationChunks = await _tradingDbContext.ConversationChunks
+                var allConversationFullFiles = await _tradingDbContext.ConversationFullFiles
                             .AsNoTracking()
                             .Where(x => x.ConversationId == conversationId)
                             .OrderBy(x => x.CreatedAt)
                             .ToListAsync();
 
-                return allConversationChunks;
+                return allConversationFullFiles;
 
-            }, $"{nameof(GetConversationChunksAsync)}:FetchAll:{conversationId}");
+            }, $"{nameof(GetConversationFullFilesAsync)}:FetchAll:{conversationId}");
         }
     }
 }

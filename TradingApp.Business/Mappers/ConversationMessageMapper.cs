@@ -12,7 +12,7 @@ namespace TradingApp.Business.Mappers
             if (entity == null) return null;
 
             return new CreatedConversationMessageResponseDTO
-            { 
+            {
                 Role = entity.Role,
                 Body = entity.Body
             };

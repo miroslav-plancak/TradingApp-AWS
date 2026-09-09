@@ -26,7 +26,7 @@ namespace TradingApp.Infrastructure.Services
           "- If the chunks are only partially relevant, or you are not confident they fully cover the question, return {\"chunkKeys\": []}.\r\n" +
           "- Only cite \"Key\" values that literally appear in the chunks provided — never invent one.";
 
-        private static string SerializeExistingConversationChunks(List<CreatedConversationChunkResultDTO> createdConversationChunks)
+        private static string SerializeExistingConversationChunks(List<CreatedConversationChunkResponseDTO> createdConversationChunks)
         {
             return JsonSerializer.Serialize(createdConversationChunks);
         }
@@ -44,10 +44,10 @@ namespace TradingApp.Infrastructure.Services
             _fileDebugLogger = fileDebugLogger;
         }
 
-        public async Task<List<CreatedConversationChunkResultDTO>> DetermineSufficientChunksAsync
+        public async Task<List<CreatedConversationChunkResponseDTO>> DetermineSufficientChunksAsync
         (
             string userQuestion,
-            List<CreatedConversationChunkResultDTO> existingChunks
+            List<CreatedConversationChunkResponseDTO> existingChunks
         )
         {
             if (existingChunks.Count == 0) return [];
@@ -57,7 +57,7 @@ namespace TradingApp.Infrastructure.Services
             var parameters = new MessageCreateParams
             {
                 Model = "claude-haiku-4-5",
-                MaxTokens = 512, 
+                MaxTokens = 512,
                 System = _arbiterSystemInstruction,
                 Messages = [new() { Role = Role.User, Content = $"{userQuestion} \n\n Existing Chunks(JSON array): \n {conversationChunksContext}" }]
             };
@@ -74,22 +74,22 @@ namespace TradingApp.Infrastructure.Services
                 if (firstBlock is not null && firstBlock.TryPickText(out var textblock))
                 {
                     var responseText = ExtractJsonObjectFromArbiterResponse(textblock.Text.Trim());
-                    
+
                     try
                     {
                         var arbiterResponse = JsonSerializer.Deserialize<ArbiterResponse>(responseText);
-                       
+
 
                         await _fileDebugLogger.LogSectionAsync("2b-arbiter-picked-keys", "ConversationChunk keys picked by the LLM",
                             RetrievalResultLogFormatter.FormatArbiterResponseIntoFileLog(arbiterResponse));
 
-                        if(arbiterResponse?.ChunkKeys?.Count > 0)
+                        if (arbiterResponse?.ChunkKeys?.Count > 0)
                         {
                             var citedChunkConversationKeys = arbiterResponse.ChunkKeys.ToHashSet();
                             return existingChunks.Where(x => citedChunkConversationKeys.Contains(x.Key)).ToList();
                         }
-                    } 
-                    catch(JsonException ex)
+                    }
+                    catch (JsonException ex)
                     {
                         _logger.LogWarning(ex, "Failed to parse arbiter response as JSON | Response: {ResponseText}", responseText);
                     }
@@ -116,7 +116,7 @@ namespace TradingApp.Infrastructure.Services
             var start = text.IndexOf('{');
             var end = text.LastIndexOf('}');
 
-            if(start == -1 || end == -1 || end < start)
+            if (start == -1 || end == -1 || end < start)
             {
                 return text;
             }

@@ -4,7 +4,7 @@ namespace TradingApp.Infrastructure.Interfaces
 {
     public interface IConversationContextArbiterService
     {
-        Task<List<CreatedConversationChunkResultDTO>> DetermineSufficientChunksAsync(
-            string userQuestion, List<CreatedConversationChunkResultDTO> existingChunks);
+        Task<List<CreatedConversationChunkResponseDTO>> DetermineSufficientChunksAsync(
+            string userQuestion, List<CreatedConversationChunkResponseDTO> existingChunks);
     }
 }

@@ -8,6 +8,6 @@ namespace TradingApp.Business.Interfaces.Services
     public interface IConversationChunkService
     {
         Task CreateConversationChunksAsync(List<CreateConversationChunkRequestDTO> request);
-        Task<List<CreatedConversationChunkResultDTO>> GetConversationChunksAsync(Guid conversationId);
+        Task<List<CreatedConversationChunkResponseDTO>> GetConversationChunksAsync(Guid conversationId);
     }
 }
