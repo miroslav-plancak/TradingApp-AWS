@@ -57,6 +57,7 @@ builder.Services.AddVoyageRerankingServices();
 builder.Services.AddChunkRerankingService();
 builder.Services.AddFileExpansionService();
 builder.Services.AddChunkingRetrievalService();
+builder.Services.AddConversationContextArbiterServices();
 // This is a separate IConnectionMultiplexer connection from SignalR's AddStackExchangeRedis backplane
 // connection above (that one is pub/sub for fanning Hub messages out across multiple API instances.
 // This one is used for storing embedded float vectors to redis: ChunkIngestionService/ChunkRetrievalService

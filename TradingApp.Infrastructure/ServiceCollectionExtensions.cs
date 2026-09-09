@@ -151,6 +151,12 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddConversationContextArbiterServices(this IServiceCollection services)
+        {
+            services.AddScoped<IConversationContextArbiterService, ConversationContextArbiterService>();
+            return services;
+        }
+
         public static IServiceCollection AddFileExpansionService(this IServiceCollection services)
         {
             services.AddScoped<IFileExpansionService, FileExpansionService>();

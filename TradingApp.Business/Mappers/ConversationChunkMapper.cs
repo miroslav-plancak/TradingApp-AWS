@@ -7,11 +7,11 @@ namespace TradingApp.Business.Mappers
 {
     public class ConversationChunkMapper
     {
-        public static List<ConversationChunk> ToEntities(List<CreateConversationChunkRequestDTO> request)
+        public static List<ConversationChunk> ToEntities(List<CreateConversationChunkRequestDTO> dtos)
         {
-            if (request == null) return null;
+            if (dtos.Count == 0) return [];
 
-            return request.Select(x => new ConversationChunk
+            return dtos.Select(x => new ConversationChunk
             {
                 ConversationId = x.ConversationId,
                 Key = x.Key,
@@ -20,18 +20,17 @@ namespace TradingApp.Business.Mappers
             }).ToList();
         }
 
-        //NOTE: might need later
-        //public static CreatedConversationChunkDTO ToCreatedConversationChunkResponseDTO(ConversationChunk entity)
-        //{
-        //    if (entity == null) return null;
+        public static List<CreatedConversationChunkResultDTO> ToCreatedConversationChunkResultDTOs(IEnumerable<ConversationChunk> entities)
+        {
+            if (!entities.Any()) return [];
 
-        //    return new CreatedConversationChunkDTO
-        //    {
-        //        ConversationId = entity.ConversationId,
-        //        Key = entity.Key,
-        //        SourceFile = entity.SourceFile,
-        //        Content = entity.Content
-        //    };
-        //}
+            return entities.Select(x =>  new CreatedConversationChunkResultDTO
+            {
+                ConversationId = x.ConversationId,
+                Key = x.Key,
+                SourceFile = x.SourceFile,
+                Content = x.Content
+            }).ToList();
+        }
     }
 }

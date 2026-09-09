@@ -51,7 +51,7 @@ namespace TradingApp.Business.Repositories
             }, $"{nameof(CreateConversationChunkAsync)}:Save:{conversationChunk.Id}");
         }
 
-        public async Task<IEnumerable<ConversationChunk>> GetAllConversationChunksAsync(Guid conversationId)
+        public async Task<IEnumerable<ConversationChunk>> GetConversationChunksAsync(Guid conversationId)
         {
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
@@ -68,7 +68,7 @@ namespace TradingApp.Business.Repositories
 
                 return allConversationChunks;
 
-            }, $"{nameof(GetAllConversationChunksAsync)}:FetchAll:{conversationId}");
+            }, $"{nameof(GetConversationChunksAsync)}:FetchAll:{conversationId}");
         }
     }
 }

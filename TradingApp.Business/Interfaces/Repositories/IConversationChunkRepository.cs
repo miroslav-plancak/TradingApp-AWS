@@ -8,6 +8,6 @@ namespace TradingApp.Business.Interfaces.Repositories
     public interface IConversationChunkRepository
     {
         Task<ConversationChunk> CreateConversationChunkAsync(ConversationChunk conversationChunk);
-        Task<IEnumerable<ConversationChunk>> GetAllConversationChunksAsync(Guid conversationId);
+        Task<IEnumerable<ConversationChunk>> GetConversationChunksAsync(Guid conversationId);
     }
 }

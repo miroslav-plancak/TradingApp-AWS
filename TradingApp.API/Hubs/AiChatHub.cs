@@ -121,7 +121,6 @@ namespace TradingApp.API.Hubs
 
             try
             {
-                //TODO: implement ConversationChunkService:IConversationChunkService and persist the chunks retrieved (probably inside chunkRetrievalService), or maybe here after the service call? think about this.
                 retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuestion, existingConversation.ConversationId);
             }
             catch (Exception ex)
@@ -147,7 +146,7 @@ namespace TradingApp.API.Hubs
               }
             );
 
-            await _fileDebugLogger.LogSectionAsync("current-conversation-messages", $"Current user/assistant correspodence:",
+            await _fileDebugLogger.LogSectionAsync("0-conversation-history", $"Current user/assistant correspodence:",
                             RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
 
             var parameters = new MessageCreateParams
@@ -253,8 +252,6 @@ namespace TradingApp.API.Hubs
                     //3. we persist assistant message into the existing conversation
                     if (!hasNext)
                     {
-                        _logger.LogInformation("RESULT{Result}", assistantMessageAccumulated);
-
                         assistantCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
                             new CreateConversationMessageRequestDTO()
                             {

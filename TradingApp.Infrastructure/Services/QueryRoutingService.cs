@@ -1,10 +1,8 @@
 ﻿using Anthropic;
-using Anthropic.Exceptions;
 using Anthropic.Models.Messages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
-using Polly.CircuitBreaker;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
