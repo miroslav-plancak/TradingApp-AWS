@@ -1,5 +1,4 @@
-using TradingApp.Infrastructure.Helpers.ConversationMemory;
-﻿namespace TradingApp.Infrastructure.Helpers.ConversationMemory
+namespace TradingApp.Infrastructure.Helpers.ConversationMemory
 {
     public static class LlmJsonExtractor
     {

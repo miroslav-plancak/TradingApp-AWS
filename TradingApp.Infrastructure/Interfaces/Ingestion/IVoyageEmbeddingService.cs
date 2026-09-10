@@ -1,5 +1,4 @@
-using TradingApp.Infrastructure.Interfaces.Ingestion;
-﻿namespace TradingApp.Infrastructure.Interfaces.Ingestion
+namespace TradingApp.Infrastructure.Interfaces.Ingestion
 {
     public interface IVoyageEmbeddingService
     {

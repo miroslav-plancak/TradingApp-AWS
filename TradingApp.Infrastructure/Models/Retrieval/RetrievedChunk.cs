@@ -1,5 +1,4 @@
-using TradingApp.Infrastructure.Models.Retrieval;
-﻿namespace TradingApp.Infrastructure.Models.Retrieval
+namespace TradingApp.Infrastructure.Models.Retrieval
 {
     public class RetrievedChunk
     {

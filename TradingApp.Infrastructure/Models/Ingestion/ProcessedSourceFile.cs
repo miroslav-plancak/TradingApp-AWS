@@ -1,5 +1,4 @@
-using TradingApp.Infrastructure.Models.Ingestion;
-﻿namespace TradingApp.Infrastructure.Models.Ingestion
+namespace TradingApp.Infrastructure.Models.Ingestion
 {
     public class ProcessedSourceFile
     {
