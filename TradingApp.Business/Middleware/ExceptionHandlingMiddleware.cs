@@ -17,7 +17,11 @@ namespace TradingApp.Business.Middleware
             _logger = logger;
         }
 
-        public async Task InvokeAsync(HttpContext context, RequestDelegate next)
+        public async Task InvokeAsync
+        (
+            HttpContext context,
+            RequestDelegate next
+        )
         {
             try
             {
@@ -40,7 +44,13 @@ namespace TradingApp.Business.Middleware
             }
         }
 
-        private static Task WriteProblemDetails(HttpContext context, int statusCode, string title, string detail)
+        private static Task WriteProblemDetails
+        (
+            HttpContext context,
+            int statusCode,
+            string title,
+            string detail
+        )
         {
             var problem = new ProblemDetails
             {

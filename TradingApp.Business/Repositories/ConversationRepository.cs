@@ -16,13 +16,21 @@ namespace TradingApp.Business.Repositories
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IResilienceConversationPolicyGuard _resiliencePolicyGuard;
-        public ConversationRepository(TradingDbContext tradingDbContext, IResilienceConversationPolicyGuard resiliencePolicyGuard)
+        public ConversationRepository
+        (
+            TradingDbContext tradingDbContext,
+            IResilienceConversationPolicyGuard resiliencePolicyGuard
+        )
         {
             _tradingDbContext = tradingDbContext;
             _resiliencePolicyGuard = resiliencePolicyGuard;
         }
 
-        public async Task<Conversation> CreateConversationAsync(Conversation conversation, Guid? clientRequestId)
+        public async Task<Conversation> CreateConversationAsync
+        (
+            Conversation conversation,
+            Guid? clientRequestId
+        )
         {
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {

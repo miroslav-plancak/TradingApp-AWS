@@ -2,6 +2,11 @@
 {
     public interface IFileDebugLogger
     {
-        Task LogSectionAsync<T>(string logName, string title, T content);
+        Task LogSectionAsync<T>
+        (
+            string logName,
+            string title,
+            T content
+        );
     }
 }

@@ -72,7 +72,12 @@ namespace TradingApp.Business.Repositories
                 nameof(GetUnresolvedDeadLetterLogsAsync) + ":Fetch");
         }
 
-        public async Task<DeadLetterLog> MarkAsResolvedAsync(Guid id, string resolutionNotes, string resolvedBy)
+        public async Task<DeadLetterLog> MarkAsResolvedAsync
+        (
+            Guid id,
+            string resolutionNotes,
+            string resolvedBy
+        )
         {
             var deadLetterLog = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 await _tradingDbContext.DeadLetterLogs

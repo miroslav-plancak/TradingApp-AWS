@@ -53,7 +53,12 @@ namespace TradingApp.API.BackgroundServices
              }, stoppingToken);
         }
 
-        private async Task<PushEventOutcome> PushEventTypeDispatcher(string eventType, IntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        private async Task<PushEventOutcome> PushEventTypeDispatcher
+        (
+            string eventType,
+            IntegrationEvent integrationEvent,
+            CancellationToken cancellationToken
+        )
         {
             try
             {
@@ -76,7 +81,12 @@ namespace TradingApp.API.BackgroundServices
             }
         }
 
-        private async Task<PushEventOutcome> OrderEventTypeHandlerAsync(string eventType, IntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        private async Task<PushEventOutcome> OrderEventTypeHandlerAsync
+        (
+            string eventType,
+            IntegrationEvent integrationEvent,
+            CancellationToken cancellationToken
+        )
         {
             try
             {
@@ -102,7 +112,12 @@ namespace TradingApp.API.BackgroundServices
 
         }
 
-        private async Task<PushEventOutcome> OutboxMessageEventTypeHandlerAsync(string eventType, IntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        private async Task<PushEventOutcome> OutboxMessageEventTypeHandlerAsync
+        (
+            string eventType,
+            IntegrationEvent integrationEvent,
+            CancellationToken cancellationToken
+        )
         {
             try
             {
@@ -127,7 +142,12 @@ namespace TradingApp.API.BackgroundServices
             }
         }
 
-        private async Task<PushEventOutcome> DeadLetterLogEventTypeHandlerAsync(string eventType, IntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        private async Task<PushEventOutcome> DeadLetterLogEventTypeHandlerAsync
+        (
+            string eventType,
+            IntegrationEvent integrationEvent,
+            CancellationToken cancellationToken
+        )
         {
             try
             {

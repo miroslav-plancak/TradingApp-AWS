@@ -11,7 +11,11 @@ namespace TradingApp.API.Hubs
     {
         private readonly ILogger<EventsHub> _logger;
         private readonly IOrderService _orderService;
-        public EventsHub(ILogger<EventsHub> logger, IOrderService orderService)
+        public EventsHub
+        (
+            ILogger<EventsHub> logger,
+            IOrderService orderService
+        )
         {
             _logger = logger;
             _orderService = orderService;

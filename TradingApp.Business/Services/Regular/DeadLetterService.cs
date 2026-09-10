@@ -24,12 +24,25 @@ namespace TradingApp.Business.Services.Regular
             _deadLetterRepository = deadLetterRepository;
         }
 
-        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync(string messageBody, Guid clientOrderId, string reason, DeadLetterCategory category)
+        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync
+        (
+            string messageBody,
+            Guid clientOrderId,
+            string reason,
+            DeadLetterCategory category
+        )
         {
             return CreateDeadLetterLogAsync(messageBody, clientOrderId, reason, category, null);
         }
 
-        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync(string messageBody, Guid clientOrderId, string reason, DeadLetterCategory category, string correlationId)
+        public Task<DeadLetterLogResponseDTO> CreateDeadLetterLogAsync
+        (
+            string messageBody,
+            Guid clientOrderId,
+            string reason,
+            DeadLetterCategory category,
+            string correlationId
+        )
         {
             return CreateDeadLetterLogAsync(new CreateDeadLetterRequestDTO
             {
@@ -164,7 +177,11 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
-        public async Task<DeadLetterLogResponseDTO> MarkAsResolvedAsync(Guid id, ResolveDeadLetterRequestDTO resolveRequest)
+        public async Task<DeadLetterLogResponseDTO> MarkAsResolvedAsync
+        (
+            Guid id,
+            ResolveDeadLetterRequestDTO resolveRequest
+        )
         {
             _logger.LogInformation("MarkDeadLetterLogAsResolved | Id: {Id}", id);
 

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TradingApp.Infrastructure;
 using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Interfaces.Ingestion;
 
 var configuration = new ConfigurationBuilder()
     .AddUserSecrets<Program>()

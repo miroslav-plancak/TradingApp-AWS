@@ -16,7 +16,11 @@ namespace TradingApp.Business.Repositories
         private readonly TradingDbContext _tradingDbContext;
         private readonly IResiliencePolicyGuard _resiliencePolicyGuard;
 
-        public OutboxMessageRepository(TradingDbContext tradingDbContext, IResiliencePolicyGuard resiliencePolicyGuard)
+        public OutboxMessageRepository
+        (
+            TradingDbContext tradingDbContext,
+            IResiliencePolicyGuard resiliencePolicyGuard
+        )
         {
             _tradingDbContext = tradingDbContext;
             _resiliencePolicyGuard = resiliencePolicyGuard;

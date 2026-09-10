@@ -8,7 +8,6 @@ using TradingApp.Business.DTOs.ConversationFullFile;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Mappers;
-using TradingApp.Domain.Models.Entities.ConversationFullFile;
 
 namespace TradingApp.Business.Services.Regular
 {
@@ -86,17 +85,17 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
-        public async Task<List<CreatedConversationFullFileResponseDTO>> GetSpecificConversationFullFilesAsync(List<CreatedConversationChunkResponseDTO> requests)
+        public async Task<List<CreatedConversationFullFileResponseDTO>> ResolveFullFilesForChunksAsync(List<CreatedConversationChunkResponseDTO> reusableChunks)
         {
-            if (requests.Count == 0) return [];
+            if (reusableChunks.Count == 0) return [];
 
-            var conversationId = requests?.FirstOrDefault().ConversationId;
+            var conversationId = reusableChunks?.FirstOrDefault().ConversationId;
 
-            _logger.LogInformation("ConversationFullFilesArbiterBasedFetchingStarted | ConversationId: {ConversationId}", conversationId);
+            _logger.LogInformation("ConversationFullFilesResolveForSuppliedChunksStarted | ConversationId: {ConversationId}", conversationId);
 
             try
             {
-                var requestedSourceFileNames = requests.GroupBy(x => x.SourceFile).Select(kvp => kvp.Key).ToList();
+                var requestedSourceFileNames = reusableChunks.GroupBy(x => x.SourceFile).Select(kvp => kvp.Key).ToList();
 
                 var allExistingConversationFullFiles = await GetConversationFullFilesAsync(conversationId);
 
@@ -104,14 +103,14 @@ namespace TradingApp.Business.Services.Regular
                     .Where(x => requestedSourceFileNames.Contains(x.SourceFile))
                     .ToList();
 
-                _logger.LogInformation("ConversationFullFilesArbiterBasedFetchingSuccessful | ConversationId: {ConversationId}", conversationId);
+                _logger.LogInformation("ConversationFullFilesResolveForSuppliedChunksSuccessful | ConversationId: {ConversationId}", conversationId);
 
                 return matchedFullFileDtos;
               
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "ConversationFullFilesArbiterBasedFetchingFailed | returningEmptyResults  | Error: {Message}", ex.Message);
+                _logger.LogError(ex, "ConversationFullFilesResolveForSuppliedChunksFailed | returningEmptyResults  | Error: {Message}", ex.Message);
 
                 return new List<CreatedConversationFullFileResponseDTO>();
             }

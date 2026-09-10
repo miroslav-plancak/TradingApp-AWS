@@ -18,7 +18,12 @@ namespace TradingApp.Infrastructure.Services
             Directory.CreateDirectory(_logDirectory);
         }
 
-        public async Task LogSectionAsync<T>(string logName, string title, T content)
+        public async Task LogSectionAsync<T>
+        (
+            string logName,
+            string title,
+            T content
+        )
         {
             var filePath = Path.Combine(_logDirectory, $"{logName}.txt");
             var body = content is string s ? s : JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true });
@@ -41,7 +46,11 @@ namespace TradingApp.Infrastructure.Services
             }
         }
 
-        private static string BuildBlock(string title, string content)
+        private static string BuildBlock
+        (
+            string title,
+            string content
+        )
         {
             var divider = new string('=', 80);
             var stringBuilder = new StringBuilder();

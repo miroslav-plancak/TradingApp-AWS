@@ -29,7 +29,11 @@ namespace TradingApp.Infrastructure.Helpers
             -2      // Timeout
         };
 
-        public static AsyncCircuitBreakerPolicy BuildCircuitBreakerPolicy(ILogger logger, string protectedResourceName)
+        public static AsyncCircuitBreakerPolicy BuildCircuitBreakerPolicy
+        (
+            ILogger logger,
+            string protectedResourceName
+        )
         {
             return Policy
                 .Handle<Exception>()
@@ -72,7 +76,11 @@ namespace TradingApp.Infrastructure.Helpers
             return TimeSpan.FromSeconds(delaySeconds);
         }
 
-        private static bool IsTransientException(Exception exception, ResiliencePolicyKey? policyKey)
+        private static bool IsTransientException
+        (
+            Exception exception,
+            ResiliencePolicyKey? policyKey
+        )
         {
             switch (policyKey)
             {
