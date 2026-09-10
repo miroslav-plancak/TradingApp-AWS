@@ -41,33 +41,33 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
         public async Task<RetrievalResult> RetrieveRelevantContextAsync
         (
-            string userQuery,
+            string userMessage,
             Guid conversationId
         )
         {
             try
             {
-                var reusableConversationContent = await _conversationReuseService.TryRetrieveReusableConversationArtifactsAsync(conversationId, userQuery);
+                var reusableConversationContent = await _conversationReuseService.TryRetrieveReusableConversationArtifactsAsync(conversationId, userMessage);
 
                 if (reusableConversationContent.ConversationChunks.Count > 0)
                 {
                     var reusableRetrievalResult = RetrievalResultMapping.ToRetrievalResult(reusableConversationContent);
 
                     _logger.LogInformation(
-                        "Query: {userQuery} | Existing conversation chunk pool judged sufficient - skipping RAG pipeline",
-                        userQuery);
+                        "Query: {userMessage} | Existing conversation chunk pool judged sufficient - skipping RAG pipeline",
+                        userMessage);
 
-                    await _fileDebugLogger.LogSectionAsync("3-arbiter-skip-context", $"Query: {userQuery}",
+                    await _fileDebugLogger.LogSectionAsync("3-arbiter-skip-context", $"Query: {userMessage}",
                         RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(reusableRetrievalResult));
 
                     return reusableRetrievalResult;
                 }
 
-                var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(userQuery);
+                var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(userMessage);
 
-                var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(userQuery);
+                var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(userMessage);
 
-                var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(userQuery);
+                var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(userMessage);
 
                 var unifiedChunks = ChunkFusion.UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
 
@@ -75,17 +75,17 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 var unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
 
-                var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(userQuery, unifiedChunksSortedByRrfScore);
+                var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(userMessage, unifiedChunksSortedByRrfScore);
 
                 rerankedChunks.RemoveAll(chunk => chunk.RelevanceScore < RelevanceFloor);
 
                 if (rerankedChunks.Count == 0)
                 {
                     _logger.LogInformation(
-                        "Query: {userQuery} | No chunks cleared the relevance floor ({RelevanceFloor}) - returning empty context",
-                        userQuery, RelevanceFloor);
+                        "Query: {userMessage} | No chunks cleared the relevance floor ({RelevanceFloor}) - returning empty context",
+                        userMessage, RelevanceFloor);
 
-                    await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userQuery}",
+                    await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userMessage}",
                         "No chunks cleared the relevance floor - returning empty context.");
 
                     return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
@@ -97,21 +97,21 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 var filteredRetrievedChunksForContext = ChunkFiltering.ExcludeChunksCoveredByExpandedFiles(filteredRetrievedChunksForPersistance, filesEligibleForExpansion);
 
-                LogRedisSearchResults(filteredRetrievedChunksForContext, filesEligibleForExpansion, userQuery);
+                LogRedisSearchResults(filteredRetrievedChunksForContext, filesEligibleForExpansion, userMessage);
 
                 var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunksForContext, FullFileContents = filesEligibleForExpansion };
 
                 await _conversationReuseService.TryPersistReusableConversationArtifactsAsync(
                     conversationId, filteredRetrievedChunksForPersistance, retrievalResult.FullFileContents);
 
-                await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userQuery}",
+                await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userMessage}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(retrievalResult));
 
                 return retrievalResult;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected failure occurred while retrieving context for question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Unexpected failure occurred while retrieving context for question: {UserMessage}", userMessage);
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
         }
@@ -120,10 +120,10 @@ namespace TradingApp.Infrastructure.Services.Retrieval
         (
             List<RetrievedChunk> filteredRetrievedChunks,
             Dictionary<string, string> filesEligibleForExpansion,
-            string userQuery
+            string userMessage
         )
         {
-            _logger.LogInformation("Query: {userQuery}", userQuery);
+            _logger.LogInformation("Query: {userMessage}", userMessage);
 
             foreach (var chunk in filteredRetrievedChunks)
             {

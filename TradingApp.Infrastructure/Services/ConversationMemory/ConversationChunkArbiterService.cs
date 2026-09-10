@@ -38,7 +38,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
         public async Task<List<CreatedConversationChunkResponseDTO>> DetermineSufficientChunksAsync
         (
-            string userQuery,
+            string userMessage,
             List<CreatedConversationChunkResponseDTO> existingChunks
         )
         {
@@ -51,12 +51,12 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                 Model = "claude-haiku-4-5",
                 MaxTokens = 512,
                 System = _arbiterSystemInstruction,
-                Messages = [new() { Role = Role.User, Content = $"{userQuery} \n\n Existing Chunks(JSON array): \n {conversationChunksContext}" }]
+                Messages = [new() { Role = Role.User, Content = $"{userMessage} \n\n Existing Chunks(JSON array): \n {conversationChunksContext}" }]
             };
 
             try
             {
-                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userQuery);
+                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage);
                 var extractedJson = LlmJsonExtractor.ExtractJsonObject(result);
 
                 try
@@ -81,7 +81,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "ChunkArbitrationUnexpectedFailure | Question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "ChunkArbitrationUnexpectedFailure | Question: {UserMessage}", userMessage);
                 return [];
             }
         }

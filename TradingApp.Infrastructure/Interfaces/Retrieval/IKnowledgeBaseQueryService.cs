@@ -5,8 +5,8 @@ namespace TradingApp.Infrastructure.Interfaces.Retrieval
 {
     public interface IKnowledgeBaseQueryService
     {
-        Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userQuery);
-        Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userQuery);
+        Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userMessage);
+        Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userMessage);
         Task<Dictionary<string, string>> GetSourceFileContentsAsync(IEnumerable<string> sourceFiles);
     }
 }

@@ -4,6 +4,6 @@ namespace TradingApp.Infrastructure.Interfaces
 {
     public interface IAnthropicApiService
     {
-        Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string userQuery);
+        Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string userMessage);
     }
 }

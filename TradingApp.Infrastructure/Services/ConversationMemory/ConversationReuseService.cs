@@ -31,14 +31,14 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         public async Task<ReusableConversationArtifacts> TryRetrieveReusableConversationArtifactsAsync
         (
             Guid conversationId,
-            string userQuery
+            string userMessage
         )
         {
             try 
             {
                 var allExistingConversationChunks = await _conversationChunkService.GetConversationChunksAsync(conversationId);
 
-                var reusableConversationChunks = await _conversationChunkArbiterService.DetermineSufficientChunksAsync(userQuery, allExistingConversationChunks);
+                var reusableConversationChunks = await _conversationChunkArbiterService.DetermineSufficientChunksAsync(userMessage, allExistingConversationChunks);
 
                 var reusableConversationFullFiles = await _conversationFullFileService.ResolveFullFilesForChunksAsync(reusableConversationChunks);
 
@@ -51,7 +51,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             } 
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected failure occurred while retrieving conversation artifacts for the question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Unexpected failure occurred while retrieving conversation artifacts for the question: {UserMessage}", userMessage);
                 return new ReusableConversationArtifacts() { ConversationChunks = [], ConversationFullFiles = [] };
             }
         }

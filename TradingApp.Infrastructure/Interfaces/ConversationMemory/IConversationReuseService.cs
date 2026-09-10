@@ -9,7 +9,7 @@ namespace TradingApp.Infrastructure.Interfaces.ConversationMemory
         Task<ReusableConversationArtifacts> TryRetrieveReusableConversationArtifactsAsync
         (
             Guid conversationId,
-            string userQuery
+            string userMessage
         );
         Task TryPersistReusableConversationArtifactsAsync
         (

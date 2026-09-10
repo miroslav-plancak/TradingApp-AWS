@@ -36,11 +36,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _resiliencePolicy = resiliencePolicy;
         }
 
-        public async Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userQuery)
+        public async Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userMessage)
         {
             try
             {
-                var queryBytes = await EmbedQuestionAsync(userQuery);
+                var queryBytes = await EmbedQuestionAsync(userMessage);
 
                 var searchResult = await _resiliencePolicy.ExecuteAsync(async () =>
                 {
@@ -59,20 +59,20 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
             {
-                _logger.LogWarning(ex, "Redis database exception for user question: {UserQuery}", userQuery);
+                _logger.LogWarning(ex, "Redis database exception for user question: {UserMessage}", userMessage);
                 return new List<RetrievedChunk>();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Database or embedding error for user question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Database or embedding error for user question: {UserMessage}", userMessage);
                 return new List<RetrievedChunk>();
             }
 
         }
 
-        private async Task<byte[]> EmbedQuestionAsync(string userQuery)
+        private async Task<byte[]> EmbedQuestionAsync(string userMessage)
         {
-            var queryEmbedding = await _voyageEmbeddingService.EmbedAsync(userQuery);
+            var queryEmbedding = await _voyageEmbeddingService.EmbedAsync(userMessage);
             var queryBytes = EmbeddingPacker.RePackEmbeddingFromFloatToByte(queryEmbedding);
 
             return queryBytes;
@@ -106,17 +106,17 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             return retrievedChunks;
         }
 
-        public async Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userQuery)
+        public async Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userMessage)
         {
             try
             {
-                var parsedUserQuery = ParseUserQuery(userQuery);
+                var parsedUserMessage = ParseUserMessage(userMessage);
 
                 var lexicalSearchResult = await _resiliencePolicy.ExecuteAsync(async () =>
                 {
                     return await _database.ExecuteAsync(
                                            "FT.SEARCH", "idx:chunks",
-                                           $"@content:({parsedUserQuery})",
+                                           $"@content:({parsedUserMessage})",
                                            "SCORER", "BM25",
                                            "WITHSCORES",
                                            "RETURN", "2", "sourceFile", "content",
@@ -130,19 +130,19 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
             {
-                _logger.LogWarning(ex, "Redis database exception for user question: {UserQuery}", userQuery);
+                _logger.LogWarning(ex, "Redis database exception for user question: {UserMessage}", userMessage);
                 return new List<RetrievedChunk>();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Database error for user question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Database error for user question: {UserMessage}", userMessage);
                 return new List<RetrievedChunk>();
             }
         }
 
-        private static string ParseUserQuery(string userQuery)
+        private static string ParseUserMessage(string userMessage)
         {
-            var terms = Regex.Split(userQuery, @"[^\w]+")
+            var terms = Regex.Split(userMessage, @"[^\w]+")
                .Where(t => t.Length > 0)
                .Where(IsValidIdentifier)
                .ToList();

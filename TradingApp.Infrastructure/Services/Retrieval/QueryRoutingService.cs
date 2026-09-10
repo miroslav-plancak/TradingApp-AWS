@@ -25,19 +25,19 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _anthropicApiService = anthropicApiService;
         }
 
-        public async Task<LlmQueryClassification> LlmQueryRouteAsync(string userQuery)
+        public async Task<LlmQueryClassification> LlmQueryRouteAsync(string userMessage)
         {
             var parameters = new MessageCreateParams
             {
                 Model = "claude-haiku-4-5",
                 MaxTokens = 10,
                 System = _llmQueryRouteSystemInstruction,
-                Messages = [new() { Role = Role.User, Content = userQuery }]
+                Messages = [new() { Role = Role.User, Content = userMessage }]
             };
 
             try
             {
-                var response = await _anthropicApiService.DispatchPromptAsync(parameters, userQuery);
+                var response = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage);
 
                 if (!string.IsNullOrWhiteSpace(response))
                 {
@@ -49,7 +49,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "QueryClassificationUnexpectedFailure | Question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "QueryClassificationUnexpectedFailure | Question: {UserMessage}", userMessage);
                 return LlmQueryClassification.INCONCLUSIVE;
             }
         }

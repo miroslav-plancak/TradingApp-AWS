@@ -28,11 +28,11 @@ namespace TradingApp.Business.Services.Regular
 
         public async Task<CreatedConversationResponseDTO> CreateConversationAsync
         (
-            string userQuery,
+            string userMessage,
             Guid? clientRequestId
         )
         {
-            var conversationName = GenerateConversationName(userQuery);
+            var conversationName = GenerateConversationName(userMessage);
 
             _logger.LogInformation("ConversationCreationStarted | ConversationName: {ConversationName}", conversationName);
 
@@ -58,12 +58,12 @@ namespace TradingApp.Business.Services.Regular
 
         }
 
-        private static string GenerateConversationName(string userQuery)
+        private static string GenerateConversationName(string userMessage)
         {
-            if (string.IsNullOrWhiteSpace(userQuery))
+            if (string.IsNullOrWhiteSpace(userMessage))
                 return "New Conversation";
 
-            var words = userQuery.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            var words = userMessage.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
 
             return string.Join(" ", words.Take(4));
         }

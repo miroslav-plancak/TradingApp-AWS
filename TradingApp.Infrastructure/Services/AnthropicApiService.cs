@@ -29,7 +29,7 @@ namespace TradingApp.Infrastructure.Services
             _fileDebugLogger = fileDebugLogger;
         }
 
-        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string userQuery)
+        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string userMessage)
         {
             try
             {
@@ -54,12 +54,12 @@ namespace TradingApp.Infrastructure.Services
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex))
             {
-                _logger.LogWarning(ex, "AnthropicPromptFailedAfterRetries | Question: {UserQuery}", userQuery);
+                _logger.LogWarning(ex, "AnthropicPromptFailedAfterRetries | Question: {UserMessage}", userMessage);
                 return null;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "AnthropicPromptUnexpectedFailure | Question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "AnthropicPromptUnexpectedFailure | Question: {UserMessage}", userMessage);
                 return null;
             }
         }
