@@ -26,7 +26,11 @@ namespace TradingApp.Business.Services.Regular
             _logger = logger;
         }
 
-        public async Task<CreatedConversationResponseDTO> CreateConversationAsync(string userQuery, Guid? clientRequestId)
+        public async Task<CreatedConversationResponseDTO> CreateConversationAsync
+        (
+            string userQuery,
+            Guid? clientRequestId
+        )
         {
             var conversationName = GenerateConversationName(userQuery);
 
@@ -54,12 +58,12 @@ namespace TradingApp.Business.Services.Regular
 
         }
 
-        private static string GenerateConversationName(string userQuestion)
+        private static string GenerateConversationName(string userQuery)
         {
-            if (string.IsNullOrWhiteSpace(userQuestion))
+            if (string.IsNullOrWhiteSpace(userQuery))
                 return "New Conversation";
 
-            var words = userQuestion.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            var words = userQuery.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
 
             return string.Join(" ", words.Take(4));
         }

@@ -33,7 +33,11 @@ namespace TradingApp.Business.Logger
             return _logger.BeginScope("TradingAppLoggerScope");
         }
 
-        public void LogError(string message, Exception ex = null)
+        public void LogError
+        (
+            string message,
+            Exception ex = null
+        )
         {
             if (ex != null)
             {
@@ -48,7 +52,11 @@ namespace TradingApp.Business.Logger
             _logger.LogInformation(message);
         }
 
-        public void LogInformation(string message, params object[] arguments)
+        public void LogInformation
+        (
+            string message,
+            params object[] arguments
+        )
         {
             using var scope = BeginScopeWithProperties();
             _logger.LogInformation(message, arguments);
@@ -74,19 +82,32 @@ namespace TradingApp.Business.Logger
             SetScopeValue(LoggingConstants.MethodNameScope, methodName);
         }
 
-        public void LogWarning(Exception ex, string message)
+        public void LogWarning
+        (
+            Exception ex,
+            string message
+        )
         {
             using var scope = BeginScopeWithProperties();
             _logger.LogWarning(ex, message);
         }
 
-        public void LogWarning(string messageTemplate, params object[] args)
+        public void LogWarning
+        (
+            string messageTemplate,
+            params object[] args
+        )
         {
             using var scope = BeginScopeWithProperties();
             _logger.LogWarning(messageTemplate, args);
         }
 
-        public void LogError(Exception ex, string messageTemplate, params object[] args)
+        public void LogError
+        (
+            Exception ex,
+            string messageTemplate,
+            params object[] args
+        )
         {
             using var scope = BeginScopeWithProperties();
             _logger.LogError(ex, messageTemplate, args);
@@ -140,7 +161,11 @@ namespace TradingApp.Business.Logger
             return null;
         }
 
-        private void SetScopeValue(string key, object value)
+        private void SetScopeValue
+        (
+            string key,
+            object value
+        )
         {
             Scope[key] = value;
         }

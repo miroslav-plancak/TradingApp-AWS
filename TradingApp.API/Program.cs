@@ -12,6 +12,8 @@ using TradingApp.Business.Middleware;
 using TradingApp.Infrastructure;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Services;
+using TradingApp.Infrastructure.Services.Ingestion;
+using TradingApp.Infrastructure.Services.Retrieval;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,7 +59,8 @@ builder.Services.AddVoyageRerankingServices();
 builder.Services.AddChunkRerankingService();
 builder.Services.AddFileExpansionService();
 builder.Services.AddChunkingRetrievalService();
-builder.Services.AddConversationContextArbiterServices();
+builder.Services.AddConversationChunkArbiterServices();
+builder.Services.AddConversationReuseService();
 // This is a separate IConnectionMultiplexer connection from SignalR's AddStackExchangeRedis backplane
 // connection above (that one is pub/sub for fanning Hub messages out across multiple API instances.
 // This one is used for storing embedded float vectors to redis: ChunkIngestionService/ChunkRetrievalService

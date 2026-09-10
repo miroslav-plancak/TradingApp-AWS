@@ -10,6 +10,6 @@ namespace TradingApp.Business.Interfaces.Services
     {
         Task CreateConversationFullFilesAsync(List<CreateConversationFullFileRequestDTO> requests);
         Task<List<CreatedConversationFullFileResponseDTO>> GetConversationFullFilesAsync(Guid? conversationId);
-        Task<List<CreatedConversationFullFileResponseDTO>> GetSpecificConversationFullFilesAsync(List<CreatedConversationChunkResponseDTO> requests);
+        Task<List<CreatedConversationFullFileResponseDTO>> ResolveFullFilesForChunksAsync(List<CreatedConversationChunkResponseDTO> reusableChunks);
     }
 }

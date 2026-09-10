@@ -54,7 +54,11 @@ namespace TradingApp.API.Controllers
         [HttpPost("{id}/resolve")]
         [ProducesResponseType(typeof(DeadLetterLogResponseDTO), 200)]
         [ProducesResponseType(404)]
-        public async Task<ActionResult> MarkAsResolvedAsync([FromRoute] Guid id, [FromBody] ResolveDeadLetterRequestDTO resolveRequest)
+        public async Task<ActionResult> MarkAsResolvedAsync
+        (
+            [FromRoute] Guid id,
+            [FromBody] ResolveDeadLetterRequestDTO resolveRequest
+        )
         {
             _logger.LogInformation("MarkDeadLetterLogAsResolvedRequest | Id: {Id}", id);
 

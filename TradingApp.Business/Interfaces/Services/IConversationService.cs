@@ -8,7 +8,11 @@ namespace TradingApp.Business.Interfaces.Services
 {
     public interface IConversationService
     {
-        Task<CreatedConversationResponseDTO> CreateConversationAsync(string userQuery, Guid? clientRequestId);
+        Task<CreatedConversationResponseDTO> CreateConversationAsync
+        (
+            string userQuery,
+            Guid? clientRequestId
+        );
         Task<CreatedConversationResponseDTO> GetConversationByIdAsync(Guid conversationId);
         Task<bool> DeleteConversationByIdAsync(Guid conversationId);
         Task<CreatedConversationMessageResponseDTO> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request);

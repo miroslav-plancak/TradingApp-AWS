@@ -12,7 +12,12 @@ namespace TradingApp.Business.Interfaces.Repositories
         Task<DeadLetterLog> GetDeadLetterLogByIdAsync(Guid id);
         Task<IEnumerable<DeadLetterLog>> GetAllDeadLetterLogsAsync();
         Task<IEnumerable<DeadLetterLog>> GetUnresolvedDeadLetterLogsAsync();
-        Task<DeadLetterLog> MarkAsResolvedAsync(Guid id, string resolutionNotes, string resolvedBy);
+        Task<DeadLetterLog> MarkAsResolvedAsync
+        (
+            Guid id,
+            string resolutionNotes,
+            string resolvedBy
+        );
         Task<DeadLetterLog> GetByClientOrderIdAsync(Guid clientOrderId);
         Task<DeadLetterStatsDTO> GetStatsAsync();
         Task MarkOutboxMessageAsProcessedAsync(Guid clientOrderId);

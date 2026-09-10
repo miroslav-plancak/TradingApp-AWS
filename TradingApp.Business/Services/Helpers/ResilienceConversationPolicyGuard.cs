@@ -24,7 +24,11 @@ namespace TradingApp.Business.Services.Helpers
             _logger = logger;
         }
 
-        public async Task GuardViaResiliencePolicyAsync(Func<Task> sqlOperation, string operationName)
+        public async Task GuardViaResiliencePolicyAsync
+        (
+            Func<Task> sqlOperation,
+            string operationName
+        )
         {
             try
             {
@@ -42,7 +46,11 @@ namespace TradingApp.Business.Services.Helpers
             }
         }
 
-        public async Task<TResult> GuardViaResiliencePolicyAsync<TResult>(Func<Task<TResult>> sqlOperation, string operationName)
+        public async Task<TResult> GuardViaResiliencePolicyAsync<TResult>
+        (
+            Func<Task<TResult>> sqlOperation,
+            string operationName
+        )
         {
             try
             {
