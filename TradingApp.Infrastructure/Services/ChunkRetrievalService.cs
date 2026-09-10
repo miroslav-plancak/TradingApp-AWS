@@ -59,11 +59,11 @@ namespace TradingApp.Infrastructure.Services
 
                 if (sufficientPoolChunks.Count > 0)
                 {
-                    var fullFileContents = MapToFullFileContents(sufficientPoolFullFiles);
+                    var fullFileContents = RetrievalResultMapping.ToFullFileContents(sufficientPoolFullFiles);
 
                     var poolRetrievalResult = new RetrievalResult
                     { 
-                        ChunkFallbacks = MapToRetrievedChunks(sufficientPoolChunks)
+                        ChunkFallbacks = RetrievalResultMapping.ToRetrievedChunks(sufficientPoolChunks)
                             .Where(x => !fullFileContents.ContainsKey(x.SourceFile ?? string.Empty))
                             .ToList(), 
                         FullFileContents = fullFileContents
@@ -124,10 +124,10 @@ namespace TradingApp.Infrastructure.Services
                 var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunksForContext, FullFileContents = filesEligibleForExpansion };
 
                 await _conversationChunkService.CreateConversationChunksAsync(
-                    RePackFilteredRetrievedChunks(filteredRetrievedChunksForPersistance, conversationId));
+                    RetrievalResultMapping.ToCreateConversationChunkRequestDTOs(filteredRetrievedChunksForPersistance, conversationId));
 
                 await _conversationFullFileService.CreateConversationFullFilesAsync(
-                    RePackFilesEligibleForExpansion(retrievalResult.FullFileContents, conversationId));
+                    RetrievalResultMapping.ToCreateConversationFullFileRequestDTOs(retrievalResult.FullFileContents, conversationId));
 
                 await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userQuestion}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(retrievalResult));
@@ -139,50 +139,6 @@ namespace TradingApp.Infrastructure.Services
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving context for question: {UserQuestion}", userQuestion);
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
-        }
-
-        private static List<RetrievedChunk> MapToRetrievedChunks(List<CreatedConversationChunkResponseDTO> chunks)
-        {
-            return chunks.Select(x => new RetrievedChunk
-            {
-                Key = x.Key,
-                SourceFile = x.SourceFile,
-                Content = x.Content,
-                KnnScore = null,
-                LexicalScore = null,
-                RelevanceScore = 0,
-                ReciprocalRankFusionScore = 0
-            }).ToList();
-        }
-
-        private static Dictionary<string, string> MapToFullFileContents(List<CreatedConversationFullFileResponseDTO> fullFiles)
-        {
-            return fullFiles.ToDictionary(x => x.SourceFile, x => x.Content);
-        }
-
-        private static List<CreateConversationChunkRequestDTO> RePackFilteredRetrievedChunks(List<RetrievedChunk> chunkFallbacks, Guid conversationId)
-        {
-            if (chunkFallbacks.Count == 0) return [];
-
-            return chunkFallbacks.Select(x => new CreateConversationChunkRequestDTO
-            {
-                ConversationId = conversationId,
-                Key = x.Key,
-                SourceFile = x.SourceFile,
-                Content = x.Content
-            }).ToList();
-        }
-
-        private List<CreateConversationFullFileRequestDTO> RePackFilesEligibleForExpansion(Dictionary<string, string> fullFileContents, Guid conversationId)
-        {
-            if (fullFileContents.Count == 0) return [];
-
-            return fullFileContents.Select(x => new CreateConversationFullFileRequestDTO
-            {
-                ConversationId = conversationId,
-                SourceFile = x.Key,
-                Content = x.Value
-            }).ToList();
         }
 
         private void LogRedisSearchResults(List<RetrievedChunk> filteredRetrievedChunks, Dictionary<string, string> filesEligibleForExpansion, string userQuestion)
