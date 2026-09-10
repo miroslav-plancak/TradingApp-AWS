@@ -80,15 +80,15 @@ namespace TradingApp.API.Hubs
             }
         }
 
-        public async IAsyncEnumerable<string> Ask
+        public async IAsyncEnumerable<string> SendUserMessage
         (
-            string userQuery,
+            string userMessage,
             Guid? conversationId,
             Guid? clientRequestId
         )
         {
-            if (string.IsNullOrWhiteSpace(userQuery))
-                throw new HubException("Question cannot be empty.");
+            if (string.IsNullOrWhiteSpace(userMessage))
+                throw new HubException("Message cannot be empty.");
 
             var retrievalResult = new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             CreatedConversationResponseDTO existingConversation;
@@ -102,7 +102,7 @@ namespace TradingApp.API.Hubs
             {
                 if (conversationId == null)
                 {
-                    existingConversation = await _conversationService.CreateConversationAsync(userQuery, clientRequestId);
+                    existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
                     await NotifyConversationStartedAsync(existingConversation.ConversationId);
                     isNewConversation = true;
                 }
@@ -115,7 +115,7 @@ namespace TradingApp.API.Hubs
                     }
                     catch (KeyNotFoundException)
                     {
-                        existingConversation = await _conversationService.CreateConversationAsync(userQuery, clientRequestId);
+                        existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
                         await NotifyConversationStartedAsync(existingConversation.ConversationId);
                         isNewConversation = true;
                     }
@@ -123,34 +123,34 @@ namespace TradingApp.API.Hubs
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to establish conversation context for question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Failed to establish conversation context for message: {UserMessage}", userMessage);
                 throw new HubException("There was an error processing your request. Please try again.");
             }
 
             try
             {
-                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userQuery, existingConversation.ConversationId);
+                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userMessage, existingConversation.ConversationId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected failure retrieving context for question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Unexpected failure retrieving context for message: {UserMessage}", userMessage);
             }
 
-            //4. retrieve from the permanence source rows of role/content (role/body in db) for both user/assistant, sorted by createdAt ascending + append to the end current input question from the Ask
+            //4. retrieve from the permanence source rows of role/content (role/body in db) for both user/assistant, sorted by createdAt ascending + append to the end current input message from SendUserMessage
             try
             {
                 conversationMessagesHistory = await _conversationService.GetConversationMessagesAsync(existingConversation.ConversationId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected failure retrieving conversation messages for question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Unexpected failure retrieving conversation messages for message: {UserMessage}", userMessage);
             }
 
             conversationMessagesHistory.Add(
               new ConversationMessageDTO
               {
                   Role = ConversationMessageRole.User.ToString().ToLower(),
-                  Content = userQuery
+                  Content = userMessage
               }
             );
 
@@ -188,7 +188,7 @@ namespace TradingApp.API.Hubs
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Streaming failure before any content was produced for question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Streaming failure before any content was produced for message: {UserMessage}", userMessage);
                 bootstrapFailed = true;
             }
 
@@ -219,7 +219,7 @@ namespace TradingApp.API.Hubs
                             ConversationId = existingConversation.ConversationId,
                             ClientRequestId = clientRequestId,
                             Role = ConversationMessageRole.User,
-                            Body = userQuery
+                            Body = userMessage
                         });
                 }
                 catch (Exception ex)
@@ -250,8 +250,8 @@ namespace TradingApp.API.Hubs
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Streaming failure while answering question: {UserQuery} | AnyContentYielded: {HasYieldedAnyContent}",
-                            userQuery, hasYieldedAnyContent);
+                        _logger.LogError(ex, "Streaming failure while answering message: {UserMessage} | AnyContentYielded: {HasYieldedAnyContent}",
+                            userMessage, hasYieldedAnyContent);
                         streamFailed = true;
                     }
 

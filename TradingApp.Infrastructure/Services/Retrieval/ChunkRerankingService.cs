@@ -28,17 +28,17 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
         public async Task<List<RetrievedChunk>> RerankRetrievedChunksAsync
         (
-            string userQuery,
+            string userMessage,
             List<RetrievedChunk> retrievedChunks
         )
         {
-            await _fileDebugLogger.LogSectionAsync("1-rag-candidates", $"Query: {userQuery}",
+            await _fileDebugLogger.LogSectionAsync("1-rag-candidates", $"Query: {userMessage}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(new RetrievalResult { ChunkFallbacks = retrievedChunks }));
 
             try
             {
 
-                var rerankResults = await _voyageRerankService.RerankAsync(userQuery, retrievedChunks.Select(x => x.Content ?? string.Empty).ToList());
+                var rerankResults = await _voyageRerankService.RerankAsync(userMessage, retrievedChunks.Select(x => x.Content ?? string.Empty).ToList());
                 var rerankedChunks = rerankResults
                     .OrderByDescending(r => r.RelevanceScore)
                     .Select(x =>
@@ -49,14 +49,14 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                     })
                     .ToList();
 
-                await _fileDebugLogger.LogSectionAsync("2-rag-reranked", $"Query: {userQuery}",
+                await _fileDebugLogger.LogSectionAsync("2-rag-reranked", $"Query: {userMessage}",
                   RetrievalResultLogFormatter.FormatRerankResultIntoFileLog(rerankResults.ToList()));
 
                 return rerankedChunks;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Reranking failed for user question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "Reranking failed for user question: {UserMessage}", userMessage);
                 return new List<RetrievedChunk>();
             }
         }

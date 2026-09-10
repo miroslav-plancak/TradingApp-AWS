@@ -5,13 +5,13 @@ namespace TradingApp.Business.Mappers
 {
     public static class ConversationMapper
     {
-        public static Conversation ToEntity(string userQuery)
+        public static Conversation ToEntity(string userMessage)
         {
-            if (userQuery == null) return null;
+            if (userMessage == null) return null;
 
             return new Conversation
             {
-                Name = userQuery
+                Name = userMessage
             };
         }
 

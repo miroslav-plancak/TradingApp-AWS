@@ -7,7 +7,7 @@ namespace TradingApp.Infrastructure.Interfaces.Retrieval
     {
         Task<RetrievalResult> RetrieveRelevantContextAsync
         (
-            string userQuery,
+            string userMessage,
             Guid conversationId
         );
     }

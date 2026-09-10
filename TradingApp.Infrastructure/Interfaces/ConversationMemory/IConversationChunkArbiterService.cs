@@ -5,6 +5,6 @@ namespace TradingApp.Infrastructure.Interfaces.ConversationMemory
     public interface IConversationChunkArbiterService
     {
         Task<List<CreatedConversationChunkResponseDTO>> DetermineSufficientChunksAsync(
-            string userQuery, List<CreatedConversationChunkResponseDTO> existingChunks);
+            string userMessage, List<CreatedConversationChunkResponseDTO> existingChunks);
     }
 }

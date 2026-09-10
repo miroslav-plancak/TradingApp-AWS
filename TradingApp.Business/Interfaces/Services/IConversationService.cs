@@ -10,7 +10,7 @@ namespace TradingApp.Business.Interfaces.Services
     {
         Task<CreatedConversationResponseDTO> CreateConversationAsync
         (
-            string userQuery,
+            string userMessage,
             Guid? clientRequestId
         );
         Task<CreatedConversationResponseDTO> GetConversationByIdAsync(Guid conversationId);
