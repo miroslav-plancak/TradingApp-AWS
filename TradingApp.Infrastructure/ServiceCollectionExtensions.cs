@@ -175,6 +175,12 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddAnthropicApiService(this IServiceCollection services)
+        {
+            services.AddScoped<IAnthropicApiService, AnthropicApiService>();
+            return services;
+        }
+
         // ==================== RAG - Ingestion ====================
 
         public static IServiceCollection AddVoyageEmbeddingServices(this IServiceCollection services)

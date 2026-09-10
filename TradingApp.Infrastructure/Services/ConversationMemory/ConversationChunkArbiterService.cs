@@ -1,15 +1,10 @@
-﻿using Anthropic;
-using Anthropic.Models.Messages;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Anthropic.Models.Messages;
 using Microsoft.Extensions.Logging;
-using Polly;
 using System.Text.Json;
 using TradingApp.Business.DTOs.ConversationChunk;
-using TradingApp.Infrastructure.Helpers;
-using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 using TradingApp.Infrastructure.Helpers.ConversationMemory;
 using TradingApp.Infrastructure.Helpers.Retrieval;
+using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Models.ConversationMemory;
 
@@ -18,8 +13,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
     public class ConversationChunkArbiterService : IConversationChunkArbiterService
     {
         private readonly ILogger<ConversationChunkArbiterService> _logger;
-        private readonly AnthropicClient _anthropicClient;
-        private readonly IAsyncPolicy _resiliencePolicy;
+        private readonly IAnthropicApiService _anthropicApiService;
         private readonly IFileDebugLogger _fileDebugLogger;
         //TODO: move this and the other LLM query to some enviornment variables so that they can be changed without re-deployment.
         private const string _arbiterSystemInstruction =
@@ -33,14 +27,13 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         public ConversationChunkArbiterService
         (
             ILogger<ConversationChunkArbiterService> logger,
-            AnthropicClient anthropicClient,
-            [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy,
-            IFileDebugLogger fileDebugLogger)
+            IFileDebugLogger fileDebugLogger,
+            IAnthropicApiService anthropicApiService
+        )
         {
             _logger = logger;
-            _anthropicClient = anthropicClient;
-            _resiliencePolicy = resiliencePolicy;
             _fileDebugLogger = fileDebugLogger;
+            _anthropicApiService = anthropicApiService;
         }
 
         public async Task<List<CreatedConversationChunkResponseDTO>> DetermineSufficientChunksAsync
@@ -63,49 +56,32 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
             try
             {
-                var anthropicMessageResponse = await _resiliencePolicy.ExecuteAsync(async () =>
+                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userQuery);
+                var extractedJson = LlmJsonExtractor.ExtractJsonObject(result);
+
+                try
                 {
-                    return await _anthropicClient.Messages.Create(parameters);
-                });
+                    var arbiterResponse = JsonSerializer.Deserialize<ArbiterResponse>(extractedJson);
 
-                var firstBlock = anthropicMessageResponse.Content.Count > 0 ? anthropicMessageResponse.Content[0] : null;
+                    await _fileDebugLogger.LogSectionAsync("2b-arbiter-picked-keys", "ConversationChunk keys picked by the LLM",
+                        RetrievalResultLogFormatter.FormatArbiterResponseIntoFileLog(arbiterResponse));
 
-                if (firstBlock is not null && firstBlock.TryPickText(out var textblock))
+                    if (arbiterResponse?.ChunkKeys?.Count > 0)
+                    {
+                        var citedChunkConversationKeys = arbiterResponse.ChunkKeys.ToHashSet();
+                        return existingChunks.Where(x => citedChunkConversationKeys.Contains(x.Key)).ToList();
+                    }
+                }
+                catch (JsonException ex)
                 {
-                    var responseText = LlmJsonExtractor.ExtractJsonObject(textblock.Text.Trim());
-
-                    try
-                    {
-                        var arbiterResponse = JsonSerializer.Deserialize<ArbiterResponse>(responseText);
-
-
-                        await _fileDebugLogger.LogSectionAsync("2b-arbiter-picked-keys", "ConversationChunk keys picked by the LLM",
-                            RetrievalResultLogFormatter.FormatArbiterResponseIntoFileLog(arbiterResponse));
-
-                        if (arbiterResponse?.ChunkKeys?.Count > 0)
-                        {
-                            var citedChunkConversationKeys = arbiterResponse.ChunkKeys.ToHashSet();
-                            return existingChunks.Where(x => citedChunkConversationKeys.Contains(x.Key)).ToList();
-                        }
-                    }
-                    catch (JsonException ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to parse arbiter response as JSON | Response: {ResponseText}", responseText);
-                    }
-
-                    return [];
+                    _logger.LogWarning(ex, "ArbiterResponseJsonParseFailure | Response: {ResponseText}", extractedJson);
                 }
 
                 return [];
             }
-            catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex))
-            {
-                _logger.LogWarning(ex, "Known transient Anthropic failure while dispatching query classification | Question: {UserQuery}", userQuery);
-                return [];
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected failure while dispatching query classification | Question: {UserQuery}", userQuery);
+                _logger.LogError(ex, "ChunkArbitrationUnexpectedFailure | Question: {UserQuery}", userQuery);
                 return [];
             }
         }

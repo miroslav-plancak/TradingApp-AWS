@@ -52,6 +52,7 @@ builder.Services.AddSignalR().AddStackExchangeRedis("localhost:6379");
 builder.Services.AddHostedService<SignalRPushBackgroundService>();
 //---------RAG retrieval pipeline dependencies ---------
 builder.Services.AddAnthropicClient();
+builder.Services.AddAnthropicApiService();
 builder.Services.AddQueryRoutingServices();
 builder.Services.AddVoyageEmbeddingServices();
 builder.Services.AddKnowledgeBaseQueryService();
