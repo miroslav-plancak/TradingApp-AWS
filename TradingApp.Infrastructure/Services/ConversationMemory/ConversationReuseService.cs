@@ -1,8 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
 using TradingApp.Business.Interfaces.Services;
-using TradingApp.Infrastructure.Helpers;
-using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Models.ConversationMemory;
@@ -13,7 +10,6 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
     public class ConversationReuseService : IConversationReuseService
     {
         private readonly ILogger<ConversationReuseService> _logger;
-        private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IConversationChunkService _conversationChunkService;
         private readonly IConversationChunkArbiterService _conversationChunkArbiterService;
         private readonly IConversationFullFileService _conversationFullFileService;
@@ -21,14 +17,12 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         public ConversationReuseService
         (
             ILogger<ConversationReuseService> logger,
-            IFileDebugLogger fileDebugLogger,
             IConversationChunkService conversationChunkService,
             IConversationChunkArbiterService conversationChunkArbiterService,
             IConversationFullFileService conversationFullFileService
         )
         {
             _logger = logger;
-            _fileDebugLogger = fileDebugLogger;
             _conversationChunkService = conversationChunkService;
             _conversationChunkArbiterService = conversationChunkArbiterService;
             _conversationFullFileService = conversationFullFileService;

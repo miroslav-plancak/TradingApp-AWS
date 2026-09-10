@@ -2,8 +2,10 @@ namespace TradingApp.Infrastructure.Helpers.ConversationMemory
 {
     public static class LlmJsonExtractor
     {
-        public static string ExtractJsonObject(string text)
+        public static string ExtractJsonObject(string? text)
         {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+
             var start = text.IndexOf('{');
             var end = text.LastIndexOf('}');
 
