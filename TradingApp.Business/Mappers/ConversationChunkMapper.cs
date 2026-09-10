@@ -20,11 +20,11 @@ namespace TradingApp.Business.Mappers
             }).ToList();
         }
 
-        public static List<CreatedConversationChunkResultDTO> ToCreatedConversationChunkResultDTOs(IEnumerable<ConversationChunk> entities)
+        public static List<CreatedConversationChunkResponseDTO> ToCreatedConversationChunkResultDTOs(IEnumerable<ConversationChunk> entities)
         {
             if (!entities.Any()) return [];
 
-            return entities.Select(x =>  new CreatedConversationChunkResultDTO
+            return entities.Select(x => new CreatedConversationChunkResponseDTO
             {
                 ConversationId = x.ConversationId,
                 Key = x.Key,

@@ -67,12 +67,12 @@ namespace TradingApp.API.Hubs
                 try
                 {
                     await _conversationService.DeleteConversationByIdAsync(newConversationId);
-                } 
+                }
                 catch (Exception deleteEx)
                 {
                     _logger.LogError(deleteEx, "Failed to clean up orphaned conversation {ConversationId} after notify failure", newConversationId);
                 }
-               
+
                 throw;
             }
         }
@@ -92,7 +92,7 @@ namespace TradingApp.API.Hubs
             //1. we create a conversation or load existing
             try
             {
-                if(conversationId == null)
+                if (conversationId == null)
                 {
                     existingConversation = await _conversationService.CreateConversationAsync(userQuestion, clientRequestId);
                     await NotifyConversationStartedAsync(existingConversation.ConversationId);
@@ -100,7 +100,7 @@ namespace TradingApp.API.Hubs
                 }
                 else
                 {
-                    try 
+                    try
                     {
                         existingConversation = await _conversationService.GetConversationByIdAsync(conversationId.Value);
                         isNewConversation = false;
@@ -129,11 +129,11 @@ namespace TradingApp.API.Hubs
             }
 
             //4. retrieve from the permanence source rows of role/content (role/body in db) for both user/assistant, sorted by createdAt ascending + append to the end current input question from the Ask
-            try 
+            try
             {
                 conversationMessagesHistory = await _conversationService.GetConversationMessagesAsync(existingConversation.ConversationId);
             }
-            catch(Exception ex) 
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected failure retrieving conversation messages for question: {UserQuestion}", userQuestion);
             }
@@ -171,7 +171,7 @@ namespace TradingApp.API.Hubs
                     {
                         if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
                         {
-                            return (e, text.Text); 
+                            return (e, text.Text);
                         }
                     }
 
@@ -205,7 +205,7 @@ namespace TradingApp.API.Hubs
             {   //2. we persist user message into the existing conversation
                 try
                 {
-                    userCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync( 
+                    userCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
                         new CreateConversationMessageRequestDTO()
                         {
                             ConversationId = existingConversation.ConversationId,
@@ -246,7 +246,7 @@ namespace TradingApp.API.Hubs
                             userQuestion, hasYieldedAnyContent);
                         streamFailed = true;
                     }
-              
+
                     if (streamFailed)
                         throw new HubException("The response was interrupted partway through. Please try again.");
                     //3. we persist assistant message into the existing conversation
@@ -260,14 +260,14 @@ namespace TradingApp.API.Hubs
                                 Role = ConversationMessageRole.Assistant,
                                 Body = assistantMessageAccumulated
                             });
-                           
+
                         yield break;
                     }
 
                     if (enumerator.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
                     {
                         hasYieldedAnyContent = true;
-                        assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder,text.Text);
+                        assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, text.Text);
                         yield return text.Text;
                     }
                 }
@@ -281,7 +281,8 @@ namespace TradingApp.API.Hubs
             return conversationMessages
                 .Select(x => new MessageParam()
                 {
-                    Role = x.Role, Content = x.Content
+                    Role = x.Role,
+                    Content = x.Content
                 }).ToList();
         }
 

@@ -28,11 +28,11 @@ namespace TradingApp.Business.Services.Regular
 
         public async Task<CreatedConversationResponseDTO> CreateConversationAsync(string userQuery, Guid? clientRequestId)
         {
-           var conversationName = GenerateConversationName(userQuery);
+            var conversationName = GenerateConversationName(userQuery);
 
             _logger.LogInformation("ConversationCreationStarted | ConversationName: {ConversationName}", conversationName);
 
-            try 
+            try
             {
                 var conversationEntityRequest = ConversationMapper.ToEntity(conversationName);
 
@@ -43,15 +43,15 @@ namespace TradingApp.Business.Services.Regular
                 _logger.LogInformation("ConversationCreationSuccessful | ConversationId: {ConversationId}", conversation.Id);
 
                 return createdConversationResponseDTO;
-                
+
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "ConversationCreationFailed  | Error: {Message}", ex.Message);
 
                 throw new Exception("Failed to create conversation", ex);
             }
-         
+
         }
 
         private static string GenerateConversationName(string userQuestion)
@@ -82,7 +82,7 @@ namespace TradingApp.Business.Services.Regular
 
                 _logger.LogInformation("GetConversationByIdAsyncRetrieved  | ConversationId: {ConversationId} " +
                     "| ConversationName: {ConversationName}",
-                  orderDTO.ConversationId,  orderDTO.Name );
+                  orderDTO.ConversationId, orderDTO.Name);
 
                 return orderDTO;
             }

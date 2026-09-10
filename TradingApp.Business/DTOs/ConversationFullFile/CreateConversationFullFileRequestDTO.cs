@@ -1,11 +1,10 @@
 ﻿using System;
 
-namespace TradingApp.Business.DTOs.ConversationChunk
+namespace TradingApp.Business.DTOs.ConversationFullFile
 {
-    public class CreatedConversationChunkResultDTO
+    public class CreateConversationFullFileRequestDTO
     {
         public required Guid ConversationId { get; set; }
-        public required string Key { get; set; }
         public required string SourceFile { get; set; }
         public required string Content { get; set; }
     }
