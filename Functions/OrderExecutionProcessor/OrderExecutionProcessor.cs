@@ -12,6 +12,7 @@ using TradingApp.Domain.Models.Entities.Order;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Events.Events;
 using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]

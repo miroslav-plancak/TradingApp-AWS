@@ -1,7 +1,7 @@
 ﻿using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 
-namespace TradingApp.Infrastructure
+namespace TradingApp.Infrastructure.Helpers
 {
     public static class SqsBatchHandler
     {

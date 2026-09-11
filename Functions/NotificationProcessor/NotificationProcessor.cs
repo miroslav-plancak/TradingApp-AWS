@@ -8,7 +8,7 @@ using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OrderNotificationSequences;
 using TradingApp.Domain.Models.Entities.PendingFilledNotification;
 using TradingApp.Events.Events;
-using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Helpers;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 

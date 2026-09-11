@@ -2,7 +2,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TradingApp.Infrastructure;
-using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
 
 var configuration = new ConfigurationBuilder()
@@ -12,6 +11,7 @@ var configuration = new ConfigurationBuilder()
 var services = new ServiceCollection();
 services.AddSingleton<IConfiguration>(configuration);
 services.AddLogging(builder => builder.AddConsole());
+services.AddVoyageApiServices();
 services.AddVoyageEmbeddingServices();
 services.AddRedisConnection();
 services.AddChunkingIngestionService();

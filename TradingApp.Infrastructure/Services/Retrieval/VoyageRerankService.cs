@@ -1,10 +1,6 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Polly;
-using System.Net.Http.Json;
+﻿using Microsoft.Extensions.Logging;
 using System.Text.Json.Serialization;
 using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Retrieval;
 
@@ -12,20 +8,16 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 {
     public class VoyageRerankService : IVoyageRerankService
     {
-        private readonly HttpClient _httpClient;
         private readonly ILogger<VoyageRerankService> _logger;
-        private readonly IAsyncPolicy _resiliencePolicy;
+        private readonly IVoyageApiService _voyageApiService;
 
         public VoyageRerankService
         (
-            HttpClient httpClient,
             ILogger<VoyageRerankService> logger,
-            [FromKeyedServices(ResiliencePolicyKey.VoyageAPI)] IAsyncPolicy resiliencePolicy
-        )
+            IVoyageApiService voyageApiService)
         {
-            _httpClient = httpClient;
             _logger = logger;
-            _resiliencePolicy = resiliencePolicy;
+            _voyageApiService = voyageApiService;
         }
 
         public async Task<IReadOnlyList<RerankResult>> RerankAsync
@@ -45,17 +37,9 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             try
             {
-                var response = await _resiliencePolicy.ExecuteAsync(async () =>
-                {
-                    var httpResponse = await _httpClient.PostAsJsonAsync("rerank", request, ct);
-                    httpResponse.EnsureSuccessStatusCode();
-                    return httpResponse;
-                });
+                var response = await _voyageApiService.DispatchRequestAsync<VoyageRerankRequest,VoyageRerankResponse>("rerank", request, ct);
 
-                var payload = await response.Content.ReadFromJsonAsync<VoyageRerankResponse>(cancellationToken: ct)
-                    ?? throw new InvalidOperationException("Voyage API returned an empty response.");
-
-                return payload.Data
+                return response.Data
                     .Select(x => new RerankResult { Index = x.Index, RelevanceScore = x.RelevanceScore })
                     .ToList();
             }
@@ -90,7 +74,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             public required List<VoyageRerankData> Data { get; set; }
         }
 
-        public class VoyageRerankData
+        private class VoyageRerankData
         {
             [JsonPropertyName("index")]
             public int Index { get; set; }

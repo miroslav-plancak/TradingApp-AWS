@@ -1,8 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
-using TradingApp.Infrastructure.Helpers;
-using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 using TradingApp.Infrastructure.Helpers.Ingestion;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
 using TradingApp.Infrastructure.Models.Ingestion;
@@ -15,9 +12,6 @@ namespace TradingApp.Infrastructure.Services.Ingestion
         private readonly IConnectionMultiplexer _connectionMultiplexer;
         private readonly IDatabase _database;
         private readonly ILogger<ChunkIngestionService> _logger;
-
-        private readonly List<ChunkRecord> chunkedRecords = [];
-        private readonly List<FullFileRecord> fullFileRecords = [];
 
         public ChunkIngestionService
         (
@@ -34,6 +28,8 @@ namespace TradingApp.Infrastructure.Services.Ingestion
 
         public async Task<List<ChunkRecord>> ReadAndChunkSourceFiles(string[] sourceFiles)
         {
+            List<ChunkRecord> chunkedRecords = [];
+
             var processedSourceFiles = BuildProcessedSourceFiles(sourceFiles);
 
             if (processedSourceFiles.Count != 0)
@@ -95,6 +91,8 @@ namespace TradingApp.Infrastructure.Services.Ingestion
 
         private List<FullFileRecord> BuildFullFileRecordList(List<ProcessedSourceFile> processedSourceFiles)
         {
+            List<FullFileRecord> fullFileRecords = [];
+
             foreach (var file in processedSourceFiles)
             {
                 fullFileRecords.Add(new FullFileRecord

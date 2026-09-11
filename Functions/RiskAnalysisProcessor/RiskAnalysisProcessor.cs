@@ -3,7 +3,7 @@ using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using System.Text.Json;
 using TradingApp.Events.Events;
-using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Helpers;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 

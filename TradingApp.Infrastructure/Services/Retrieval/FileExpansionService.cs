@@ -1,6 +1,5 @@
 ﻿using TradingApp.Infrastructure.Enums;
-using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
+using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Retrieval;
 
@@ -18,7 +17,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
         public async Task<Dictionary<string, string>> DetermineFilesEligibleForExpansionAsync
         (
            List<RetrievedChunk> rerankedChunks,
-           LlmQueryClassification routedLlmQUeryResponse
+           LlmQueryClassification routedLlmQueryResponse
         )
         {
             var fileOccurrenceMap = rerankedChunks.GroupBy(x => x.SourceFile ?? string.Empty).ToDictionary(g => g.Key, g => g.Count());
@@ -29,25 +28,15 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             var filesEligibleForExpansion = filesWithFullContent
                         .Where(kvp => fileOccurrenceMap.TryGetValue(kvp.Key, out var occurrences)
-                            && occurrences >= MinimumOccurenceTreshhold(routedLlmQUeryResponse))
+                            && occurrences >= MinimumOccurrenceThreshold(routedLlmQueryResponse))
                         .ToDictionary(x => x.Key, x => x.Value);
 
             return filesEligibleForExpansion;
         }
 
-        private static int MinimumOccurenceTreshhold(LlmQueryClassification routedLlmQUeryResponse)
+        private static int MinimumOccurrenceThreshold(LlmQueryClassification routedLlmQueryResponse)
         {
-            switch (routedLlmQUeryResponse)
-            {
-                case LlmQueryClassification.BROAD:
-                    return 1;
-                case LlmQueryClassification.NARROW:
-                    return 2;
-                case LlmQueryClassification.INCONCLUSIVE:
-                    return 2;
-                default:
-                    return 2;
-            }
+            return RetrievalPolicyResolver.ResolvePolicyValue(routedLlmQueryResponse, x => x.MinimumOccurrenceThreshold);
         }
 
         private async Task<Dictionary<string, string>> GetExistingFullFileContentsMapAsync(IEnumerable<string?> distinctFileNames)
