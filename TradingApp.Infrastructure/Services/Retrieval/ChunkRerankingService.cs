@@ -1,8 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
-using TradingApp.Infrastructure.Helpers;
-using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 using TradingApp.Infrastructure.Helpers.Retrieval;
+using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Retrieval;
 
@@ -32,7 +30,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             List<RetrievedChunk> retrievedChunks
         )
         {
-            await _fileDebugLogger.LogSectionAsync("1-rag-candidates", $"Query: {userMessage}",
+            await _fileDebugLogger.LogSectionAsync("1-rag-candidates-pre-rerank", $"Query: {userMessage}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(new RetrievalResult { ChunkFallbacks = retrievedChunks }));
 
             try
@@ -43,13 +41,22 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                     .OrderByDescending(r => r.RelevanceScore)
                     .Select(x =>
                     {
-                        var retrievedChunk = retrievedChunks[x.Index];
-                        retrievedChunk.RelevanceScore = x.RelevanceScore;
-                        return retrievedChunk;
+                        var originalRetrievedChunk = retrievedChunks[x.Index];
+
+                        return new RetrievedChunk
+                        {
+                            Key = originalRetrievedChunk.Key,
+                            SourceFile = originalRetrievedChunk.SourceFile,
+                            Content = originalRetrievedChunk.Content,
+                            KnnScore = originalRetrievedChunk.KnnScore,
+                            LexicalScore = originalRetrievedChunk.LexicalScore,
+                            ReciprocalRankFusionScore = originalRetrievedChunk.ReciprocalRankFusionScore,
+                            RelevanceScore = x.RelevanceScore
+                        };
                     })
                     .ToList();
 
-                await _fileDebugLogger.LogSectionAsync("2-rag-reranked", $"Query: {userMessage}",
+                await _fileDebugLogger.LogSectionAsync("2-rag-post-rerank", $"Query: {userMessage}",
                   RetrievalResultLogFormatter.FormatRerankResultIntoFileLog(rerankResults.ToList()));
 
                 return rerankedChunks;

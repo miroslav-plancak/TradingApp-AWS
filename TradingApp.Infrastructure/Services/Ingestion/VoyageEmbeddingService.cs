@@ -1,7 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Polly;
-using System.Net.Http.Json;
+﻿using Microsoft.Extensions.Logging;
 using System.Text.Json.Serialization;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
@@ -10,22 +7,18 @@ namespace TradingApp.Infrastructure.Services.Ingestion
 {
     public class VoyageEmbeddingService : IVoyageEmbeddingService
     {
-        private readonly HttpClient _httpClient;
         private readonly ILogger<VoyageEmbeddingService> _logger;
-        private readonly IAsyncPolicy _resiliencePolicy;
+        private readonly IVoyageApiService _voyageApiService;
 
         private const string EmbeddingModel = "voyage-4-lite";
 
         public VoyageEmbeddingService
         (
-            HttpClient httpClient,
             ILogger<VoyageEmbeddingService> logger,
-            [FromKeyedServices(ResiliencePolicyKey.VoyageAPI)] IAsyncPolicy resiliencePolicy
-        )
+            IVoyageApiService voyageApiService)
         {
-            _httpClient = httpClient;
             _logger = logger;
-            _resiliencePolicy = resiliencePolicy;
+            _voyageApiService = voyageApiService;
         }
 
         public async Task<float[]> EmbedAsync
@@ -44,7 +37,7 @@ namespace TradingApp.Infrastructure.Services.Ingestion
             CancellationToken cancellationToken = default
         )
         {
-            var request = new VoyageEmbedingRequest
+            var request = new VoyageEmbeddingRequest
             {
                 Input = texts,
                 Model = EmbeddingModel
@@ -52,17 +45,10 @@ namespace TradingApp.Infrastructure.Services.Ingestion
 
             try
             {
-                var response = await _resiliencePolicy.ExecuteAsync(async () =>
-                {
-                    var httpResponse = await _httpClient.PostAsJsonAsync("embeddings", request, cancellationToken);
-                    httpResponse.EnsureSuccessStatusCode();
-                    return httpResponse;
-                });
+                var response = await _voyageApiService.DispatchRequestAsync<VoyageEmbeddingRequest, VoyageEmbeddingResponse>(
+                    "embeddings", request, cancellationToken);
 
-                var payload = await response.Content.ReadFromJsonAsync<VoyageEmbeddingResponse>(cancellationToken: cancellationToken)
-                    ?? throw new InvalidOperationException("Voyage API returned an empty response.");
-
-                return payload.Data
+                return response.Data
                     .OrderBy(pd => pd.Index)
                     .Select(pd => pd.Embedding)
                     .ToList();
@@ -80,7 +66,7 @@ namespace TradingApp.Infrastructure.Services.Ingestion
             }
         }
 
-        private class VoyageEmbedingRequest
+        private class VoyageEmbeddingRequest
         {
             [JsonPropertyName("input")]
             public required IReadOnlyList<string> Input { get; set; }
@@ -94,7 +80,8 @@ namespace TradingApp.Infrastructure.Services.Ingestion
             [JsonPropertyName("data")]
             public required List<VoyageEmbeddingData> Data { get; set; }
         }
-        public class VoyageEmbeddingData
+
+        private class VoyageEmbeddingData
         {
             [JsonPropertyName("embedding")]
             public required float[] Embedding { get; set; }

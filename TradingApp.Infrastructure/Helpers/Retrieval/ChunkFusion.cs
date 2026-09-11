@@ -1,5 +1,4 @@
 using TradingApp.Infrastructure.Models.Retrieval;
-using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Helpers.Retrieval
 {
@@ -40,22 +39,22 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
         // fed to it and the RelevanceFloor cut off is based off of RetrievedChunk's RelevanceScore which is set downstream of these two methods.
         public static (Dictionary<string, int>, Dictionary<string, int>) ComputeChunksRankMaps
         (
-            List<RetrievedChunk> retrievedKnnChunks, List<RetrievedChunk> retrievedLexicalChunks
+            List<RetrievedChunk> retrievedKnnChunks, 
+            List<RetrievedChunk> retrievedLexicalChunks
         )
         {
-            var knnChunksRankMap = retrievedKnnChunks
-               .Select((chunk, index) => (chunk.Key, Rank: index + 1))
-               .Where(x => x.Key is not null)
-               .GroupBy(x => x.Key)
-               .ToDictionary(g => g.Key!, g => g.Min(x => x.Rank));
-
-            var lexicalChunksRankMap = retrievedLexicalChunks
-               .Select((chunk, index) => (chunk.Key, Rank: index + 1))
-               .Where(x => x.Key is not null)
-               .GroupBy(x => x.Key)
-               .ToDictionary(g => g.Key!, g => g.Min(x => x.Rank));
-
+            var knnChunksRankMap = BuildRankMap(retrievedKnnChunks);
+            var lexicalChunksRankMap = BuildRankMap(retrievedLexicalChunks);
             return (knnChunksRankMap, lexicalChunksRankMap);
+        }
+
+        private static Dictionary<string, int> BuildRankMap(List<RetrievedChunk> retrievedChunks)
+        {
+            return retrievedChunks
+                  .Select((chunk, index) => (chunk.Key, Rank: index + 1))
+                  .Where(x => x.Key is not null)
+                  .GroupBy(x => x.Key)
+                  .ToDictionary(g => g.Key!, g => g.Min(x => x.Rank));
         }
 
         public static List<RetrievedChunk> SortUnifiedChunksByRrfScore

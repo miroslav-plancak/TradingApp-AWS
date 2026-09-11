@@ -78,21 +78,14 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             return queryBytes;
         }
 
-        private static List<RetrievedChunk> MapKnnSearchResultToRetrievedChunkList(RedisResult searchResult)
+        private static List<RetrievedChunk> MapKnnSearchResultToRetrievedChunkList(RedisResult knnSearchResult)
         {
             var retrievedChunks = new List<RetrievedChunk>();
 
-            for (var i = 1; i < searchResult.Length; i += 2)
+            for (var i = 1; i < knnSearchResult.Length; i += 2)
             {
-                var key = (string?)searchResult[i];
-                var fields = searchResult[i + 1];
-                var fieldMap = new Dictionary<string, string>();
-
-                for (var f = 0; f < fields.Length; f += 2)
-                {
-                    fieldMap[(string)fields[f]!] = (string)fields[f + 1]!;
-
-                }
+                var key = (string?)knnSearchResult[i];
+                var fieldMap = BuildFieldMap(knnSearchResult[i + 1]);
 
                 retrievedChunks.Add(new RetrievedChunk
                 {
@@ -167,14 +160,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             {
                 var key = (string?)lexicalSearchResult[i];
                 var lexicalScore = (double)lexicalSearchResult[i + 1];
-                var fields = lexicalSearchResult[i + 2];
-                var fieldMap = new Dictionary<string, string>();
-
-                for (var f = 0; f < fields.Length; f += 2)
-                {
-                    fieldMap[(string)fields[f]!] = (string)fields[f + 1]!;
-
-                }
+                var fieldMap = BuildFieldMap(lexicalSearchResult[i + 2]);
 
                 retrievedChunks.Add(new RetrievedChunk
                 {
@@ -186,6 +172,19 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             }
 
             return retrievedChunks;
+        }
+
+        private static Dictionary<string,string> BuildFieldMap(RedisResult searchResult)
+        {
+            var fieldMap = new Dictionary<string, string>();
+
+            for (var f = 0; f < searchResult.Length; f += 2)
+            {
+                fieldMap[(string)searchResult[f]!] = (string)searchResult[f + 1]!;
+
+            }
+
+            return fieldMap;
         }
 
         public async Task<Dictionary<string, string>> GetSourceFileContentsAsync(IEnumerable<string> sourceFiles)

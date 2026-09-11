@@ -13,20 +13,17 @@ namespace TradingApp.Infrastructure.Services
         private readonly ILogger<AnthropicApiService> _logger;
         private readonly AnthropicClient _anthropicClient;
         private readonly IAsyncPolicy _resiliencePolicy;
-        private readonly IFileDebugLogger _fileDebugLogger;
 
         public AnthropicApiService
         (
             ILogger<AnthropicApiService> logger,
             AnthropicClient anthropicClient,
-            [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy,
-            IFileDebugLogger fileDebugLogger
+            [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy
         )
         {
             _logger = logger;
             _anthropicClient = anthropicClient;
             _resiliencePolicy = resiliencePolicy;
-            _fileDebugLogger = fileDebugLogger;
         }
 
         public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string userMessage)

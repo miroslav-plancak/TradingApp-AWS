@@ -1,8 +1,8 @@
 using TradingApp.Infrastructure.Models.Retrieval;
-using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Helpers.Retrieval
 {
+    //TODO: expand this with other system prompts from other anthropic API calls
     public static class SystemPromptBuilder
     {
         public static string BuildSystemPrompt(RetrievalResult retrievalResult)

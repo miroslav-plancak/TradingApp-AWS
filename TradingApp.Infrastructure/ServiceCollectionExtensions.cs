@@ -181,11 +181,9 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
-        // ==================== RAG - Ingestion ====================
-
-        public static IServiceCollection AddVoyageEmbeddingServices(this IServiceCollection services)
+        public static IServiceCollection AddVoyageApiServices(this IServiceCollection services)
         {
-            services.AddHttpClient<IVoyageEmbeddingService, VoyageEmbeddingService>((sp, client) =>
+            services.AddHttpClient<IVoyageApiService, VoyageApiService>((sp, client) =>
             {
                 var configuration = sp.GetRequiredService<IConfiguration>();
                 var apiKey = configuration["Voyage:ApiKey"]
@@ -195,6 +193,14 @@ namespace TradingApp.Infrastructure
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             });
 
+            return services;
+        }
+
+        // ==================== RAG - Ingestion ====================
+
+        public static IServiceCollection AddVoyageEmbeddingServices(this IServiceCollection services)
+        {
+            services.AddScoped<IVoyageEmbeddingService, VoyageEmbeddingService>();
             return services;
         }
 
@@ -208,16 +214,7 @@ namespace TradingApp.Infrastructure
 
         public static IServiceCollection AddVoyageRerankingServices(this IServiceCollection services)
         {
-            services.AddHttpClient<IVoyageRerankService, VoyageRerankService>((sp, client) =>
-            {
-                var configuration = sp.GetRequiredService<IConfiguration>();
-                var apiKey = configuration["Voyage:ApiKey"]
-                    ?? throw new InvalidOperationException("Voyage:ApiKey configuration value is not set.");
-
-                client.BaseAddress = new Uri("https://api.voyageai.com/v1/");
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            });
-
+            services.AddScoped<IVoyageRerankService, VoyageRerankService>();
             return services;
         }
 
