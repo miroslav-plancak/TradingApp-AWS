@@ -33,7 +33,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
         {
             return RetrievalPolicyResolver.ResolvePolicyValue(routedLlmQueryResponse, x => x.MaxChunksPerFile);
         }
-       
-      
+
+
     }
 }

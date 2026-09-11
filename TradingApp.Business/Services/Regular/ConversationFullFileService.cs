@@ -106,7 +106,7 @@ namespace TradingApp.Business.Services.Regular
                 _logger.LogInformation("ConversationFullFilesResolveForSuppliedChunksSuccessful | ConversationId: {ConversationId}", conversationId);
 
                 return matchedFullFileDtos;
-              
+
             }
             catch (Exception ex)
             {

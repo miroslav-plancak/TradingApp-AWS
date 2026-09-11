@@ -174,7 +174,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             return retrievedChunks;
         }
 
-        private static Dictionary<string,string> BuildFieldMap(RedisResult searchResult)
+        private static Dictionary<string, string> BuildFieldMap(RedisResult searchResult)
         {
             var fieldMap = new Dictionary<string, string>();
 

@@ -3,6 +3,7 @@ using Anthropic.Models.Messages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
+using System.Text;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
 
@@ -59,6 +60,130 @@ namespace TradingApp.Infrastructure.Services
                 _logger.LogError(ex, "AnthropicPromptUnexpectedFailure | Question: {UserMessage}", userMessage);
                 return null;
             }
+        }
+
+        public async IAsyncEnumerable<string> EstablishStreamAsync
+        (
+                 string userMessage,
+                 Guid conversationId,
+                 bool isNewConversation,
+                 MessageCreateParams messageCreateParams,
+                 Func<Guid, Task<bool>> deleteConversationHandler,
+                 Func<string, Task> persistUserMessageHandler,
+                 Func<string, Task> persistAssistantMessageHandler
+        )
+        {
+            IAsyncEnumerator<RawMessageStreamEvent>? enumerator = null;
+            string? firstText = null;
+            var bootstrapFailed = false;
+
+            try
+            {
+                (enumerator, firstText) = await _resiliencePolicy.ExecuteAsync(async () =>
+                {
+                    var e = _anthropicClient.Messages.CreateStreaming(messageCreateParams).GetAsyncEnumerator();
+
+                    while (await e.MoveNextAsync())
+                    {
+                        if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                        {
+                            return (e, text.Text);
+                        }
+                    }
+
+                    return (e, (string?)null);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Streaming failure before any content was produced for message: {UserMessage}", userMessage);
+                bootstrapFailed = true;
+            }
+
+            if (bootstrapFailed || enumerator is null)
+            {
+                if (isNewConversation)
+                {
+                    try
+                    {
+                        await deleteConversationHandler(conversationId);
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        _logger.LogError(deleteEx, "Failed to clean up orphaned conversation {ConversationId} after bootstrap failure", conversationId);
+                    }
+                }
+
+                throw new InvalidOperationException("There was an error processing your request. Please try again.");
+            }
+
+            await using (enumerator)
+            {
+                try
+                {
+                    await persistUserMessageHandler(userMessage);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to add the conversation message for conversation: {ConversationId}", conversationId);
+                    throw new InvalidOperationException("There was an error processing your request. Please try again.");
+                }
+
+                var hasYieldedAnyContent = false;
+                var stringBuilder = new StringBuilder();
+                var assistantMessageAccumulated = "";
+
+                if (firstText is not null)
+                {
+                    assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, firstText);
+                    hasYieldedAnyContent = true;
+                    yield return firstText;
+                }
+
+                while (true)
+                {
+                    var hasNext = false;
+                    var streamFailed = false;
+
+                    try
+                    {
+                        hasNext = await enumerator.MoveNextAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Streaming failure while answering message: {UserMessage} | AnyContentYielded: {HasYieldedAnyContent}",
+                            userMessage, hasYieldedAnyContent);
+                        streamFailed = true;
+                    }
+
+                    if (streamFailed)
+                        throw new InvalidOperationException("The response was interrupted partway through. Please try again.");
+
+                    if (!hasNext)
+                    {
+                        await persistAssistantMessageHandler(assistantMessageAccumulated);
+
+                        yield break;
+                    }
+
+                    if (enumerator.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                    {
+                        hasYieldedAnyContent = true;
+                        assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, text.Text);
+                        yield return text.Text;
+                    }
+                }
+            }
+        }
+
+        private static string BuildAssistantConversationMessage
+        (
+           StringBuilder stringBuilder,
+           string assistantMessage
+        )
+        {
+            stringBuilder.Append(assistantMessage);
+            return stringBuilder.ToString();
         }
     }
 }

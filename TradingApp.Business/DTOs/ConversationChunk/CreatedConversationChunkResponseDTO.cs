@@ -2,7 +2,7 @@
 
 namespace TradingApp.Business.DTOs.ConversationChunk
 {
-    public class CreatedConversationChunkResponseDTO 
+    public class CreatedConversationChunkResponseDTO
     {
         public required Guid ConversationId { get; set; }
         public required string Key { get; set; }

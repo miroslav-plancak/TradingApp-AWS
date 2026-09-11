@@ -2,7 +2,7 @@
 using TradingApp.Business.DTOs.ConversationFullFile;
 
 namespace TradingApp.Infrastructure.Models.ConversationMemory
-{   
+{
     public class ReusableConversationArtifacts
     {
         public List<CreatedConversationChunkResponseDTO> ConversationChunks { get; set; } = [];

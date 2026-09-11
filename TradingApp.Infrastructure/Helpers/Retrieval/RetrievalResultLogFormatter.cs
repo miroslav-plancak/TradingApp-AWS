@@ -111,7 +111,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
         public static string FormatArbiterResponseIntoFileLog(ArbiterResponse? messages)
         {
-            if (messages == null || messages.ChunkKeys.Count == 0) 
+            if (messages == null || messages.ChunkKeys.Count == 0)
                 return "Arbiter judged the existing conversationChunks pool insufficient - 0 keys returned.";
 
             var helperDivider = new string('-', 80);

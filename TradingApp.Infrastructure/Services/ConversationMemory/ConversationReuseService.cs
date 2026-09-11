@@ -34,7 +34,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             string userMessage
         )
         {
-            try 
+            try
             {
                 var allExistingConversationChunks = await _conversationChunkService.GetConversationChunksAsync(conversationId);
 
@@ -42,13 +42,13 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
                 var reusableConversationFullFiles = await _conversationFullFileService.ResolveFullFilesForChunksAsync(reusableConversationChunks);
 
-                return new ReusableConversationArtifacts() 
-                { 
-                    ConversationChunks = reusableConversationChunks, 
-                    ConversationFullFiles = reusableConversationFullFiles 
+                return new ReusableConversationArtifacts()
+                {
+                    ConversationChunks = reusableConversationChunks,
+                    ConversationFullFiles = reusableConversationFullFiles
                 };
 
-            } 
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving conversation artifacts for the question: {UserMessage}", userMessage);
@@ -63,7 +63,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             Dictionary<string, string> fullFileContents
         )
         {
-            try 
+            try
             {
                 await _conversationChunkService.CreateConversationChunksAsync(
                     RetrievalResultMapping.ToCreateConversationChunkRequestDTOs(retrievedChunks, conversationId));
