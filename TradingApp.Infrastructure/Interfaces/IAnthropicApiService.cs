@@ -13,7 +13,8 @@ namespace TradingApp.Infrastructure.Interfaces
                  MessageCreateParams messageCreateParams,
                  Func<Guid, Task<bool>> deleteConversationHandler,
                  Func<string, Task> persistUserMessageHandler,
-                 Func<string, Task> persistAssistantMessageHandler
+                 Func<string, Task> persistAssistantMessageHandler,
+                 Func<StopReason, Task> stopReasonHandler
         );
     }
 }

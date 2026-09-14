@@ -101,6 +101,10 @@ namespace TradingApp.API.Hubs
                         Role = ConversationMessageRole.Assistant,
                         Body = body
                     });
+                },
+                async (response) =>
+                {
+                    await NotifyStopReasonAsync(response.ToString());
                 }
             ).GetAsyncEnumerator();
 
@@ -196,6 +200,18 @@ namespace TradingApp.API.Hubs
                 }
 
                 throw;
+            }
+        }
+
+        private async Task NotifyStopReasonAsync(string stopReason)
+        {
+            try 
+            {
+                await Clients.Caller.SendAsync("ResponseTruncated", stopReason);
+            }
+            catch(Exception ex) 
+            {
+                _logger.LogWarning(ex, "Failed to notify client of stop reason {StopReason}", stopReason);
             }
         }
 
