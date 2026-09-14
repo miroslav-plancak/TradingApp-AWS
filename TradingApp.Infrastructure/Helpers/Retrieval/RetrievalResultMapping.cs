@@ -62,12 +62,12 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
         public static RetrievalResult ToRetrievalResult(ReusableConversationArtifacts content)
         {
-            if (content.ConversationFullFiles.Count == 0 && content.ConversationChunks.Count == 0) 
+            if (content.ConversationFullFiles.Count == 0 && content.ConversationChunks.Count == 0)
                 return new RetrievalResult() { ChunkFallbacks = [], FullFileContents = [] };
 
             var fullFileContents = ToFullFileContents(content.ConversationFullFiles);
 
-            return new RetrievalResult 
+            return new RetrievalResult
             {
                 ChunkFallbacks = ToRetrievedChunks(content.ConversationChunks)
                                      .Where(x => !fullFileContents.ContainsKey(x.SourceFile ?? string.Empty))

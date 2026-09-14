@@ -39,7 +39,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
         // fed to it and the RelevanceFloor cut off is based off of RetrievedChunk's RelevanceScore which is set downstream of these two methods.
         public static (Dictionary<string, int>, Dictionary<string, int>) ComputeChunksRankMaps
         (
-            List<RetrievedChunk> retrievedKnnChunks, 
+            List<RetrievedChunk> retrievedKnnChunks,
             List<RetrievedChunk> retrievedLexicalChunks
         )
         {

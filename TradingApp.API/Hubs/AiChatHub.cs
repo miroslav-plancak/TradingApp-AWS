@@ -1,23 +1,16 @@
-﻿using Anthropic;
-using Anthropic.Models.Messages;
+﻿using Anthropic.Models.Messages;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Polly;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain.Models.Enums;
-using TradingApp.Infrastructure;
-using TradingApp.Infrastructure.Helpers;
-using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 using TradingApp.Infrastructure.Helpers.Retrieval;
+using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Retrieval;
 
@@ -26,28 +19,25 @@ namespace TradingApp.API.Hubs
     public class AiChatHub : Hub
     {
         private readonly ILogger<AiChatHub> _logger;
-        private readonly AnthropicClient _anthropicClient;
-        private readonly IChunkRetrievalService _chunkRetrievalService;
-        private readonly IAsyncPolicy _resiliencePolicy;
-        private readonly IConversationService _conversationService;
         private readonly IFileDebugLogger _fileDebugLogger;
+        private readonly IChunkRetrievalService _chunkRetrievalService;
+        private readonly IConversationService _conversationService;
+        private readonly IAnthropicApiService _anthropicApiService;
 
         public AiChatHub
         (
             ILogger<AiChatHub> logger,
             IFileDebugLogger fileDebugLogger,
-            AnthropicClient anthropicClient,
             IChunkRetrievalService chunkRetrievalService,
-            [FromKeyedServices(ResiliencePolicyKey.AnthropicAPI)] IAsyncPolicy resiliencePolicy,
-            IConversationService conversationService
+            IConversationService conversationService,
+            IAnthropicApiService anthropicApiService
         )
         {
             _logger = logger;
             _fileDebugLogger = fileDebugLogger;
-            _anthropicClient = anthropicClient;
             _chunkRetrievalService = chunkRetrievalService;
-            _resiliencePolicy = resiliencePolicy;
             _conversationService = conversationService;
+            _anthropicApiService = anthropicApiService;
         }
 
         public override Task OnConnectedAsync()
@@ -55,6 +45,109 @@ namespace TradingApp.API.Hubs
             _logger.LogInformation("AiChatHub client connected | ConnectionId: {ConnectionId}", Context.ConnectionId);
 
             return base.OnConnectedAsync();
+        }
+
+        public async IAsyncEnumerable<string> SendUserMessage
+        (
+            string userMessage,
+            Guid? conversationId,
+            Guid? clientRequestId
+        )
+        {
+            if (string.IsNullOrWhiteSpace(userMessage))
+                throw new HubException("Message cannot be empty.");
+
+            var (isNewConversation, existingConversation) = await ResolveConversationAsync(conversationId, clientRequestId, userMessage);
+
+            var retrievalResult = await RetrieveAdditionalContextAsync(userMessage, existingConversation.ConversationId);
+
+            var conversationMessagesHistory = await RetrieveConversationHistoryAsync(existingConversation.ConversationId, userMessage);
+
+            AppendUserMessageToHistory(conversationMessagesHistory, userMessage);
+
+            await _fileDebugLogger.LogSectionAsync("0-conversation-history", $"Current user/assistant correspodence:",
+                            RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
+
+            var parameters = ConfigureMessageParams(retrievalResult, conversationMessagesHistory);
+
+            await foreach (var textChunk in _anthropicApiService.EstablishStreamAsync
+            (
+                userMessage,
+                existingConversation.ConversationId,
+                isNewConversation,
+                parameters,
+                async (convId) =>
+                {
+                    return await _conversationService.DeleteConversationByIdAsync(convId);
+                },
+                async (body) =>
+                {
+                    await _conversationService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
+                    {
+                        ConversationId = existingConversation.ConversationId,
+                        ClientRequestId = clientRequestId,
+                        Role = ConversationMessageRole.User,
+                        Body = body
+                    });
+                },
+                async (body) =>
+                {
+                    await _conversationService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
+                    {
+                        ConversationId = existingConversation.ConversationId,
+                        ClientRequestId = null,
+                        Role = ConversationMessageRole.Assistant,
+                        Body = body
+                    });
+                }
+            ))
+            {
+                yield return textChunk;
+            }
+        }
+
+        private async Task<(bool isNewConversation, CreatedConversationResponseDTO existingConversation)> ResolveConversationAsync
+        (
+            Guid? conversationId,
+            Guid? clientRequestId,
+            string userMessage
+        )
+        {
+            CreatedConversationResponseDTO existingConversation;
+
+            try
+            {
+                if (conversationId == null)
+                {
+                    existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
+
+                    await NotifyConversationStartedAsync(existingConversation.ConversationId);
+
+                    return (true, existingConversation);
+                }
+                else
+                {
+                    try
+                    {
+                        existingConversation = await _conversationService.GetConversationByIdAsync(conversationId.Value);
+
+                        return (false, existingConversation);
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
+
+                        await NotifyConversationStartedAsync(existingConversation.ConversationId);
+
+                        return (true, existingConversation);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to establish conversation context for message: {UserMessage}", userMessage);
+                throw new HubException("There was an error processing your request. Please try again.");
+            }
         }
 
         private async Task NotifyConversationStartedAsync(Guid newConversationId)
@@ -80,209 +173,76 @@ namespace TradingApp.API.Hubs
             }
         }
 
-        public async IAsyncEnumerable<string> SendUserMessage
+        private async Task<RetrievalResult> RetrieveAdditionalContextAsync
         (
             string userMessage,
-            Guid? conversationId,
-            Guid? clientRequestId
+            Guid existingConversationId
         )
         {
-            if (string.IsNullOrWhiteSpace(userMessage))
-                throw new HubException("Message cannot be empty.");
-
             var retrievalResult = new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
-            CreatedConversationResponseDTO existingConversation;
-            CreatedConversationMessageResponseDTO userCreatedConversationMessage;
-            CreatedConversationMessageResponseDTO assistantCreatedConversationMessage;
-            List<ConversationMessageDTO> conversationMessagesHistory = [];
-            var isNewConversation = false;
-
-            //1. we create a conversation or load existing
-            try
-            {
-                if (conversationId == null)
-                {
-                    existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
-                    await NotifyConversationStartedAsync(existingConversation.ConversationId);
-                    isNewConversation = true;
-                }
-                else
-                {
-                    try
-                    {
-                        existingConversation = await _conversationService.GetConversationByIdAsync(conversationId.Value);
-                        isNewConversation = false;
-                    }
-                    catch (KeyNotFoundException)
-                    {
-                        existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
-                        await NotifyConversationStartedAsync(existingConversation.ConversationId);
-                        isNewConversation = true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to establish conversation context for message: {UserMessage}", userMessage);
-                throw new HubException("There was an error processing your request. Please try again.");
-            }
 
             try
             {
-                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userMessage, existingConversation.ConversationId);
+                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userMessage, existingConversationId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected failure retrieving context for message: {UserMessage}", userMessage);
             }
 
-            //4. retrieve from the permanence source rows of role/content (role/body in db) for both user/assistant, sorted by createdAt ascending + append to the end current input message from SendUserMessage
+            return retrievalResult;
+        }
+
+        private async Task<List<ConversationMessageDTO>> RetrieveConversationHistoryAsync
+        (
+            Guid existingConversationId,
+            string userMessage
+        )
+        {
+            List<ConversationMessageDTO> conversationMessagesHistory = [];
             try
             {
-                conversationMessagesHistory = await _conversationService.GetConversationMessagesAsync(existingConversation.ConversationId);
+                conversationMessagesHistory = await _conversationService.GetConversationMessagesAsync(existingConversationId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected failure retrieving conversation messages for message: {UserMessage}", userMessage);
             }
 
+            return conversationMessagesHistory;
+        }
+
+        private static void AppendUserMessageToHistory
+        (
+            List<ConversationMessageDTO> conversationMessagesHistory,
+            string userMessage
+        )
+        {
             conversationMessagesHistory.Add(
-              new ConversationMessageDTO
-              {
-                  Role = ConversationMessageRole.User.ToString().ToLower(),
-                  Content = userMessage
-              }
+                new ConversationMessageDTO
+                {
+                    Role = ConversationMessageRole.User.ToString().ToLower(),
+                    Content = userMessage
+                }
             );
+        }
 
-            await _fileDebugLogger.LogSectionAsync("0-conversation-history", $"Current user/assistant correspodence:",
-                            RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
-
-            var parameters = new MessageCreateParams
+        private static MessageCreateParams ConfigureMessageParams
+        (
+            RetrievalResult retrievalResult,
+            List<ConversationMessageDTO> conversationMessagesHistory
+        )
+        {
+            return new MessageCreateParams
             {
                 Model = "claude-sonnet-5",
                 MaxTokens = 4096,
                 System = SystemPromptBuilder.BuildSystemPrompt(retrievalResult),
                 Messages = ToAnthropicMessageParams(conversationMessagesHistory)
             };
-
-            IAsyncEnumerator<RawMessageStreamEvent> enumerator = null;
-            string firstText = null;
-            var bootstrapFailed = false;
-
-            try
-            {
-                (enumerator, firstText) = await _resiliencePolicy.ExecuteAsync(async () =>
-                {
-                    var e = _anthropicClient.Messages.CreateStreaming(parameters).GetAsyncEnumerator();
-
-                    while (await e.MoveNextAsync())
-                    {
-                        if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
-                        {
-                            return (e, text.Text);
-                        }
-                    }
-
-                    return (e, (string)null);
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Streaming failure before any content was produced for message: {UserMessage}", userMessage);
-                bootstrapFailed = true;
-            }
-
-            if (bootstrapFailed || enumerator is null)
-            {
-                if (isNewConversation)
-                {
-                    try
-                    {
-                        await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
-                    }
-                    catch (Exception deleteEx)
-                    {
-                        _logger.LogError(deleteEx, "Failed to clean up orphaned conversation {ConversationId} after bootstrap failure", existingConversation.ConversationId);
-                    }
-                }
-
-                throw new HubException("There was an error processing your request. Please try again.");
-            }
-
-            await using (enumerator)
-            {   //2. we persist user message into the existing conversation
-                try
-                {
-                    userCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
-                        new CreateConversationMessageRequestDTO()
-                        {
-                            ConversationId = existingConversation.ConversationId,
-                            ClientRequestId = clientRequestId,
-                            Role = ConversationMessageRole.User,
-                            Body = userMessage
-                        });
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to add the conversation message for conversation: {ConversationId}", existingConversation.ConversationId);
-                    throw new HubException("There was an error processing your request. Please try again.");
-                }
-
-                var hasYieldedAnyContent = false;
-                var stringBuilder = new StringBuilder();
-                var assistantMessageAccumulated = "";
-
-                if (firstText is not null)
-                {
-                    assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, firstText);
-                    hasYieldedAnyContent = true;
-                    yield return firstText;
-                }
-
-                while (true)
-                {
-                    var hasNext = false;
-                    var streamFailed = false;
-
-                    try
-                    {
-                        hasNext = await enumerator.MoveNextAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Streaming failure while answering message: {UserMessage} | AnyContentYielded: {HasYieldedAnyContent}",
-                            userMessage, hasYieldedAnyContent);
-                        streamFailed = true;
-                    }
-
-                    if (streamFailed)
-                        throw new HubException("The response was interrupted partway through. Please try again.");
-                    //3. we persist assistant message into the existing conversation
-                    if (!hasNext)
-                    {
-                        assistantCreatedConversationMessage = await _conversationService.CreateConversationMessageAsync(
-                            new CreateConversationMessageRequestDTO()
-                            {
-                                ConversationId = existingConversation.ConversationId,
-                                ClientRequestId = null,
-                                Role = ConversationMessageRole.Assistant,
-                                Body = assistantMessageAccumulated
-                            });
-
-                        yield break;
-                    }
-
-                    if (enumerator.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
-                    {
-                        hasYieldedAnyContent = true;
-                        assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, text.Text);
-                        yield return text.Text;
-                    }
-                }
-            }
         }
 
-        private IReadOnlyList<MessageParam> ToAnthropicMessageParams(List<ConversationMessageDTO> conversationMessages)
+        private static IReadOnlyList<MessageParam> ToAnthropicMessageParams(List<ConversationMessageDTO> conversationMessages)
         {
             if (conversationMessages.Count == 0) return [];
 
@@ -292,17 +252,6 @@ namespace TradingApp.API.Hubs
                     Role = x.Role,
                     Content = x.Content
                 }).ToList();
-        }
-
-        private static string BuildAssistantConversationMessage
-        (
-            StringBuilder stringBuilder,
-            string assistantMessage
-        )
-        {
-            stringBuilder.Append(assistantMessage);
-
-            return stringBuilder.ToString();
         }
     }
 }

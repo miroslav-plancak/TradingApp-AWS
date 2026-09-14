@@ -12,8 +12,6 @@ using TradingApp.Business.Middleware;
 using TradingApp.Infrastructure;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Services;
-using TradingApp.Infrastructure.Services.Ingestion;
-using TradingApp.Infrastructure.Services.Retrieval;
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -37,7 +37,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             try
             {
-                var response = await _voyageApiService.DispatchRequestAsync<VoyageRerankRequest,VoyageRerankResponse>("rerank", request, ct);
+                var response = await _voyageApiService.DispatchRequestAsync<VoyageRerankRequest, VoyageRerankResponse>("rerank", request, ct);
 
                 return response.Data
                     .Select(x => new RerankResult { Index = x.Index, RelevanceScore = x.RelevanceScore })
