@@ -68,9 +68,9 @@ namespace TradingApp.Infrastructure.Services
                  Guid conversationId,
                  bool isNewConversation,
                  MessageCreateParams messageCreateParams,
-                 Func<Guid, Task<bool>> deleteConversationHandler,
-                 Func<string, Task> persistUserMessageHandler,
-                 Func<string, Task> persistAssistantMessageHandler
+                 Func<Guid,Task<bool>> deleteConversationHandler,
+                 Func<string,Task> persistUserMessageHandler,
+                 Func<string,Task> persistAssistantMessageHandler
         )
         {
             IAsyncEnumerator<RawMessageStreamEvent>? enumerator = null;
