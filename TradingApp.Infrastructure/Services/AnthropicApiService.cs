@@ -70,7 +70,8 @@ namespace TradingApp.Infrastructure.Services
                  MessageCreateParams messageCreateParams,
                  Func<Guid,Task<bool>> deleteConversationHandler,
                  Func<string,Task> persistUserMessageHandler,
-                 Func<string,Task> persistAssistantMessageHandler
+                 Func<string,Task> persistAssistantMessageHandler,
+                 Func<StopReason, Task> stopReasonHandler
         )
         {
             IAsyncEnumerator<RawMessageStreamEvent>? enumerator = null;
@@ -132,6 +133,7 @@ namespace TradingApp.Infrastructure.Services
                 var hasYieldedAnyContent = false;
                 var stringBuilder = new StringBuilder();
                 var assistantMessageAccumulated = "";
+                StopReason stopReason = StopReason.EndTurn;
 
                 if (firstText is not null)
                 {
@@ -163,6 +165,11 @@ namespace TradingApp.Infrastructure.Services
                     {
                         await persistAssistantMessageHandler(assistantMessageAccumulated);
 
+                        if (IsNotableStopReason(stopReason))
+                        {
+                            await stopReasonHandler(stopReason);
+                        }
+
                         yield break;
                     }
 
@@ -172,7 +179,35 @@ namespace TradingApp.Infrastructure.Services
                         assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, text.Text);
                         yield return text.Text;
                     }
+
+                    if(enumerator.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
+                    {
+                        stopReason = messageDelta.Delta.StopReason.Value();
+                    }
                 }
+            }
+        }
+
+        private static bool IsNotableStopReason(StopReason stopReason)
+        {
+            switch (stopReason)
+            {
+                case StopReason.EndTurn:
+                    return false;
+                case StopReason.PauseTurn:
+                    return false;
+                case StopReason.StopSequence:
+                    return false;
+                case StopReason.ToolUse:
+                    return false;
+                case StopReason.Refusal:
+                    return true;
+                case StopReason.ModelContextWindowExceeded:
+                    return true;
+                case StopReason.MaxTokens:
+                    return true;
+                default:
+                    return false;
             }
         }
 
