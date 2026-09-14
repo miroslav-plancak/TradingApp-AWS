@@ -70,7 +70,9 @@ namespace TradingApp.API.Hubs
 
             var parameters = ConfigureMessageParams(retrievalResult, conversationMessagesHistory);
 
-            await foreach (var textChunk in _anthropicApiService.EstablishStreamAsync
+            IAsyncEnumerator<string> enumerator = null;
+
+            enumerator = _anthropicApiService.EstablishStreamAsync
             (
                 userMessage,
                 existingConversation.ConversationId,
@@ -100,9 +102,33 @@ namespace TradingApp.API.Hubs
                         Body = body
                     });
                 }
-            ))
+            ).GetAsyncEnumerator();
+
+            await using (enumerator)
             {
-                yield return textChunk;
+                while (true)
+                {
+                    var hasNext = false;
+
+                    try
+                    {
+                        hasNext = await enumerator.MoveNextAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "General error occured while itterating through anthropic streaming response.");
+                        throw new HubException(ex.Message);
+                    }
+
+                    if (hasNext)
+                    {
+                        yield return enumerator.Current;
+                    }
+                    else
+                    {
+                        yield break;
+                    }
+                }
             }
         }
 
