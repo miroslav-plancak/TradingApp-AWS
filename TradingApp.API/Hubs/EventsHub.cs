@@ -7,25 +7,16 @@ using TradingApp.Business.Interfaces.Services;
 
 namespace TradingApp.API.Hubs
 {
-    public class EventsHub : Hub
+    public class EventsHub : BaseHub
     {
-        private readonly ILogger<EventsHub> _logger;
         private readonly IOrderService _orderService;
         public EventsHub
         (
             ILogger<EventsHub> logger,
             IOrderService orderService
-        )
+        ) : base(logger)
         {
-            _logger = logger;
             _orderService = orderService;
-        }
-
-        public override Task OnConnectedAsync()
-        {
-            _logger.LogInformation("EventsHub client connected | ConnectionId: {ConnectionId}", Context.ConnectionId);
-
-            return base.OnConnectedAsync();
         }
 
         public async Task RequestCurrentStatus(Guid orderId)

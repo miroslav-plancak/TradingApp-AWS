@@ -2,8 +2,8 @@
 {
     public enum PushEventOutcome
     {
-        SUCCESS,
-        FAILURE,
-        INVALIDEVENTREGISTRYKEY
+        Success,
+        Failure,
+        InvalidEventRegistryKey
     }
 }

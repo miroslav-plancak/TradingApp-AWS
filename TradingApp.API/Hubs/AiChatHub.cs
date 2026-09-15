@@ -17,9 +17,8 @@ using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.API.Hubs
 {
-    public class AiChatHub : Hub
+    public class AiChatHub : BaseHub
     {
-        private readonly ILogger<AiChatHub> _logger;
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IChunkRetrievalService _chunkRetrievalService;
         private readonly IConversationService _conversationService;
@@ -32,20 +31,12 @@ namespace TradingApp.API.Hubs
             IChunkRetrievalService chunkRetrievalService,
             IConversationService conversationService,
             IAnthropicApiService anthropicApiService
-        )
+        ) : base(logger)
         {
-            _logger = logger;
             _fileDebugLogger = fileDebugLogger;
             _chunkRetrievalService = chunkRetrievalService;
             _conversationService = conversationService;
             _anthropicApiService = anthropicApiService;
-        }
-
-        public override Task OnConnectedAsync()
-        {
-            _logger.LogInformation("AiChatHub client connected | ConnectionId: {ConnectionId}", Context.ConnectionId);
-
-            return base.OnConnectedAsync();
         }
 
         public async IAsyncEnumerable<string> SendUserMessage
