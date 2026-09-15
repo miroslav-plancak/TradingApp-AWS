@@ -144,8 +144,11 @@ Registered via `TradingApp.Infrastructure.ServiceCollectionExtensions.AddResilie
 (policy-building logic itself lives in `Helpers/ResiliencePolicyBuilder.cs`). Independently-circuited
 policies are keyed by `ResiliencePolicyKey` — `Sql` / `Aws` for the order-processing Lambdas above, plus
 `AnthropicAPI` / `VoyageAPI` / `RedisAPI` for the [AI Chat](#ai-chat--retrieval-augmented-code-assistant)
-pipeline below — so a downed SQL Server can't trip the same breaker guarding an SNS/SQS call, and a
-struggling Voyage API can't trip the one guarding Redis. Each policy wraps a 3-attempt
+pipeline below, and `SqlFast` (2 retries / 200ms, vs. the standard policy's 3-attempt exponential backoff)
+specifically for `ConversationMessage`/`ConversationChunk`/`ConversationFullFile` persistence — those calls
+sit inline in the live streaming path, so they get a tighter retry budget to avoid adding much latency to
+an already-in-progress response — so a downed SQL Server can't trip the same breaker guarding an SNS/SQS
+call, and a struggling Voyage API can't trip the one guarding Redis. Each policy wraps a 3-attempt
 exponential-backoff retry inside a circuit breaker (opens after 3 consecutive failures, 2-minute
 cooldown). The retry predicate is split by domain, one classifier per key —
 `IsTransientAWSException` (checks `AmazonServiceException`, e.g. throttling/503/502/504/408),
@@ -333,7 +336,12 @@ domain above, sharing only the DI container and resilience infrastructure.
 User question
      │
      ▼
-Query routing (Claude Haiku 4.5) ── classifies BROAD vs NARROW, feeds file-expansion below
+Conversation-reuse check (Claude Haiku 4.5 arbiter over this conversation's persisted chunk/file pool)
+     │
+     ├──► pool judged sufficient ──────────────────────────────► System prompt assembly (skip everything below)
+     │
+     ▼ (no persisted pool yet, or judged insufficient)
+Query routing (Claude Haiku 4.5) ── classifies BROAD vs NARROW, feeds file-expansion + per-file cap below
      │
      ├──► KNN search (Redis Stack, Voyage voyage-4-lite embeddings, K=10)
      └──► Lexical/BM25 search (RediSearch, identifier-shaped-token filter)
@@ -351,7 +359,10 @@ Query routing (Claude Haiku 4.5) ── classifies BROAD vs NARROW, feeds file-e
           Adaptive parent-file expansion (threshold set by query routing: 1 for BROAD, 2 for NARROW)
                     │
                     ▼
-          Per-file chunk cap (Take(3) for files not fully expanded)
+          Adaptive per-file chunk cap (5 for BROAD, 3 for NARROW/INCONCLUSIVE, for files not fully expanded)
+                    │
+                    ▼
+          Persist this turn's chunk/file pool for future reuse-check turns
                     │
                     ▼
           System prompt assembly → Claude Sonnet 5 → streamed back over SignalR
@@ -378,12 +389,38 @@ misses on its own.
 | `ChunkRerankingService` | Voyage rerank-2.5 wrapper |
 | `FileExpansionService` | Decides which files get expanded to full text, adaptively |
 | `SystemPromptBuilder` | Assembles the final context sent to Claude |
+| `ConversationReuseService` | Reads/writes this conversation's persisted chunk/full-file pool, calls the arbiter below to decide whether it's reusable |
+| `ConversationChunkArbiterService` | LLM-based (Claude Haiku 4.5) sufficiency judgment over the persisted pool vs. the new question — the gate that skips the rest of the pipeline on a hit |
 | `IFileDebugLogger` | Generic, reusable file-based debug logger (retrieval tuning, not app logging) |
 
-`AiChatHub.Ask(string userQuestion)` (`TradingApp.API/Hubs/AiChatHub.cs`) is the orchestrating SignalR
-streaming Hub method — `async IAsyncEnumerable<string>`, one `yield return` per streamed text chunk —
-calling `ChunkRetrievalService.RetrieveRelevantContextAsync` (the thin orchestrator composing the
-services above) before streaming Claude's answer back.
+`AiChatHub.SendUserMessage(string userMessage, Guid? conversationId, Guid? clientRequestId)`
+(`TradingApp.API/Hubs/AiChatHub.cs`) is the orchestrating SignalR streaming Hub method — `async
+IAsyncEnumerable<string>`, one `yield return` per streamed text chunk — calling
+`ChunkRetrievalService.RetrieveRelevantContextAsync(userMessage, conversationId)` (the thin orchestrator
+composing the services above) before streaming Claude's answer back.
+
+### Conversation Persistence
+
+4 tables in `Database/TradingApp_Setup.sql`: `Conversations`, `ConversationMessages`,
+`ConversationChunks`, `ConversationFullFiles` — separate from the 7 order-processing tables above, no
+FK constraints (matches this schema's existing convention).
+
+On the first message in a conversation, `AiChatHub` mints a new `Conversation` row and pushes its id to
+the client over a dedicated `ConversationStarted` side-channel (`Clients.Caller.SendAsync`, fired before
+the text stream starts) rather than smuggling it into the `IAsyncEnumerable<string>` stream itself. Every
+subsequent turn on that conversation includes the id, and the full prior history (one `ConversationMessage`
+row per `User`/`Assistant` message, not per turn) is replayed as Anthropic's alternating `Messages` array —
+no summarization or truncation yet. Both `Conversation` and `ConversationMessage` carry a `ClientRequestId`
+idempotency key (a table-wide unique filtered index on `Conversations`, a composite
+`(ConversationId, ClientRequestId)` unique filtered index on `ConversationMessages`) so a retried SignalR
+call after a dropped connection can't create duplicate rows.
+
+Each turn's retrieved chunks and expanded files are also persisted into `ConversationChunks`/
+`ConversationFullFiles`, deduplicated per conversation. On the *next* turn, `ConversationChunkArbiterService`
+makes a cheap Haiku call asking whether that persisted pool already covers the new question — a hit skips
+query routing, KNN, lexical search, re-ranking, the relevance floor, and file expansion entirely for that
+turn (see the pipeline diagram above), since the previous turn's retrieved content is judged sufficient to
+answer a same-topic follow-up without re-running retrieval from scratch.
 
 ### Streaming resilience
 
@@ -392,32 +429,47 @@ main Anthropic streaming call) is wrapped in a keyed Polly `IAsyncPolicy`, same 
 shape as the order-processing Lambdas above but with its own vendor-specific transient-exception
 classifier per resource (see [Resilience Policies](#resilience-policies-polly-retry--circuit-breaker)).
 
-`Ask()` can't use `await foreach` for the streaming call — C# forbids `yield` inside a `try` block that
-has a `catch` (CS1626), so the original `await foreach` + `yield return` loop had no way to catch
-anything at all. Fixed by manually driving the stream's `IAsyncEnumerator` instead: a retry-wrapped
-bootstrap phase pulls (with Polly retry) until the first real text delta — safe to retry since nothing
-has reached the client yet — then an unretried per-chunk loop for the rest of the stream, since content
-may already be flowing to the client by then. A genuine failure in either phase throws `HubException`
-(not a plain exception — SignalR suppresses a plain exception's message into a generic string by
-default; `HubException` is the one type documented to send its message to the client unmodified), which
-the frontend's error signal and Retry button pick up.
+`SendUserMessage()` can't use `await foreach` for the streaming call — C# forbids `yield` inside a `try`
+block that has a `catch` (CS1626), so a plain `await foreach` + `yield return` loop has no way to catch
+anything at all. Fixed by manually driving the stream's `IAsyncEnumerator` instead, at two layers:
+`AnthropicApiService.EstablishStreamAsync` itself drives the Anthropic SDK's own enumerator, with a
+retry-wrapped bootstrap phase (Polly retry, since nothing has reached the client yet) until the first real
+text delta, then an unretried per-chunk loop for the rest of the stream — a bootstrap failure throws a
+`ChatStreamFailureException` carrying both the real Anthropic error message and whether it's retryable
+(deliberately a plain exception, not `HubException` — `TradingApp.Infrastructure` has no SignalR
+dependency). `AiChatHub` then drives *that* method's returned enumerator the same manual way, and its own
+`catch` re-throws as `HubException(ex.Message)` (SignalR suppresses a plain exception's message into a
+generic string by default; `HubException` is the one type documented to send its message to the client
+unmodified) — plus, for a non-retryable failure specifically, first fires a no-payload
+`NonRetryableChatFailure` side-channel so the frontend can hide the Retry button before the terminal
+`HubException` arrives.
 
 ### Frontend (`TradingApp-Frontend`, `features/ai-chat/`)
 
 Angular chat UI over its own SignalR connection (`AssistantHubService`, separate from the
 order-events push Hub): streamed answers rendered with VS Code Dark+-styled fenced code blocks and
 per-token syntax coloring (a hand-rolled C# tokenizer in `code-highlight.ts` — the same coloring applies
-to inline `` `code` `` spans as fenced blocks), a Retry button on the error banner, copy-and-ask example
-prompts grounded in what's actually indexed, and a collapsed placeholder rail reserved for conversation
-history (not built yet — single-shot only today).
+to inline `` `code` `` spans as fenced blocks), copy-and-ask example prompts grounded in what's actually
+indexed, a truncation notice banner (styled distinct from the error banner, since the answer genuinely
+streamed, just incompletely) when the backend's `ResponseTruncated` side-channel fires, and a Retry button
+on the error banner that's conditionally hidden via a `NonRetryableChatFailure` side-channel for failures
+retrying can't fix (bad API key, insufficient credits) — retrying those would just re-run the identical
+request into the identical wall.
+
+The conversation itself is fully multi-turn end to end on the backend (persisted history, the reuse-arbiter
+gate above) — the `conversationId` from `ConversationStarted` is kept and resent on every subsequent
+message. The chat UI, though, still only *renders* the latest single exchange (`lastMessage`/`answer` are
+singular signals reset on every send) — a collapsed placeholder rail is reserved for a real multi-conversation
+history view but isn't wired up yet, blocked on a "list all conversations" backend endpoint that doesn't
+exist at any layer yet (every existing method assumes the caller already knows the `conversationId`).
 
 ### Full write-ups
 
 Detailed, code-quoted design docs live in the sibling `fis learning/TradingApp-AWS/` folder (a personal
 learning-docs project, outside this repo) — `ChunkRetrievalStrategy.html` (every retrieval strategy and
 why it exists), `AiChatHubResilientStreaming.html` (the streaming/error-handling mechanism, with traced
-scenarios), `AskStateMachineLiveTrace.html` (an interactive step-through of `Ask()`'s real code next to
-its compiled state machine).
+scenarios), `AskStateMachineLiveTrace.html` (an interactive step-through of `SendUserMessage()`'s real
+code next to its compiled state machine — filename predates the `Ask`→`SendUserMessage` rename).
 
 ---
 
@@ -552,9 +604,7 @@ TradingApp-AWS/
 ├── TradingApp.Events/                                  # Shared event/payload contracts (plain project reference)
 ├── TradingApp.Infrastructure/                           # DI registration, resilience policies, SqsBatchHandler,
 │                                                          #   RAG pipeline services (Services/, Helpers/)
-├── TradingApp.LocalHarnessCore/                         # SqsHarness + ScheduledHarness — shared local-debug plumbing
-└── UI/
-    └── TradingAppUI.html                                # Single-file ops/testing dashboard
+└── TradingApp.LocalHarnessCore/                         # SqsHarness + ScheduledHarness — shared local-debug plumbing
 ```
 
 ---
@@ -565,5 +615,6 @@ TradingApp-AWS/
 OrderStatus:        0 = PENDING_ACK  |  1 = ACKNOWLEDGED  |  2 = REJECTED  |  3 = FILLED
 OutboxRetryReason:  0 = None  |  1 = SimpleQueueServiceUnavailable  |  2 = InvalidPayload  |  3 = DatabaseError  |  4 = Unknown
 DeadLetterCategory: 0 = BusinessFailure  |  1 = InfrastructureFailure
-ResiliencePolicyKey: Sql  |  Aws  |  AnthropicAPI  |  VoyageAPI  |  RedisAPI
+ResiliencePolicyKey: Sql  |  SqlFast  |  Aws  |  AnthropicAPI  |  VoyageAPI  |  RedisAPI
+ConversationMessageRole: User  |  Assistant
 ```
