@@ -9,6 +9,7 @@ using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Domain.Models.Enums;
+using TradingApp.Infrastructure.Exceptions;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
@@ -120,7 +121,13 @@ namespace TradingApp.API.Hubs
                     }
                     catch (Exception ex)
                     {
+                        if(ex is ChatStreamFailureException { IsRetryable: false })
+                        {
+                            await NotifyChatStreamFailureAsync(ex.Message);
+                        }
+
                         _logger.LogError(ex, "General error occured while itterating through anthropic streaming response.");
+
                         throw new HubException(ex.Message);
                     }
 
@@ -212,6 +219,18 @@ namespace TradingApp.API.Hubs
             catch(Exception ex) 
             {
                 _logger.LogWarning(ex, "Failed to notify client of stop reason {StopReason}", stopReason);
+            }
+        }
+
+        private async Task NotifyChatStreamFailureAsync(string message)
+        {
+            try
+            {
+                await Clients.Caller.SendAsync("NonRetryableChatFailure");
+            }
+            catch(Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to notify client of chat stream failure: {Mesage}", message);
             }
         }
 
