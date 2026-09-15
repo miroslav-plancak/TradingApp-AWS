@@ -1,5 +1,4 @@
-﻿using Amazon;
-using Amazon.SQS;
+﻿using Amazon.SQS;
 using Amazon.SQS.Model;
 using Microsoft.Extensions.Logging;
 using System;
@@ -20,11 +19,11 @@ namespace TradingApp.API.PushDispatch
             ILogger<SignalRPushBackgroundService> logger,
             string queueUrl,
             PushEventCallback handler,
+            IAmazonSQS sqsClient,
             CancellationToken stoppingToken
         )
         {
             logger.LogInformation("SignalR push listener started on {QueueUrl}", queueUrl);
-            var _sqsClient = new AmazonSQSClient(RegionEndpoint.EUNorth1);
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -32,7 +31,7 @@ namespace TradingApp.API.PushDispatch
 
                 try
                 {
-                    response = await _sqsClient.ReceiveMessageAsync(new ReceiveMessageRequest
+                    response = await sqsClient.ReceiveMessageAsync(new ReceiveMessageRequest
                     {
                         QueueUrl = queueUrl,
                         MaxNumberOfMessages = 10,
@@ -64,19 +63,19 @@ namespace TradingApp.API.PushDispatch
 
                         switch (pushEventOutcome)
                         {
-                            case PushEventOutcome.SUCCESS:
+                            case PushEventOutcome.Success:
 
-                                logger.LogWarning("EventPushedSuccesfully | MessageId: {MessageId} - discarding the message, not retrying.", message.MessageId);
+                                logger.LogInformation("EventPushedSuccesfully | MessageId: {MessageId} - discarding the message, not retrying.", message.MessageId);
                                 shouldDeleteMessage = true;
                                 break;
 
-                            case PushEventOutcome.FAILURE:
+                            case PushEventOutcome.Failure:
 
                                 logger.LogWarning("EntityNotFoundForPush | MessageId: {MessageId} - discarding the message, not retrying.", message.MessageId);
                                 shouldDeleteMessage = true;
                                 break;
 
-                            case PushEventOutcome.INVALIDEVENTREGISTRYKEY:
+                            case PushEventOutcome.InvalidEventRegistryKey:
 
                                 logger.LogWarning("InvalidRegistryKeyProvided | MessageId: {MessageId} - discarding the message, not retrying.", message.MessageId);
                                 shouldDeleteMessage = true;
@@ -91,7 +90,7 @@ namespace TradingApp.API.PushDispatch
 
                         if (shouldDeleteMessage)
                         {
-                            await _sqsClient.DeleteMessageAsync(queueUrl, message.ReceiptHandle, stoppingToken);
+                            await sqsClient.DeleteMessageAsync(queueUrl, message.ReceiptHandle, stoppingToken);
                         }
                     }
                     // In case we run into unforeesen exception, we retry.

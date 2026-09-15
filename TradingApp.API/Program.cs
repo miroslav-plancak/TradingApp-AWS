@@ -48,6 +48,7 @@ builder.Services.AddResiliencePolicy(ResiliencePolicyKey.RedisAPI, "RedisAPI", 2
 //docker run -p 6379:6379 redis to run local redis instance
 builder.Services.AddSignalR().AddStackExchangeRedis("localhost:6379");
 builder.Services.AddHostedService<SignalRPushBackgroundService>();
+builder.Services.AddSqsClient();
 //---------RAG retrieval pipeline dependencies ---------
 builder.Services.AddAnthropicClient();
 builder.Services.AddAnthropicApiService();

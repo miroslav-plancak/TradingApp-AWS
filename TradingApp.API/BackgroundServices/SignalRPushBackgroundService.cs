@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using Amazon.SQS;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -8,6 +9,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.API.Hubs;
 using TradingApp.API.PushDispatch;
+using TradingApp.Business.DTOs.DeadLetter;
+using TradingApp.Business.DTOs.Order;
+using TradingApp.Business.DTOs.Outbox;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Events.Events;
 
@@ -18,6 +22,7 @@ namespace TradingApp.API.BackgroundServices
         private readonly IHubContext<EventsHub> _hubContext;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<SignalRPushBackgroundService> _logger;
+        private readonly IAmazonSQS _sqsClient;
 
         private readonly string _queueUrl;
         private readonly Dictionary<string, PushEventCallback> _eventRegistry;
@@ -26,12 +31,14 @@ namespace TradingApp.API.BackgroundServices
         (
             IHubContext<EventsHub> hubContext,
             IServiceScopeFactory scopeFactory,
-            ILogger<SignalRPushBackgroundService> logger
+            ILogger<SignalRPushBackgroundService> logger,
+            IAmazonSQS sqsClient
         )
         {
             _hubContext = hubContext;
             _scopeFactory = scopeFactory;
             _logger = logger;
+            _sqsClient = sqsClient;
             _queueUrl = Environment.GetEnvironmentVariable("SIGNALR_PUSH_QUEUE_URL")
                 ?? throw new InvalidOperationException("SIGNALR_PUSH_QUEUE_URL environment variable is not set.");
 
@@ -50,7 +57,7 @@ namespace TradingApp.API.BackgroundServices
              {
                  return await PushEventTypeDispatcher(eventType, integrationEvent, cancellationToken);
 
-             }, stoppingToken);
+             },_sqsClient, stoppingToken);
         }
 
         private async Task<PushEventOutcome> PushEventTypeDispatcher
@@ -65,7 +72,7 @@ namespace TradingApp.API.BackgroundServices
                 if (!_eventRegistry.TryGetValue(eventType, out PushEventCallback handler))
                 {
                     _logger.LogError($"Supplied eventType key: {eventType} was not found in the eventRegistry.");
-                    return PushEventOutcome.INVALIDEVENTREGISTRYKEY;
+                    return PushEventOutcome.InvalidEventRegistryKey;
 
                 }
 
@@ -73,104 +80,76 @@ namespace TradingApp.API.BackgroundServices
             }
             catch (KeyNotFoundException)
             {
-                return PushEventOutcome.FAILURE;
-            }
-            catch (Exception)
-            {
-                throw;
+                return PushEventOutcome.Failure;
             }
         }
 
-        private async Task<PushEventOutcome> OrderEventTypeHandlerAsync
+        private async Task<PushEventOutcome> DispatchEntityPushAsync<TService, TResult>
         (
-            string eventType,
+            string eventName,
+            Func<TService, Guid, Task<TResult>> fetch,
             IntegrationEvent integrationEvent,
             CancellationToken cancellationToken
         )
+            where TService : notnull
         {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
 
-                var orderService = scope.ServiceProvider.GetRequiredService<IOrderService>();
-                var order = await orderService.GetOrderByClientOrderIdAsync(integrationEvent.ClientOrderId);
-                await _hubContext.Clients.All.SendAsync(nameof(OrderStatusChangedEvent), order, cancellationToken);
+                var service = scope.ServiceProvider.GetRequiredService<TService>();
+                var result = await fetch(service, integrationEvent.ClientOrderId);
+                await _hubContext.Clients.All.SendAsync(eventName, result, cancellationToken);
 
-                _logger.LogInformation($"OrderEventTypeHandlerAsync pushed {nameof(OrderStatusChangedEvent)} successfully.");
+                _logger.LogInformation("PushDispatchSucceeded | Event: {EventName}", eventName);
 
-                return PushEventOutcome.SUCCESS;
+                return PushEventOutcome.Success;
             }
             catch (KeyNotFoundException ex)
             {
-                _logger.LogWarning($"OrderEventTypeHandlerAsync failed pushing {nameof(OrderStatusChangedEvent)}, reason: {ex} ");
-                return PushEventOutcome.FAILURE;
+                _logger.LogWarning(ex, "PushDispatchFailed | Event: {EventName}", eventName);
+                return PushEventOutcome.Failure;
             }
             catch (Exception ex)
             {
-                throw new Exception($"OrderEventTypeHandlerAsync has encountered a general failure.", ex);
+                throw new Exception($"PushDispatch encountered a general failure for event: {eventName}.", ex);
             }
-
         }
 
-        private async Task<PushEventOutcome> OutboxMessageEventTypeHandlerAsync
+        private Task<PushEventOutcome> OrderEventTypeHandlerAsync
         (
             string eventType,
             IntegrationEvent integrationEvent,
             CancellationToken cancellationToken
-        )
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
+        ) =>
+            DispatchEntityPushAsync<IOrderService, OrderResponseDTO>(
+                nameof(OrderStatusChangedEvent),
+                (service, clientOrderId) => service.GetOrderByClientOrderIdAsync(clientOrderId),
+                integrationEvent,
+                cancellationToken);
 
-                var outboxMessageService = scope.ServiceProvider.GetRequiredService<IOutboxMessageService>();
-                var outboxMessage = await outboxMessageService.GetByClientOrderIdAsync(integrationEvent.ClientOrderId);
-                await _hubContext.Clients.All.SendAsync(nameof(OutboxMessageProcessedEvent), outboxMessage, cancellationToken);
-
-                _logger.LogInformation($"OutboxMessageEventTypeHandlerAsync pushed {nameof(OutboxMessageProcessedEvent)} successfully.");
-
-                return PushEventOutcome.SUCCESS;
-            }
-            catch (KeyNotFoundException ex)
-            {
-                _logger.LogWarning($"OutboxMessageEventTypeHandlerAsync failed pushing {nameof(OutboxMessageProcessedEvent)}, reason: {ex} ");
-                return PushEventOutcome.FAILURE;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"OutboxMessageEventTypeHandlerAsync has encountered a general failure.", ex);
-            }
-        }
-
-        private async Task<PushEventOutcome> DeadLetterLogEventTypeHandlerAsync
+        private Task<PushEventOutcome> OutboxMessageEventTypeHandlerAsync
         (
             string eventType,
             IntegrationEvent integrationEvent,
             CancellationToken cancellationToken
-        )
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
+        ) =>
+            DispatchEntityPushAsync<IOutboxMessageService, OutboxMessageResponseDTO>(
+                nameof(OutboxMessageProcessedEvent),
+                (service, clientOrderId) => service.GetByClientOrderIdAsync(clientOrderId),
+                integrationEvent,
+                cancellationToken);
 
-                var deadLetterLogService = scope.ServiceProvider.GetRequiredService<IDeadLetterService>();
-                var deadLetterLog = await deadLetterLogService.GetByClientOrderIdAsync(integrationEvent.ClientOrderId);
-                await _hubContext.Clients.All.SendAsync(nameof(DeadLetterLogPersistedEvent), deadLetterLog, cancellationToken);
-
-                _logger.LogInformation($"DeadLetterLogEventTypeHandlerAsync pushed {nameof(DeadLetterLogPersistedEvent)} successfully.");
-
-                return PushEventOutcome.SUCCESS;
-            }
-            catch (KeyNotFoundException ex)
-            {
-                _logger.LogWarning($"DeadLetterLogEventTypeHandlerAsync failed pushing {nameof(DeadLetterLogPersistedEvent)}, reason: {ex} ");
-                return PushEventOutcome.FAILURE;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"DeadLetterLogEventTypeHandlerAsync has encountered a general failure.", ex);
-            }
-        }
-
+        private Task<PushEventOutcome> DeadLetterLogEventTypeHandlerAsync
+        (
+            string eventType,
+            IntegrationEvent integrationEvent,
+            CancellationToken cancellationToken
+        ) =>
+            DispatchEntityPushAsync<IDeadLetterService, DeadLetterLogResponseDTO>(
+                nameof(DeadLetterLogPersistedEvent),
+                (service, clientOrderId) => service.GetByClientOrderIdAsync(clientOrderId),
+                integrationEvent,
+                cancellationToken);
     }
 }
