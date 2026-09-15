@@ -1,9 +1,11 @@
 ﻿using Anthropic;
+using Anthropic.Exceptions;
 using Anthropic.Models.Messages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Text;
+using TradingApp.Infrastructure.Exceptions;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Interfaces;
 
@@ -77,6 +79,8 @@ namespace TradingApp.Infrastructure.Services
             IAsyncEnumerator<RawMessageStreamEvent>? enumerator = null;
             string? firstText = null;
             var bootstrapFailed = false;
+            string? failureMessage = null;
+            var isRetryable = false;
 
             try
             {
@@ -91,7 +95,7 @@ namespace TradingApp.Infrastructure.Services
                             return (e, text.Text);
                         }
                     }
-
+                   
                     return (e, (string?)null);
                 });
             }
@@ -99,6 +103,10 @@ namespace TradingApp.Infrastructure.Services
             {
                 _logger.LogError(ex, "Streaming failure before any content was produced for message: {UserMessage}", userMessage);
                 bootstrapFailed = true;
+                failureMessage = ex is AnthropicApiException apiEx
+                    ? AnthropicErrorMessageParser.ExtractMessage(apiEx.ResponseBody)
+                    : ex.Message;
+                isRetryable = ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex);
             }
 
             if (bootstrapFailed || enumerator is null)
@@ -115,7 +123,7 @@ namespace TradingApp.Infrastructure.Services
                     }
                 }
 
-                throw new InvalidOperationException("There was an error processing your request. Please try again.");
+                throw new ChatStreamFailureException(failureMessage ?? "There was an error processing your request. Please try again.", isRetryable);
             }
 
             await using (enumerator)
@@ -180,7 +188,7 @@ namespace TradingApp.Infrastructure.Services
                         yield return text.Text;
                     }
 
-                    if(enumerator.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
+                    if (enumerator.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
                     {
                         stopReason = messageDelta.Delta.StopReason.Value();
                     }
