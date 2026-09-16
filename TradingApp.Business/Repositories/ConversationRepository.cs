@@ -57,6 +57,16 @@ namespace TradingApp.Business.Repositories
             }, $"{nameof(CreateConversationAsync)}:Save:{conversation.Id}");
         }
 
+        public async Task<IEnumerable<Conversation>> GetConversationsAsync()
+        {
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _tradingDbContext.Conversations
+                      .AsNoTracking()
+                      .OrderBy(x => x.CreatedAt)
+                      .ToListAsync(),
+                      $"{nameof(GetConversationsAsync)}:Fetch");
+        }
+
         public async Task<Conversation> GetConversationById(Guid conversationId)
         {
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>

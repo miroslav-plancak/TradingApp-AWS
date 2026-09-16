@@ -26,6 +26,30 @@ namespace TradingApp.Business.Services.Regular
             _logger = logger;
         }
 
+        public async Task<List<CreatedConversationResponseDTO>> GetConversationsAsync()
+        {
+            _logger.LogInformation("GetConversationsStarted");
+
+            try
+            {
+                var conversationEntities = await _conversationRepository.GetConversationsAsync();
+
+                var createdConversationResponseDTOs = ConversationMapper.ToCreatedConversationResponseDTOs(conversationEntities);
+
+                _logger.LogInformation("GetConversationsSuccessful | Conversations fetched count: {Count}", createdConversationResponseDTOs.Count());
+
+                return createdConversationResponseDTOs.ToList();
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetConversationsFailed  | Error: {Message}", ex.Message);
+
+                throw new Exception("Failed to fetch conversations", ex);
+            }
+
+        }
+
         public async Task<CreatedConversationResponseDTO> CreateConversationAsync
         (
             string userMessage,

@@ -7,7 +7,7 @@ using TradingApp.Business.Interfaces.Services;
 
 namespace TradingApp.API.Hubs
 {
-    public class EventsHub : BaseHub
+    public class EventsHub : BaseHub<EventsHub>
     {
         private readonly IOrderService _orderService;
         public EventsHub

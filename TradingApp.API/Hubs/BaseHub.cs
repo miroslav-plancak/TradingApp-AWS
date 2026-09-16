@@ -4,17 +4,17 @@ using System.Threading.Tasks;
 
 namespace TradingApp.API.Hubs
 {
-    public abstract class BaseHub : Hub
+    public abstract class BaseHub<T> : Hub
     {
-        protected readonly ILogger _logger;
-        protected BaseHub(ILogger logger)
+        protected readonly ILogger<T> _logger;
+        protected BaseHub(ILogger<T> logger)
         {
             _logger = logger;
         }
 
         public override Task OnConnectedAsync()
         {
-            _logger.LogInformation("{HubName} client connected | ConnectionId: {ConnectionId}", GetType().Name, Context.ConnectionId);
+            _logger.LogInformation("{HubName} client connected | ConnectionId: {ConnectionId}", typeof(T).Name, Context.ConnectionId);
 
             return base.OnConnectedAsync();
         }

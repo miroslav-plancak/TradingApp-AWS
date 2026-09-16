@@ -13,6 +13,7 @@ namespace TradingApp.Business.Interfaces.Services
             string userMessage,
             Guid? clientRequestId
         );
+        Task<List<CreatedConversationResponseDTO>> GetConversationsAsync();
         Task<CreatedConversationResponseDTO> GetConversationByIdAsync(Guid conversationId);
         Task<bool> DeleteConversationByIdAsync(Guid conversationId);
         Task<CreatedConversationMessageResponseDTO> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request);

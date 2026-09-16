@@ -1,4 +1,6 @@
-﻿using TradingApp.Business.DTOs.Conversation;
+﻿using System.Collections.Generic;
+using System.Linq;
+using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Domain.Models.Entities.Conversation;
 
 namespace TradingApp.Business.Mappers
@@ -26,6 +28,13 @@ namespace TradingApp.Business.Mappers
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt
             };
+        }
+
+        public static IEnumerable<CreatedConversationResponseDTO> ToCreatedConversationResponseDTOs(IEnumerable<Conversation> entities)
+        {
+            if (entities == null) return Enumerable.Empty<CreatedConversationResponseDTO>();
+
+            return entities.Select(ToCreatedConversationResponseDTO);
         }
     }
 }

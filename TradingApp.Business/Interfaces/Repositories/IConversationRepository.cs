@@ -14,6 +14,7 @@ namespace TradingApp.Business.Interfaces.Repositories
             Conversation conversation,
             Guid? clientRequestId
         );
+        Task<IEnumerable<Conversation>> GetConversationsAsync();
         Task<Conversation> GetConversationById(Guid conversationId);
         Task<bool> DeleteConversationByIdAsync(Guid conversationId);
         Task<ConversationMessage> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request);
