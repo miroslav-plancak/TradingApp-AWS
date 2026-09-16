@@ -17,7 +17,7 @@ using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.API.Hubs
 {
-    public class AiChatHub : BaseHub
+    public class AiChatHub : BaseHub<AiChatHub>
     {
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IChunkRetrievalService _chunkRetrievalService;
