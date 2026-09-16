@@ -297,13 +297,26 @@ namespace TradingApp.API.Hubs
         private static IReadOnlyList<MessageParam> ToAnthropicMessageParams(List<ConversationMessageDTO> conversationMessages)
         {
             if (conversationMessages.Count == 0) return [];
+           
+            var cacheIndex = conversationMessages.Count - 2;
 
             return conversationMessages
-                .Select(x => new MessageParam()
+                .Select((message, index) => new MessageParam()
                 {
-                    Role = x.Role,
-                    Content = x.Content
+                    Role = message.Role,
+                    Content = (index == cacheIndex) ?  MarkLastAssistantMessageAsCacheBreakpoint(message) : message.Content
                 }).ToList();
+        }
+
+        private static List<ContentBlockParam> MarkLastAssistantMessageAsCacheBreakpoint(ConversationMessageDTO message)
+        {
+           return new List<ContentBlockParam>
+           {
+               new TextBlockParam(message.Content)
+               {
+                   CacheControl = new CacheControlEphemeral()
+               }
+           };
         }
     }
 }
