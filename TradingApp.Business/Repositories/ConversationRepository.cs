@@ -62,7 +62,7 @@ namespace TradingApp.Business.Repositories
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 await _tradingDbContext.Conversations
                       .AsNoTracking()
-                      .OrderBy(x => x.CreatedAt)
+                      .OrderByDescending(x => x.CreatedAt)
                       .ToListAsync(),
                       $"{nameof(GetConversationsAsync)}:Fetch");
         }

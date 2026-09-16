@@ -103,9 +103,7 @@ namespace TradingApp.Infrastructure.Services
             {
                 _logger.LogError(ex, "Streaming failure before any content was produced for message: {UserMessage}", userMessage);
                 bootstrapFailed = true;
-                failureMessage = ex is AnthropicApiException apiEx
-                    ? AnthropicErrorMessageParser.ExtractMessage(apiEx.ResponseBody)
-                    : ex.Message;
+                failureMessage = BuildFailureMessage(ex);
                 isRetryable = ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex);
             }
 
@@ -190,6 +188,7 @@ namespace TradingApp.Infrastructure.Services
 
                     if (enumerator.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
                     {
+                        _logger.LogInformation("Usage:{Usage}", messageDelta.Usage);
                         stopReason = messageDelta.Delta.StopReason.Value();
                     }
                 }
@@ -227,6 +226,13 @@ namespace TradingApp.Infrastructure.Services
         {
             stringBuilder.Append(assistantMessage);
             return stringBuilder.ToString();
+        }
+
+        private static string BuildFailureMessage(Exception ex)
+        {
+           return ex is AnthropicApiException apiEx
+             ? AnthropicErrorMessageParser.ExtractMessage(apiEx.ResponseBody)
+             : ex.Message;
         }
     }
 }
