@@ -1,8 +1,13 @@
-﻿namespace TradingApp.Business.DTOs.ConversationMessage
+﻿using System;
+using TradingApp.Domain.Models.Enums;
+
+namespace TradingApp.Business.DTOs.ConversationMessage
 {
     public class ConversationMessageDTO
     {
-        public string Role { get; set; }
-        public string Content { get; set; }
+        public required Guid ConversationId { get; set; }
+        public required ConversationMessageRole Role { get; set; }
+        public required string Body { get; set; }
+        public required DateTimeOffset CreatedAt { get; set; }
     }
 }

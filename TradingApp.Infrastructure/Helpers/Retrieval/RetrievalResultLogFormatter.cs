@@ -92,7 +92,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             return sb.ToString();
         }
 
-        public static string FormatCurrentConversationMessagesIntoFileLog(List<ConversationMessageDTO> messages)
+        public static string FormatCurrentConversationMessagesIntoFileLog(List<ConversationHistoryMessageDTO> messages)
         {
             var helperDivider = new string('-', 80);
             var sb = new StringBuilder();

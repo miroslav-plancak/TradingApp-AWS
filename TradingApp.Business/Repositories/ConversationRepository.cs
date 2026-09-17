@@ -16,6 +16,7 @@ namespace TradingApp.Business.Repositories
     {
         private readonly TradingDbContext _tradingDbContext;
         private readonly IResilienceConversationPolicyGuard _resiliencePolicyGuard;
+
         public ConversationRepository
         (
             TradingDbContext tradingDbContext,
@@ -130,19 +131,44 @@ namespace TradingApp.Business.Repositories
             }, $"{nameof(CreateConversationMessageAsync)}:Create:{request.ConversationId}");
         }
 
-        public async Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId)
+        public async Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter)
         {
             return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
             {
                 var allConversationMessages = await _tradingDbContext.ConversationMessages
                             .AsNoTracking()
-                            .Where(x => x.ConversationId == conversationId)
+                            .Where(x => x.ConversationId == conversationId 
+                                        && (createdAfter == null || x.CreatedAt > createdAfter))
                             .OrderBy(x => x.CreatedAt)
                             .ToListAsync();
 
                 return allConversationMessages;
 
             }, $"{nameof(GetConversationMessagesAsync)}:FetchAll:{conversationId}");
+        }
+
+        public async Task UpdateConversationByConversationId
+        (
+            Guid conversationId, 
+            string compactedSummary, 
+            DateTimeOffset lastMessageCoveredBySummary
+        )
+        {
+            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                 await _tradingDbContext.Conversations
+                     .FirstOrDefaultAsync(x => x.Id == conversationId),
+                 $"{nameof(UpdateConversationByConversationId)}:Fetch:{conversationId}");
+
+            if (conversation != null)
+            {
+                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                {
+                    conversation.CompactedSummary = compactedSummary;
+                    conversation.SummaryCoversMessagesUpTo = lastMessageCoveredBySummary;
+                    await _tradingDbContext.SaveChangesAsync();
+                },
+                $"{nameof(UpdateConversationByConversationId)}:Save:{conversationId}");
+            }
         }
     }
 }

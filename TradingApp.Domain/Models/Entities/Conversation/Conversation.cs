@@ -9,5 +9,7 @@ namespace TradingApp.Domain.Models.Entities.Conversation
         public required string Name { get; set; }
         public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset? UpdatedAt { get; set; }
+        public string? CompactedSummary { get; set; }
+        public DateTimeOffset? SummaryCoversMessagesUpTo { get; set; }
     }
 }

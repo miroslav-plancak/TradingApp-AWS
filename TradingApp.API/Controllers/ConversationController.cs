@@ -45,12 +45,12 @@ namespace TradingApp.API.Controllers
         }
 
         [HttpGet("{conversationId}/messages")]
-        [ProducesResponseType(typeof(IEnumerable<ConversationMessageDTO>), 200)]
+        [ProducesResponseType(typeof(IEnumerable<ConversationHistoryMessageDTO>), 200)]
         public async Task<ActionResult> GetConversationMessagesAsync([FromRoute] Guid conversationId)
         {
             _logger.LogInformation("GetConversationMessagesAsyncRequest");
 
-            var result = await _conversationService.GetConversationMessagesAsync(conversationId);
+            var result = await _conversationService.GetConversationMessagesAsync(conversationId,null);
 
             return Ok(result);
         }

@@ -18,6 +18,7 @@ namespace TradingApp.Business.Interfaces.Repositories
         Task<Conversation> GetConversationById(Guid conversationId);
         Task<bool> DeleteConversationByIdAsync(Guid conversationId);
         Task<ConversationMessage> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request);
-        Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId);
+        Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter);
+        Task UpdateConversationByConversationId(Guid conversationId,string compactedSummary,DateTimeOffset lastMessageCoveredBySummary);
     }
 }
