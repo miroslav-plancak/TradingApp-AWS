@@ -8,6 +8,8 @@ using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Mappers;
+using TradingApp.Domain.Models.Entities.ConversationMessage;
+using TradingApp.Domain.Models.Enums;
 
 namespace TradingApp.Business.Services.Regular
 {
@@ -106,13 +108,13 @@ namespace TradingApp.Business.Services.Regular
                     throw new KeyNotFoundException($"Conversation {conversationId} not found.");
                 }
 
-                var orderDTO = ConversationMapper.ToCreatedConversationResponseDTO(conversationEntity);
+                var conversationDTO = ConversationMapper.ToCreatedConversationResponseDTO(conversationEntity);
 
                 _logger.LogInformation("GetConversationByIdAsyncRetrieved  | ConversationId: {ConversationId} " +
                     "| ConversationName: {ConversationName}",
-                  orderDTO.ConversationId, orderDTO.Name);
+                  conversationDTO.ConversationId, conversationDTO.Name);
 
-                return orderDTO;
+                return conversationDTO;
             }
             catch (KeyNotFoundException)
             {
@@ -122,6 +124,39 @@ namespace TradingApp.Business.Services.Regular
             {
                 _logger.LogError(ex, "GetConversationByIdAsyncFailed | ConversationId: {ConversationId}", conversationId);
                 throw new Exception($"Failed to retrieve conversation {conversationId}", ex);
+            }
+        }
+
+        public async Task<ConversationCompactionStateDTO> GetConversationCompactionStateAsync(Guid conversationId)
+        {
+            _logger.LogInformation("GetConversationCompactionStateAsyncStarted | ConversationId: {ConversationId}", conversationId);
+
+            try
+            {
+                var conversationEntity = await _conversationRepository.GetConversationById(conversationId);
+
+                if (conversationEntity == null)
+                {
+                    _logger.LogWarning("GetConversationCompactionStateAsyncNotFound | ConversationId: {ConversationId}", conversationId);
+                    throw new KeyNotFoundException($"Conversation {conversationId} not found.");
+                }
+
+                var conversationDTO = ConversationMapper.ToConversationCompactionStateDTO(conversationEntity);
+
+                _logger.LogInformation("GetConversationCompactionStateAsyncRetrieved  | ConversationId: {ConversationId} " +
+                    "| CompactedUntilMessage: {CompactedUntilMessage}",
+                  conversationDTO.ConversationId, conversationDTO.SummaryCoversMessagesUpTo);
+
+                return conversationDTO;
+            }
+            catch (KeyNotFoundException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetConversationCompactionStateAsyncFailed | ConversationId: {ConversationId}", conversationId);
+                throw new Exception($"Failed to retrieve conversation compaction state {conversationId}", ex);
             }
         }
 
@@ -181,15 +216,15 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
-        public async Task<List<ConversationMessageDTO>> GetConversationMessagesAsync(Guid conversationId)
+        public async Task<List<ConversationHistoryMessageDTO>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter)
         {
             _logger.LogInformation("ConversationMessagesFetchingStarted | ConversationId: {ConversationId}", conversationId);
 
             try
             {
-                var conversationMessages = await _conversationRepository.GetConversationMessagesAsync(conversationId);
+                var conversationMessages = await _conversationRepository.GetConversationMessagesAsync(conversationId, createdAfter);
 
-                var anthropicMessages = ConversationMessageMapper.ToConversationMessagesDTO(conversationMessages);
+                var anthropicMessages = ConversationMessageMapper.ToConversationHistoryMessageDTOs(conversationMessages);
 
                 _logger.LogInformation("ConversationMessagesFetchingSuccessful | ConversationId: {ConversationId}", conversationId);
 
@@ -200,6 +235,105 @@ namespace TradingApp.Business.Services.Regular
                 _logger.LogError(ex, "ConversationMessagesFetchingFailed  | Error: {Message}", ex.Message);
 
                 throw new Exception("Failed to fetch conversation messages", ex);
+            }
+        }
+
+        public async Task<List<ConversationHistoryMessageDTO>> GetConversationMessagesForCompactionAsync
+        (
+            ConversationCompactionStateDTO conversationDTO, 
+            int postCompactionTokenBudget
+        )
+        {
+            _logger.LogInformation("GetConversationMessagesForCompactionAsyncStarted | ConversationId: {ConversationId}", conversationDTO.ConversationId);
+
+            try
+            {   
+                var allConversationMessages = await _conversationRepository.GetConversationMessagesAsync(
+                    conversationDTO.ConversationId, conversationDTO.SummaryCoversMessagesUpTo);
+
+                if(!allConversationMessages.Any())
+                {
+                    _logger.LogWarning("NoMessagesRetrievedForThisConversation: {ConversationId}", conversationDTO.ConversationId);
+                    return [];
+                }
+
+                var lastFullTurnMessage = FindLastUserMessageWithinGivenThreshold(allConversationMessages, postCompactionTokenBudget);
+
+                // NOTE: This is a guard against theoretical edgecase which can happen if Assistant's message token value,
+                // which gets iterated through first, is greater than this method's 2nd param value passed by the caller.
+                // Currently this can never happen because the Claude Sonnet 5 model that we are using, has a max ouput
+                // per request capped at 128k tokens, which is the maximum message length that can exist in our system.
+                // The caller of this method is currently supplying postCompactionTokenBudget = 350k. Which means that no single
+                // assistant message can break the foreach loop leaving lastFullTurnMessage value at null and cause
+                // NullReferenceException down the line, but this method should be resistant to the future changes to the
+                // model we use and the caller passing a different value.
+                if (lastFullTurnMessage == null)
+                {
+                    _logger.LogWarning("LastFullTurnMessage is null in conversation: {ConversationId}", conversationDTO.ConversationId);
+                    return [];
+                }
+
+                var messagesToCompact = allConversationMessages.Where(x => x.CreatedAt < lastFullTurnMessage.CreatedAt);
+                var messagesToCompactDtos = ConversationMessageMapper.ToConversationHistoryMessageDTOs(messagesToCompact);
+
+                _logger.LogInformation("GetConversationMessagesForCompactionAsyncSuccessful | ConversationId: {ConversationId}", conversationDTO.ConversationId);
+
+                return messagesToCompactDtos;
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetConversationMessagesForCompactionAsyncFailed  | Error: {Message}", ex.Message);
+
+                throw new Exception("Failed to fetch conversation messages for compaction", ex);
+            }
+
+        }
+
+        private static ConversationMessageDTO FindLastUserMessageWithinGivenThreshold(IEnumerable<ConversationMessage> allConversationMessages, int targetThreshold)
+        {
+            ConversationMessageDTO lastFullTurnMessage = null;
+            var accumulatedTokens = 0;
+
+            foreach (var message in allConversationMessages.Reverse())
+            {
+                if (!string.IsNullOrWhiteSpace(message.Body))
+                {
+                    accumulatedTokens += message.Body.Length / 4;
+                }
+
+                if (message.Role == ConversationMessageRole.User)
+                {
+                    lastFullTurnMessage = ConversationMessageMapper.ToConversationMessageDTO(message);
+                }
+
+                if (targetThreshold <= accumulatedTokens && message.Role != ConversationMessageRole.User)
+                {
+                    break;
+                }
+            }
+
+            return lastFullTurnMessage;
+        }
+
+        public async Task UpdateCompactedConversationSummaryAsync
+        (
+            Guid conversationId, 
+            string compactedSummary, 
+            DateTimeOffset lastMessageCoveredBySummary
+        )
+        {
+            _logger.LogInformation("UpdateCompactedConversationSummaryAsyncStarted | ConversationId: {ConversationId}", conversationId);
+
+            try
+            {
+                await _conversationRepository.UpdateConversationByConversationId(conversationId, compactedSummary, lastMessageCoveredBySummary);
+
+                _logger.LogInformation("UpdateCompactedConversationSummaryAsyncSuccessful | ConversationId: {ConversationId}", conversationId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "UpdateCompactedConversationSummaryAsyncFailed | ConversationId: {ConversationId}", conversationId);
             }
         }
     }

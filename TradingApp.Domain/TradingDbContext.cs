@@ -164,9 +164,10 @@ namespace TradingApp.Domain
                 entity.HasIndex(e => e.ClientRequestId).IsUnique().HasFilter("[ClientRequestId] IS NOT NULL");
 
                 entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.CompactedSummary);
                 entity.Property(e => e.CreatedAt).IsRequired();
                 entity.Property(e => e.UpdatedAt);
-
+                entity.Property(e => e.SummaryCoversMessagesUpTo);
             });
 
             modelBuilder.Entity<ConversationMessage>(entity =>

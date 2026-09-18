@@ -29,7 +29,7 @@ namespace TradingApp.Infrastructure.Services
             _resiliencePolicy = resiliencePolicy;
         }
 
-        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string userMessage)
+        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string? userMessage)
         {
             try
             {
@@ -73,7 +73,8 @@ namespace TradingApp.Infrastructure.Services
                  Func<Guid,Task<bool>> deleteConversationHandler,
                  Func<string,Task> persistUserMessageHandler,
                  Func<string,Task> persistAssistantMessageHandler,
-                 Func<StopReason, Task> stopReasonHandler
+                 Func<StopReason, Task> stopReasonHandler,
+                 Func<MessageDeltaUsage, Task> usageHandler
         )
         {
             IAsyncEnumerator<RawMessageStreamEvent>? enumerator = null;
@@ -188,7 +189,9 @@ namespace TradingApp.Infrastructure.Services
 
                     if (enumerator.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
                     {
-                        _logger.LogInformation("Usage:{Usage}", messageDelta.Usage);
+                        //_logger.LogInformation("Usage:{Usage}", messageDelta.Usage);
+                        await usageHandler(messageDelta.Usage);
+                     
                         stopReason = messageDelta.Delta.StopReason.Value();
                     }
                 }

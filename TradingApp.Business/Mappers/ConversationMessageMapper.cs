@@ -29,17 +29,32 @@ namespace TradingApp.Business.Mappers
             };
         }
 
-        public static List<ConversationMessageDTO> ToConversationMessagesDTO(IEnumerable<ConversationMessage> conversationMessages)
+        public static List<ConversationHistoryMessageDTO> ToConversationHistoryMessageDTOs(IEnumerable<ConversationMessage> conversationMessages)
         {
             if (!conversationMessages.Any()) return [];
 
             return conversationMessages
-                .Select(x => new ConversationMessageDTO
+                .Select(x => new ConversationHistoryMessageDTO
                 {
                     Role = x.Role.ToString().ToLowerInvariant(),
-                    Content = x.Body
+                    Content = x.Body,
+                    CreatedAt = x.CreatedAt
+                    
                 })
                 .ToList();
+        }
+
+        public static ConversationMessageDTO ToConversationMessageDTO(ConversationMessage entity)
+        {
+            if (entity == null) return null;
+
+            return new ConversationMessageDTO
+            {
+                ConversationId = entity.ConversationId,
+                Role = entity.Role,
+                Body = entity.Body,
+                CreatedAt = entity.CreatedAt
+            };
         }
     }
 }

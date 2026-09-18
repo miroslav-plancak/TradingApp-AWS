@@ -2,17 +2,61 @@ using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Helpers.Retrieval
 {
-    //TODO: expand this with other system prompts from other anthropic API calls
     public static class SystemPromptBuilder
     {
-        public static string BuildSystemPrompt(RetrievalResult retrievalResult)
+        private const string CompactionSystemInstruction =
+            "Compact the given conversation messages into a single summary that preserves:\n\n" +
+            "- how things work and why (mechanisms and reasoning), not just conclusions\n" +
+            "- decisions made and the constraints behind them\n\n" +
+            "You may be given an existing summary in addition to new messages - merge them into one " +
+            "updated summary rather than treating them separately. Only include information actually " +
+            "present in the provided content; do not infer or invent details.";
+
+        private const string ChatSystemInstruction =
+                "Answer the user's question using the following code context (if it's relevant) " +
+                "and additional summary (if it is provided). If the context doesn't contain the " +
+                "answer, say so instead of guessing.\n\n";
+
+        public const string QueryRouteSystemInstruction = 
+           "Classify the following question about a codebase as either BROAD " +
+           "(asking for an overview, end-to-end explanation, or how something works as a whole) " +
+            "or NARROW (asking about one specific fact, value, or line)." +
+           " Respond with exactly one word: BROAD or NARROW.";
+
+        public const string ArbiterSystemInstruction =
+          "Decide whether the user's question can be FULLY and accurately answered using only the chunks provided below - " +
+          "not merely related to them, but sufficient to answer completely. Each chunk is a JSON object with a \"Key\" field.\r\n" +
+          "Respond with exactly this JSON shape: {\"chunkKeys\": [...]}. Provide no explanation for your choice - pure JSON only.\r\n" +
+          "- If one or more chunks together are sufficient to fully answer the question, list the \"Key\" value of each chunk you used.\r\n" +
+          "- If the chunks are only partially relevant, or you are not confident they fully cover the question, return {\"chunkKeys\": []}.\r\n" +
+          "- Only cite \"Key\" values that literally appear in the chunks provided - never invent one.";
+
+        public static string BuildCompactionSystemPrompt(string? existingSummary)
         {
+            var summary = FormatExistingSummary(existingSummary);
+
+            return string.Join("\n\n", new string?[] { CompactionSystemInstruction, summary }.Where(section => !string.IsNullOrWhiteSpace(section)));
+        }
+
+        public static string BuildChatSystemPrompt(RetrievalResult retrievalResult, string? existingSummary = "")
+        {
+           var summary = FormatExistingSummary(existingSummary);
+
             var chunks = string.Join("\n\n", retrievalResult.ChunkFallbacks.Select(c => $"Source: {c.SourceFile}\n{c.Content}"));
             var fullFiles = string.Join("\n\n", retrievalResult.FullFileContents.Select(c => $"FullFiles - FileName: {c.Key}\n{c.Value}"));
-            var fullContext = string.Join("\n\n", new[] { chunks, fullFiles }.Where(section => !string.IsNullOrWhiteSpace(section)));
+            var fullContext = string.Join("\n\n", new string?[] { chunks, fullFiles, summary }.Where(section => !string.IsNullOrWhiteSpace(section)));
 
-            return $"Answer the user's question using the following code context if it's relevant." +
-                $" If the context doesn't contain the answer, say so instead of guessing.\n\n{fullContext}";
+            return $"{ChatSystemInstruction}{fullContext}";
         }
+
+        private static string? FormatExistingSummary(string? existingSummary)
+        {
+            return string.IsNullOrWhiteSpace(existingSummary)
+                ? null
+                : $"Existing summary of earlier conversation:\n{existingSummary}";
+        }
+
+        //TODO: finish adding the QueryRoutingService and ConversationChunkArbiterService
+
     }
 }

@@ -15,14 +15,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         private readonly ILogger<ConversationChunkArbiterService> _logger;
         private readonly IAnthropicApiService _anthropicApiService;
         private readonly IFileDebugLogger _fileDebugLogger;
-        //TODO: move this and the other LLM query to some enviornment variables so that they can be changed without re-deployment.
-        private const string _arbiterSystemInstruction =
-          "Decide whether the user's question can be FULLY and accurately answered using only the chunks provided below — " +
-          "not merely related to them, but sufficient to answer completely. Each chunk is a JSON object with a \"Key\" field.\r\n" +
-          "Respond with exactly this JSON shape: {\"chunkKeys\": [...]}. Provide no explanation for your choice — pure JSON only.\r\n" +
-          "- If one or more chunks together are sufficient to fully answer the question, list the \"Key\" value of each chunk you used.\r\n" +
-          "- If the chunks are only partially relevant, or you are not confident they fully cover the question, return {\"chunkKeys\": []}.\r\n" +
-          "- Only cite \"Key\" values that literally appear in the chunks provided — never invent one.";
+     
 
         public ConversationChunkArbiterService
         (
@@ -50,8 +43,8 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             {
                 Model = "claude-haiku-4-5",
                 MaxTokens = 512,
-                System = _arbiterSystemInstruction,
-                Messages = [new() { Role = Role.User, Content = $"{userMessage} \n\n Existing Chunks(JSON array): \n {conversationChunksContext}" }]
+                System = SystemPromptBuilder.ArbiterSystemInstruction,
+                Messages = [new() { Role = Role.User, Content = BuildArbiterUserMessage(userMessage, conversationChunksContext)}]
             };
 
             try
@@ -89,6 +82,11 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         private static string SerializeExistingConversationChunks(List<CreatedConversationChunkResponseDTO> createdConversationChunks)
         {
             return JsonSerializer.Serialize(createdConversationChunks);
+        }
+
+        private static string BuildArbiterUserMessage(string userMessage, string conversationChunksContext)
+        {
+            return $"{userMessage} \n\n Existing Chunks(JSON array): \n {conversationChunksContext}";
         }
     }
 }

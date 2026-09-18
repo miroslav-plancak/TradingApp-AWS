@@ -4,7 +4,7 @@ namespace TradingApp.Infrastructure.Interfaces
 {
     public interface IAnthropicApiService
     {
-        Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string userMessage);
+        Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string? userMessage = "");
         IAsyncEnumerable<string> EstablishStreamAsync
         (
                  string userMessage,
@@ -14,7 +14,8 @@ namespace TradingApp.Infrastructure.Interfaces
                  Func<Guid, Task<bool>> deleteConversationHandler,
                  Func<string, Task> persistUserMessageHandler,
                  Func<string, Task> persistAssistantMessageHandler,
-                 Func<StopReason, Task> stopReasonHandler
+                 Func<StopReason, Task> stopReasonHandler,
+                 Func<MessageDeltaUsage, Task> usageHandler
         );
     }
 }

@@ -36,5 +36,17 @@ namespace TradingApp.Business.Mappers
 
             return entities.Select(ToCreatedConversationResponseDTO);
         }
+
+        public static ConversationCompactionStateDTO ToConversationCompactionStateDTO(Conversation entity)
+        {
+            if (entity == null) return null;
+
+            return new ConversationCompactionStateDTO
+            {
+                ConversationId = entity.Id,
+                CompactedSummary = entity.CompactedSummary,
+                SummaryCoversMessagesUpTo = entity.SummaryCoversMessagesUpTo
+            };
+        }
     }
 }

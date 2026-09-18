@@ -261,5 +261,11 @@ namespace TradingApp.Infrastructure
             services.AddScoped<IConversationReuseService, ConversationReuseService>();
             return services;
         }
+
+        public static IServiceCollection AddConversationCompactorService(this IServiceCollection services)
+        {
+            services.AddScoped<IConversationCompactorService, ConversationCompactorService>();
+            return services;
+        }
     }
 }
