@@ -137,7 +137,7 @@ namespace TradingApp.Business.Repositories
             {
                 var allConversationMessages = await _tradingDbContext.ConversationMessages
                             .AsNoTracking()
-                            .Where(x => x.ConversationId == conversationId 
+                            .Where(x => x.ConversationId == conversationId
                                         && (createdAfter == null || x.CreatedAt > createdAfter))
                             .OrderBy(x => x.CreatedAt)
                             .ToListAsync();
@@ -149,8 +149,8 @@ namespace TradingApp.Business.Repositories
 
         public async Task UpdateConversationByConversationId
         (
-            Guid conversationId, 
-            string compactedSummary, 
+            Guid conversationId,
+            string compactedSummary,
             DateTimeOffset lastMessageCoveredBySummary
         )
         {

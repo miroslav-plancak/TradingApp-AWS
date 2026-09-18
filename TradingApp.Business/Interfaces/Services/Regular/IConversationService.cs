@@ -4,22 +4,20 @@ using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
 
-namespace TradingApp.Business.Interfaces.Services
-{
+namespace TradingApp.Business.Interfaces.Services.Regular
+{   //TODO: split these into dedicated services
     public interface IConversationService
     {
-        Task<CreatedConversationResponseDTO> CreateConversationAsync (string userMessage,Guid? clientRequestId);
+        //#1 conversation based responsibility
+        Task<CreatedConversationResponseDTO> CreateConversationAsync(string userMessage, Guid? clientRequestId);
         Task<List<CreatedConversationResponseDTO>> GetConversationsAsync();
         Task<CreatedConversationResponseDTO> GetConversationByIdAsync(Guid conversationId);
         Task<ConversationCompactionStateDTO> GetConversationCompactionStateAsync(Guid conversationId);
         Task<bool> DeleteConversationByIdAsync(Guid conversationId);
+        //#2 conversationMessage based responsibility
         Task<CreatedConversationMessageResponseDTO> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request);
         Task<List<ConversationHistoryMessageDTO>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter);
-        Task<List<ConversationHistoryMessageDTO>> GetConversationMessagesForCompactionAsync
-        (
-            ConversationCompactionStateDTO conversationDTO, 
-            int postCompactionTokenBudget
-        );
+        //#3 conversationSummary responsibility
         Task UpdateCompactedConversationSummaryAsync(Guid conversationId, string compactedSummary, DateTimeOffset lastMessageCoveredBySummary);
     }
 }

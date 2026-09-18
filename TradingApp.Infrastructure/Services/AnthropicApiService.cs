@@ -70,9 +70,9 @@ namespace TradingApp.Infrastructure.Services
                  Guid conversationId,
                  bool isNewConversation,
                  MessageCreateParams messageCreateParams,
-                 Func<Guid,Task<bool>> deleteConversationHandler,
-                 Func<string,Task> persistUserMessageHandler,
-                 Func<string,Task> persistAssistantMessageHandler,
+                 Func<Guid, Task<bool>> deleteConversationHandler,
+                 Func<string, Task> persistUserMessageHandler,
+                 Func<string, Task> persistAssistantMessageHandler,
                  Func<StopReason, Task> stopReasonHandler,
                  Func<MessageDeltaUsage, Task> usageHandler
         )
@@ -96,7 +96,7 @@ namespace TradingApp.Infrastructure.Services
                             return (e, text.Text);
                         }
                     }
-                   
+
                     return (e, (string?)null);
                 });
             }
@@ -191,7 +191,7 @@ namespace TradingApp.Infrastructure.Services
                     {
                         //_logger.LogInformation("Usage:{Usage}", messageDelta.Usage);
                         await usageHandler(messageDelta.Usage);
-                     
+
                         stopReason = messageDelta.Delta.StopReason.Value();
                     }
                 }
@@ -233,9 +233,9 @@ namespace TradingApp.Infrastructure.Services
 
         private static string BuildFailureMessage(Exception ex)
         {
-           return ex is AnthropicApiException apiEx
-             ? AnthropicErrorMessageParser.ExtractMessage(apiEx.ResponseBody)
-             : ex.Message;
+            return ex is AnthropicApiException apiEx
+              ? AnthropicErrorMessageParser.ExtractMessage(apiEx.ResponseBody)
+              : ex.Message;
         }
     }
 }

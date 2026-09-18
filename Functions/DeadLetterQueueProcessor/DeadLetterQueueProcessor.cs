@@ -8,7 +8,7 @@ using Polly;
 using Polly.CircuitBreaker;
 using System.Text.Json;
 using TradingApp.Business.DTOs.DeadLetter;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Business.Mappers;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Enums;

@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Business.DTOs.ConversationFullFile;
 
-namespace TradingApp.Business.Interfaces.Services
+namespace TradingApp.Business.Interfaces.Services.Regular
 {
     public interface IConversationFullFileService
     {

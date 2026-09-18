@@ -10,7 +10,6 @@ using Polly;
 using StackExchange.Redis;
 using System.Net.Http.Headers;
 using TradingApp.Business.Interfaces.Repositories;
-using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Repositories;
 using TradingApp.Business.Services.Regular;
 using TradingApp.Domain;
@@ -23,6 +22,7 @@ using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Services.ConversationMemory;
 using TradingApp.Infrastructure.Services.Ingestion;
 using TradingApp.Infrastructure.Services.Retrieval;
+using TradingApp.Business.Interfaces.Services.Regular;
 
 namespace TradingApp.Infrastructure
 {

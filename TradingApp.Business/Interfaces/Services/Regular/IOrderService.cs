@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Order;
 
-namespace TradingApp.Business.Interfaces.Services
+namespace TradingApp.Business.Interfaces.Services.Regular
 {
     public interface IOrderService
     {

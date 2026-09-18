@@ -17,7 +17,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
                 "and additional summary (if it is provided). If the context doesn't contain the " +
                 "answer, say so instead of guessing.\n\n";
 
-        public const string QueryRouteSystemInstruction = 
+        public const string QueryRouteSystemInstruction =
            "Classify the following question about a codebase as either BROAD " +
            "(asking for an overview, end-to-end explanation, or how something works as a whole) " +
             "or NARROW (asking about one specific fact, value, or line)." +
@@ -40,7 +40,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
         public static string BuildChatSystemPrompt(RetrievalResult retrievalResult, string? existingSummary = "")
         {
-           var summary = FormatExistingSummary(existingSummary);
+            var summary = FormatExistingSummary(existingSummary);
 
             var chunks = string.Join("\n\n", retrievalResult.ChunkFallbacks.Select(c => $"Source: {c.SourceFile}\n{c.Content}"));
             var fullFiles = string.Join("\n\n", retrievalResult.FullFileContents.Select(c => $"FullFiles - FileName: {c.Key}\n{c.Value}"));

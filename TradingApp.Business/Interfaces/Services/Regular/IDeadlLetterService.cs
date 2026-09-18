@@ -5,7 +5,7 @@ using TradingApp.Business.DTOs;
 using TradingApp.Business.DTOs.DeadLetter;
 using TradingApp.Domain.Models.Enums;
 
-namespace TradingApp.Business.Interfaces.Services
+namespace TradingApp.Business.Interfaces.Services.Regular
 {
     public interface IDeadLetterService
     {

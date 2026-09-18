@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Infrastructure.Exceptions;
 using TradingApp.Infrastructure.Helpers.Retrieval;
@@ -51,11 +51,11 @@ namespace TradingApp.API.Hubs
         )
         {
             if (string.IsNullOrWhiteSpace(userMessage)) throw new HubException("Message cannot be empty.");
-           
+
             var (isNewConversation, existingConversation) = await ResolveConversationAsync(conversationId, clientRequestId, userMessage);
-          
+
             var retrievalResult = await RetrieveAdditionalContextAsync(userMessage, existingConversation.ConversationId);
-            
+
             var conversationMessagesHistory = await RetrieveConversationHistoryAsync(existingConversation, userMessage);
 
             AppendUserMessageToHistory(conversationMessagesHistory, userMessage);
@@ -119,7 +119,7 @@ namespace TradingApp.API.Hubs
                     }
                     catch (Exception ex)
                     {
-                        if(ex is ChatStreamFailureException { IsRetryable: false })
+                        if (ex is ChatStreamFailureException { IsRetryable: false })
                         {
                             await NotifyChatStreamFailureAsync(ex.Message);
                         }
@@ -158,7 +158,7 @@ namespace TradingApp.API.Hubs
 
                     await NotifyConversationStartedAsync(existingConversation.ConversationId);
 
-                    return (true, new ConversationCompactionStateDTO { ConversationId = existingConversation.ConversationId});
+                    return (true, new ConversationCompactionStateDTO { ConversationId = existingConversation.ConversationId });
                 }
                 else
                 {
@@ -210,11 +210,11 @@ namespace TradingApp.API.Hubs
 
         private async Task NotifyStopReasonAsync(string stopReason)
         {
-            try 
+            try
             {
                 await Clients.Caller.SendAsync("ResponseTruncated", stopReason);
             }
-            catch(Exception ex) 
+            catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to notify client of stop reason {StopReason}", stopReason);
             }
@@ -226,7 +226,7 @@ namespace TradingApp.API.Hubs
             {
                 await Clients.Caller.SendAsync("NonRetryableChatFailure");
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to notify client of chat stream failure: {Mesage}", message);
             }
@@ -306,20 +306,20 @@ namespace TradingApp.API.Hubs
         private static IReadOnlyList<MessageParam> ToAnthropicMessageParams(List<ConversationHistoryMessageDTO> conversationMessages)
         {
             if (conversationMessages.Count == 0) return [];
-           
+
             var cacheIndex = conversationMessages.Count - 2;
 
             return conversationMessages
                 .Select((message, index) => new MessageParam()
                 {
                     Role = message.Role,
-                    Content = (index == cacheIndex) ?  MarkLastAssistantMessageAsCacheBreakpoint(message) : message.Content
+                    Content = (index == cacheIndex) ? MarkLastAssistantMessageAsCacheBreakpoint(message) : message.Content
                 }).ToList();
         }
 
         private static List<ContentBlockParam> MarkLastAssistantMessageAsCacheBreakpoint(ConversationHistoryMessageDTO message)
         {
-           return new List<ContentBlockParam>
+            return new List<ContentBlockParam>
            {
                new TextBlockParam(message.Content)
                {

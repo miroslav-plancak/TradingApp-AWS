@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using TradingApp.Business.Interfaces.Repositories;
-using TradingApp.Business.Interfaces.Services;
 using TradingApp.Business.Interfaces.Services.Helpers;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Business.Middleware;
 using TradingApp.Business.Repositories;
 using TradingApp.Business.Services.Helpers;
@@ -28,7 +28,8 @@ namespace TradingApp.Business
                     .AddScoped<IOutboxMessageService, OutboxMessageService>()
                     .AddScoped<IConversationService, ConversationService>()
                     .AddScoped<IConversationChunkService, ConversationChunkService>()
-                    .AddScoped<IConversationFullFileService, ConversationFullFileService>();
+                    .AddScoped<IConversationFullFileService, ConversationFullFileService>()
+                    .AddScoped<IConversationCompactionBoundaryService, ConversationCompactionBoundaryService>();
 
             services.AddSingleton<IResiliencePolicyGuard, ResiliencePolicyGuard>();
             services.AddSingleton<IResilienceConversationPolicyGuard, ResilienceConversationPolicyGuard>();

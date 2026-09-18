@@ -12,7 +12,7 @@ using TradingApp.API.PushDispatch;
 using TradingApp.Business.DTOs.DeadLetter;
 using TradingApp.Business.DTOs.Order;
 using TradingApp.Business.DTOs.Outbox;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Events.Events;
 
 namespace TradingApp.API.BackgroundServices
@@ -57,7 +57,7 @@ namespace TradingApp.API.BackgroundServices
              {
                  return await PushEventTypeDispatcher(eventType, integrationEvent, cancellationToken);
 
-             },_sqsClient, stoppingToken);
+             }, _sqsClient, stoppingToken);
         }
 
         private async Task<PushEventOutcome> PushEventTypeDispatcher

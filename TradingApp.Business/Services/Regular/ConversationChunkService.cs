@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Business.Interfaces.Repositories;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Business.Mappers;
 
 namespace TradingApp.Business.Services.Regular

@@ -18,7 +18,7 @@ namespace TradingApp.Infrastructure.Helpers
                     return deserializedResponse.Error.Message;
                 }
             }
-            catch (JsonException){}
+            catch (JsonException) { }
 
             return anthropicApiResponseBody;
         }
