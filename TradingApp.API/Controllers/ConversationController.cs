@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 
 namespace TradingApp.API.Controllers
 {
@@ -50,7 +50,7 @@ namespace TradingApp.API.Controllers
         {
             _logger.LogInformation("GetConversationMessagesAsyncRequest");
 
-            var result = await _conversationService.GetConversationMessagesAsync(conversationId,null);
+            var result = await _conversationService.GetConversationMessagesAsync(conversationId, null);
 
             return Ok(result);
         }

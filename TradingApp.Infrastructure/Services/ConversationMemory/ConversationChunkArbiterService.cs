@@ -15,7 +15,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         private readonly ILogger<ConversationChunkArbiterService> _logger;
         private readonly IAnthropicApiService _anthropicApiService;
         private readonly IFileDebugLogger _fileDebugLogger;
-     
+
 
         public ConversationChunkArbiterService
         (
@@ -44,7 +44,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                 Model = "claude-haiku-4-5",
                 MaxTokens = 512,
                 System = SystemPromptBuilder.ArbiterSystemInstruction,
-                Messages = [new() { Role = Role.User, Content = BuildArbiterUserMessage(userMessage, conversationChunksContext)}]
+                Messages = [new() { Role = Role.User, Content = BuildArbiterUserMessage(userMessage, conversationChunksContext) }]
             };
 
             try

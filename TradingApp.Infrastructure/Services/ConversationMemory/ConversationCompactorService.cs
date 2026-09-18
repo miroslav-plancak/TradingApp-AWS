@@ -1,7 +1,7 @@
 ﻿using Anthropic.Models.Messages;
 using Microsoft.Extensions.Logging;
 using TradingApp.Business.DTOs.ConversationMessage;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
@@ -13,6 +13,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         private readonly ILogger<ConversationCompactorService> _logger;
         private readonly IAnthropicApiService _anthropicApiService;
         private readonly IConversationService _conversationService;
+        private readonly IConversationCompactionBoundaryService _conversationCompactionBoundaryService;
 
         private const int Sonnet5MaxContextWindow = 1000000;
         private const double CompactThreshold = 0.85;
@@ -23,12 +24,14 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         (
             ILogger<ConversationCompactorService> logger,
             IAnthropicApiService anthropicApiService,
-            IConversationService conversationService
+            IConversationService conversationService,
+            IConversationCompactionBoundaryService conversationCompactionBoundaryService
         )
         {
             _logger = logger;
             _anthropicApiService = anthropicApiService;
             _conversationService = conversationService;
+            _conversationCompactionBoundaryService = conversationCompactionBoundaryService;
         }
 
         public async Task CompactConversationAsync(Guid conversationId, MessageDeltaUsage usage, long maxTokens)
@@ -36,7 +39,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             if(!IsCompactionThresholdReached(usage, maxTokens)) return;
 
             var conversationDTO = await _conversationService.GetConversationCompactionStateAsync(conversationId);
-            var messagesForCompaction = await _conversationService.GetConversationMessagesForCompactionAsync(
+            var messagesForCompaction = await _conversationCompactionBoundaryService.GetMessagesForCompactionAsync(
                 conversationDTO, Sonnet5AfterCompactContextWindow);
 
             var parameters = new MessageCreateParams

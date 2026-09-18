@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.DeadLetter;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 
 namespace TradingApp.API.Controllers
 {

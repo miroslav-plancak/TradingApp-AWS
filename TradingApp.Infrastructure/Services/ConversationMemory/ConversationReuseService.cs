@@ -1,5 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Models.ConversationMemory;

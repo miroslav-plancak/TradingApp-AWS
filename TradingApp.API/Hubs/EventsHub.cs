@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 
 namespace TradingApp.API.Hubs
 {

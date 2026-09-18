@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Order;
 using TradingApp.Business.Interfaces.Repositories;
-using TradingApp.Business.Interfaces.Services;
+using TradingApp.Business.Interfaces.Services.Regular;
 using TradingApp.Business.Mappers;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.OutboxMessage;

@@ -105,11 +105,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             {
                 var parsedUserMessage = ParseUserMessage(userMessage);
 
-                if (parsedUserMessage.Length == 0) 
+                if (parsedUserMessage.Length == 0)
                 {
                     _logger.LogInformation("Lexical search skipped for userMessage: {UserMessage}", userMessage);
                     return new List<RetrievedChunk>();
-                } 
+                }
 
                 var lexicalSearchResult = await _resiliencePolicy.ExecuteAsync(async () =>
                 {

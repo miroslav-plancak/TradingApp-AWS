@@ -39,7 +39,7 @@ namespace TradingApp.Business.Mappers
                     Role = x.Role.ToString().ToLowerInvariant(),
                     Content = x.Body,
                     CreatedAt = x.CreatedAt
-                    
+
                 })
                 .ToList();
         }
