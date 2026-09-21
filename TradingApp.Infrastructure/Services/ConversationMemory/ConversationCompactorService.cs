@@ -1,7 +1,7 @@
 ﻿using Anthropic.Models.Messages;
 using Microsoft.Extensions.Logging;
 using TradingApp.Business.DTOs.ConversationMessage;
-using TradingApp.Business.Interfaces.Services.Regular;
+using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
@@ -12,7 +12,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
     {
         private readonly ILogger<ConversationCompactorService> _logger;
         private readonly IAnthropicApiService _anthropicApiService;
-        private readonly IConversationService _conversationService;
+        private readonly IConversationSummaryService _conversationSummaryService;
         private readonly IConversationCompactionBoundaryService _conversationCompactionBoundaryService;
 
         private const int Sonnet5MaxContextWindow = 1000000;
@@ -26,13 +26,13 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         (
             ILogger<ConversationCompactorService> logger,
             IAnthropicApiService anthropicApiService,
-            IConversationService conversationService,
+            IConversationSummaryService conversationSummaryService,
             IConversationCompactionBoundaryService conversationCompactionBoundaryService
         )
         {
             _logger = logger;
             _anthropicApiService = anthropicApiService;
-            _conversationService = conversationService;
+            _conversationSummaryService = conversationSummaryService;
             _conversationCompactionBoundaryService = conversationCompactionBoundaryService;
         }
 
@@ -40,7 +40,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         {
             if(!IsCompactionThresholdReached(usage, maxTokens)) return;
 
-            var conversationDTO = await _conversationService.GetConversationCompactionStateAsync(conversationId);
+            var conversationDTO = await _conversationSummaryService.GetConversationCompactionStateAsync(conversationId);
             var messagesForCompaction = await _conversationCompactionBoundaryService.GetMessagesForCompactionAsync(
                 conversationDTO, Sonnet5AfterCompactContextWindow);
 
@@ -65,7 +65,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     var lastCompactedMessageTimeStamp = messagesForCompaction.Last().CreatedAt;
-                    await _conversationService.UpdateCompactedConversationSummaryAsync(conversationId, response, lastCompactedMessageTimeStamp);
+                    await _conversationSummaryService.UpdateCompactedConversationSummaryAsync(conversationId, response, lastCompactedMessageTimeStamp);
                 }
             }
             catch (Exception ex)

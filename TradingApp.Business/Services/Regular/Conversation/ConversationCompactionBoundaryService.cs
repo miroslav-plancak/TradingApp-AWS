@@ -6,12 +6,12 @@ using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Repositories;
-using TradingApp.Business.Interfaces.Services.Regular;
+using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Business.Mappers;
 using TradingApp.Domain.Models.Entities.ConversationMessage;
 using TradingApp.Domain.Models.Enums;
 
-namespace TradingApp.Business.Services.Regular
+namespace TradingApp.Business.Services.Regular.Conversation
 {
     public class ConversationCompactionBoundaryService : IConversationCompactionBoundaryService
     {

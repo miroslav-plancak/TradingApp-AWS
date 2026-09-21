@@ -2,10 +2,12 @@
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services.Helpers;
 using TradingApp.Business.Interfaces.Services.Regular;
+using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Business.Middleware;
 using TradingApp.Business.Repositories;
 using TradingApp.Business.Services.Helpers;
 using TradingApp.Business.Services.Regular;
+using TradingApp.Business.Services.Regular.Conversation;
 
 namespace TradingApp.Business
 {
@@ -29,7 +31,9 @@ namespace TradingApp.Business
                     .AddScoped<IConversationService, ConversationService>()
                     .AddScoped<IConversationChunkService, ConversationChunkService>()
                     .AddScoped<IConversationFullFileService, ConversationFullFileService>()
-                    .AddScoped<IConversationCompactionBoundaryService, ConversationCompactionBoundaryService>();
+                    .AddScoped<IConversationCompactionBoundaryService, ConversationCompactionBoundaryService>()
+                    .AddScoped<IConversationMessageService, ConversationMessageService>()
+                    .AddScoped<IConversationSummaryService, ConversationSummaryService>();
 
             services.AddSingleton<IResiliencePolicyGuard, ResiliencePolicyGuard>();
             services.AddSingleton<IResilienceConversationPolicyGuard, ResilienceConversationPolicyGuard>();

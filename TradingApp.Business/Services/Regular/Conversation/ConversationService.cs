@@ -4,12 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
-using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Repositories;
-using TradingApp.Business.Interfaces.Services.Regular;
+using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Business.Mappers;
 
-namespace TradingApp.Business.Services.Regular
+namespace TradingApp.Business.Services.Regular.Conversation
 {
     public class ConversationService : IConversationService
     {
@@ -125,39 +124,6 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
-        public async Task<ConversationCompactionStateDTO> GetConversationCompactionStateAsync(Guid conversationId)
-        {
-            _logger.LogInformation("GetConversationCompactionStateAsyncStarted | ConversationId: {ConversationId}", conversationId);
-
-            try
-            {
-                var conversationEntity = await _conversationRepository.GetConversationById(conversationId);
-
-                if (conversationEntity == null)
-                {
-                    _logger.LogWarning("GetConversationCompactionStateAsyncNotFound | ConversationId: {ConversationId}", conversationId);
-                    throw new KeyNotFoundException($"Conversation {conversationId} not found.");
-                }
-
-                var conversationDTO = ConversationMapper.ToConversationCompactionStateDTO(conversationEntity);
-
-                _logger.LogInformation("GetConversationCompactionStateAsyncRetrieved  | ConversationId: {ConversationId} " +
-                    "| CompactedUntilMessage: {CompactedUntilMessage}",
-                  conversationDTO.ConversationId, conversationDTO.SummaryCoversMessagesUpTo);
-
-                return conversationDTO;
-            }
-            catch (KeyNotFoundException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "GetConversationCompactionStateAsyncFailed | ConversationId: {ConversationId}", conversationId);
-                throw new Exception($"Failed to retrieve conversation compaction state {conversationId}", ex);
-            }
-        }
-
         public async Task<bool> DeleteConversationByIdAsync(Guid conversationId)
         {
             _logger.LogInformation("DeleteConversation | ConversationId: {ConversationId}", conversationId);
@@ -189,72 +155,6 @@ namespace TradingApp.Business.Services.Regular
             }
         }
 
-        public async Task<CreatedConversationMessageResponseDTO> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request)
-        {
-            _logger.LogInformation("ConversationMessageCreationStarted | ConversationId: {ConversationId}", request.ConversationId);
-
-            try
-            {
-                var createConversationMessageRequestDTO = ConversationMessageMapper.ToCreateConversationMessageRequestDTO(request);
-                var conversationMessage = await _conversationRepository.CreateConversationMessageAsync(createConversationMessageRequestDTO);
-
-                var createdConversationMessageResponseDTO = ConversationMessageMapper.ToCreatedConversationMessageResponseDTO(conversationMessage);
-
-                _logger.LogInformation("ConversationMessageCreationSuccessful | ConversationId: {ConversationId} | MessageId: {MessageId}",
-                    request.ConversationId, conversationMessage.Id);
-
-                return createdConversationMessageResponseDTO;
-
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ConversationMessageCreationFailed  | Error: {Message}", ex.Message);
-
-                throw new Exception("Failed to create conversation message", ex);
-            }
-        }
-
-        public async Task<List<ConversationHistoryMessageDTO>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter)
-        {
-            _logger.LogInformation("ConversationMessagesFetchingStarted | ConversationId: {ConversationId}", conversationId);
-
-            try
-            {
-                var conversationMessages = await _conversationRepository.GetConversationMessagesAsync(conversationId, createdAfter);
-
-                var anthropicMessages = ConversationMessageMapper.ToConversationHistoryMessageDTOs(conversationMessages);
-
-                _logger.LogInformation("ConversationMessagesFetchingSuccessful | ConversationId: {ConversationId}", conversationId);
-
-                return anthropicMessages;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ConversationMessagesFetchingFailed  | Error: {Message}", ex.Message);
-
-                throw new Exception("Failed to fetch conversation messages", ex);
-            }
-        }
-
-        public async Task UpdateCompactedConversationSummaryAsync
-        (
-            Guid conversationId,
-            string compactedSummary,
-            DateTimeOffset lastMessageCoveredBySummary
-        )
-        {
-            _logger.LogInformation("UpdateCompactedConversationSummaryAsyncStarted | ConversationId: {ConversationId}", conversationId);
-
-            try
-            {
-                await _conversationRepository.UpdateConversationByConversationId(conversationId, compactedSummary, lastMessageCoveredBySummary);
-
-                _logger.LogInformation("UpdateCompactedConversationSummaryAsyncSuccessful | ConversationId: {ConversationId}", conversationId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "UpdateCompactedConversationSummaryAsyncFailed | ConversationId: {ConversationId}", conversationId);
-            }
-        }
+     
     }
 }
