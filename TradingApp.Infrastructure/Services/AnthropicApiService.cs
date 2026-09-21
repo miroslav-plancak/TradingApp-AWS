@@ -38,28 +38,29 @@ namespace TradingApp.Infrastructure.Services
                     return await _anthropicClient.Messages.Create(msgParams);
                 });
 
-                var firstBlock = anthropicMessageResponse.Content.Count > 0 ? anthropicMessageResponse.Content[0] : null;
-
-                if (firstBlock is not null && firstBlock.TryPickText(out var textblock))
+                if (anthropicMessageResponse.Content.Count == 0)
                 {
-                    if (!string.IsNullOrWhiteSpace(textblock.Text))
-                    {
-                        return textblock.Text.Trim();
-                    }
+                    _logger.LogError("AnthropicPromptReturnedNoContent | UserMessage: {UserMessage}", userMessage);
+                }
 
-                    return null;
+                foreach(var block in anthropicMessageResponse.Content)
+                {
+                    if(block.TryPickText(out var textBlock) && !string.IsNullOrWhiteSpace(textBlock.Text))
+                    {
+                        return textBlock.Text.Trim();
+                    }
                 }
 
                 return null;
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex))
             {
-                _logger.LogWarning(ex, "AnthropicPromptFailedAfterRetries | Question: {UserMessage}", userMessage);
+                _logger.LogWarning(ex, "AnthropicPromptFailedAfterRetries | UserMessage: {UserMessage}", userMessage);
                 return null;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "AnthropicPromptUnexpectedFailure | Question: {UserMessage}", userMessage);
+                _logger.LogError(ex, "AnthropicPromptUnexpectedFailure | UserMessage: {UserMessage}", userMessage);
                 return null;
             }
         }
