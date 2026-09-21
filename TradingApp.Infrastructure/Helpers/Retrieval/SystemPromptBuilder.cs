@@ -55,8 +55,5 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
                 ? null
                 : $"Existing summary of earlier conversation:\n{existingSummary}";
         }
-
-        //TODO: finish adding the QueryRoutingService and ConversationChunkArbiterService
-
     }
 }

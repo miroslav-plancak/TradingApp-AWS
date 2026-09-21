@@ -67,7 +67,15 @@ namespace TradingApp.Business.Services.Regular
                 var messagesToCompact = allConversationMessages.Where(x => x.CreatedAt < lastFullTurnMessage.CreatedAt);
                 var messagesToCompactDtos = ConversationMessageMapper.ToConversationHistoryMessageDTOs(messagesToCompact);
 
-                _logger.LogInformation("GetMessagesForCompactionAsyncSuccessful | ConversationId: {ConversationId}", conversationDTO.ConversationId);
+                if(messagesToCompact.Count() == 0)
+                {
+                    _logger.LogInformation("GetMessagesForCompactionAsyncFoundNoMessagesToCompact ");
+
+                    return messagesToCompactDtos;
+                }
+
+                _logger.LogInformation("GetMessagesForCompactionAsyncSuccessful | number of messages compacted: {CompactedMsgsCount}",
+                    messagesToCompactDtos.Count);
 
                 return messagesToCompactDtos;
 

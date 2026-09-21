@@ -62,7 +62,7 @@ namespace TradingApp.API.Hubs
 
             await _fileDebugLogger.LogSectionAsync("0-conversation-history", $"Current user/assistant correspodence:",
                             RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
-            //TODO3: this needs an additional optional param existingConversation.CompactedSummary
+           
             var parameters = ConfigureMessageParams(retrievalResult, conversationMessagesHistory, existingConversation.CompactedSummary);
 
             IAsyncEnumerator<string> enumerator = null;

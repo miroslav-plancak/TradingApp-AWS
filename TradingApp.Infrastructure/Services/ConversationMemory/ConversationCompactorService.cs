@@ -16,6 +16,8 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         private readonly IConversationCompactionBoundaryService _conversationCompactionBoundaryService;
 
         private const int Sonnet5MaxContextWindow = 1000000;
+        // NOTE: For testing purposes set CompactThreshold = 0.001 and StartingThreshold = 0.0012
+        // these numbers guarantee conversation compaction after 6-8 messages.
         private const double CompactThreshold = 0.85;
         private const double StartingThreshold = 0.35;
         private const int Sonnet5AfterCompactContextWindow = (int)(Sonnet5MaxContextWindow * StartingThreshold);
@@ -42,24 +44,29 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             var messagesForCompaction = await _conversationCompactionBoundaryService.GetMessagesForCompactionAsync(
                 conversationDTO, Sonnet5AfterCompactContextWindow);
 
+            if (messagesForCompaction.Count == 0) 
+            {
+                _logger.LogInformation("ConversationCompactionNothingToCompactYet | ConversationId: {ConversationId}", conversationId);
+                return;
+            }
+
             var parameters = new MessageCreateParams
             {
                 Model = "claude-sonnet-5",
                 MaxTokens = 7000,
                 System = SystemPromptBuilder.BuildCompactionSystemPrompt(conversationDTO.CompactedSummary),
-                Messages = ToAnthropicMessageParams(messagesForCompaction)
+                Messages = ToAnthropicMessageParams(messagesForCompaction),
             };
 
             try
             {
                 var response = await _anthropicApiService.DispatchPromptAsync(parameters);
 
-                if (!string.IsNullOrWhiteSpace(response) && messagesForCompaction.Count != 0)
+                if (!string.IsNullOrWhiteSpace(response))
                 {
                     var lastCompactedMessageTimeStamp = messagesForCompaction.Last().CreatedAt;
                     await _conversationService.UpdateCompactedConversationSummaryAsync(conversationId, response, lastCompactedMessageTimeStamp);
                 }
-
             }
             catch (Exception ex)
             {
@@ -82,7 +89,9 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                 {
                     Role = message.Role,
                     Content =  message.Content
-                }).ToList();
+                })
+                .Append(new MessageParam { Role = Role.User, Content="Compact the message history according to the instructions above."})
+                .ToList();
         }
     }
 }
