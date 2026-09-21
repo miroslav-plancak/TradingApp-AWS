@@ -5,20 +5,24 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
-using TradingApp.Business.Interfaces.Services.Regular;
+using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 
 namespace TradingApp.API.Controllers
 {
     public class ConversationController : TradingAppBaseController<ConversationController>
     {
         private readonly IConversationService _conversationService;
+        private readonly IConversationMessageService _conversationMessageService;
+
         public ConversationController
         (
             ILogger<ConversationController> logger,
-            IConversationService conversationService
+            IConversationService conversationService,
+            IConversationMessageService conversationMessageService
         ) : base(logger)
         {
             _conversationService = conversationService;
+            _conversationMessageService = conversationMessageService;
         }
 
         [HttpGet("{conversationId}")]
@@ -50,7 +54,7 @@ namespace TradingApp.API.Controllers
         {
             _logger.LogInformation("GetConversationMessagesAsyncRequest");
 
-            var result = await _conversationService.GetConversationMessagesAsync(conversationId, null);
+            var result = await _conversationMessageService.GetConversationMessagesAsync(conversationId, null);
 
             return Ok(result);
         }

@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
-using TradingApp.Business.Interfaces.Services.Regular;
+using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Domain.Models.Enums;
 using TradingApp.Infrastructure.Exceptions;
 using TradingApp.Infrastructure.Helpers.Retrieval;
@@ -24,6 +24,8 @@ namespace TradingApp.API.Hubs
         private readonly IAnthropicApiService _anthropicApiService;
         private readonly IChunkRetrievalService _chunkRetrievalService;
         private readonly IConversationService _conversationService;
+        private readonly IConversationMessageService _conversationMessageService;
+        private readonly IConversationSummaryService _conversationSummaryService;
         private readonly IConversationCompactorService _conversationCompactorService;
 
         public AiChatHub
@@ -33,6 +35,8 @@ namespace TradingApp.API.Hubs
             IAnthropicApiService anthropicApiService,
             IChunkRetrievalService chunkRetrievalService,
             IConversationService conversationService,
+            IConversationSummaryService conversationSummaryService,
+            IConversationMessageService conversationMessageService,
             IConversationCompactorService conversationCompactorService
         ) : base(logger)
         {
@@ -40,6 +44,8 @@ namespace TradingApp.API.Hubs
             _anthropicApiService = anthropicApiService;
             _chunkRetrievalService = chunkRetrievalService;
             _conversationService = conversationService;
+            _conversationMessageService = conversationMessageService;
+            _conversationSummaryService = conversationSummaryService;
             _conversationCompactorService = conversationCompactorService;
         }
 
@@ -79,7 +85,7 @@ namespace TradingApp.API.Hubs
                 },
                 async (msgBody) =>
                 {
-                    await _conversationService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
+                    await _conversationMessageService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
                     {
                         ConversationId = existingConversation.ConversationId,
                         ClientRequestId = clientRequestId,
@@ -89,7 +95,7 @@ namespace TradingApp.API.Hubs
                 },
                 async (msgBody) =>
                 {
-                    await _conversationService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
+                    await _conversationMessageService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
                     {
                         ConversationId = existingConversation.ConversationId,
                         ClientRequestId = null,
@@ -164,7 +170,7 @@ namespace TradingApp.API.Hubs
                 {
                     try
                     {
-                        var conversationCompactionState = await _conversationService.GetConversationCompactionStateAsync(conversationId.Value);
+                        var conversationCompactionState = await _conversationSummaryService.GetConversationCompactionStateAsync(conversationId.Value);
 
                         return (false, conversationCompactionState);
                     }
@@ -261,7 +267,7 @@ namespace TradingApp.API.Hubs
             List<ConversationHistoryMessageDTO> conversationMessagesHistory = [];
             try
             {
-                conversationMessagesHistory = await _conversationService.GetConversationMessagesAsync(
+                conversationMessagesHistory = await _conversationMessageService.GetConversationMessagesAsync(
                     existingConversation.ConversationId, existingConversation.SummaryCoversMessagesUpTo);
             }
             catch (Exception ex)

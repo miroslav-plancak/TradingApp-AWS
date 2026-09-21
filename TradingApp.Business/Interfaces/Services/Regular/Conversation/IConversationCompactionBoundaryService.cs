@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
 
-namespace TradingApp.Business.Interfaces.Services.Regular
+namespace TradingApp.Business.Interfaces.Services.Regular.Conversation
 {
     public interface IConversationCompactionBoundaryService
     {
