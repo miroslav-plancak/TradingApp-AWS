@@ -1,7 +1,5 @@
 ﻿using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Business.DTOs.ConversationFullFile;
-using TradingApp.Infrastructure.Models;
-using TradingApp.Infrastructure.Models.ConversationMemory;
 using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Helpers.Retrieval
@@ -17,7 +15,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
                 Content = x.Content,
                 KnnScore = null,
                 LexicalScore = null,
-                RelevanceScore = 0,
+                RelevanceScore = x.RelevanceScore,
                 ReciprocalRankFusionScore = 0
             }).ToList();
         }
@@ -40,7 +38,8 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
                 ConversationId = conversationId,
                 Key = x.Key,
                 SourceFile = x.SourceFile,
-                Content = x.Content
+                Content = x.Content,
+                RelevanceScore = x.RelevanceScore
             }).ToList();
         }
 
@@ -58,22 +57,6 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
                 SourceFile = x.Key,
                 Content = x.Value
             }).ToList();
-        }
-
-        public static RetrievalResult ToRetrievalResult(ReusableConversationArtifacts content)
-        {
-            if (content.ConversationFullFiles.Count == 0 && content.ConversationChunks.Count == 0)
-                return new RetrievalResult() { ChunkFallbacks = [], FullFileContents = [] };
-
-            var fullFileContents = ToFullFileContents(content.ConversationFullFiles);
-
-            return new RetrievalResult
-            {
-                ChunkFallbacks = ToRetrievedChunks(content.ConversationChunks)
-                                     .Where(x => !fullFileContents.ContainsKey(x.SourceFile ?? string.Empty))
-                                     .ToList(),
-                FullFileContents = fullFileContents
-            };
         }
     }
 }

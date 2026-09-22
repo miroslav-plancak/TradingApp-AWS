@@ -38,7 +38,13 @@ namespace TradingApp.Business.Repositories
 
                 if (existingRow != null)
                 {
-                    return existingRow;
+                    conversationChunk.Id = existingRow.Id;
+                    conversationChunk.CreatedAt = existingRow.CreatedAt;
+
+                   _tradingDbContext.ConversationChunks.Update(conversationChunk);
+                    await _tradingDbContext.SaveChangesAsync();
+
+                    return conversationChunk;
                 }
 
                 conversationChunk.Id = Guid.NewGuid();

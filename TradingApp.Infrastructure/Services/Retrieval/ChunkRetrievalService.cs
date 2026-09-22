@@ -3,6 +3,7 @@ using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
+using TradingApp.Infrastructure.Models.ConversationMemory;
 using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Retrieval
@@ -51,15 +52,15 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 if (reusableConversationContent.ConversationChunks.Count > 0)
                 {
-                    var reusableRetrievalResult = RetrievalResultMapping.ToRetrievalResult(reusableConversationContent);
-
                     _logger.LogInformation(
                         "Query: {userMessage} | Existing conversation chunk pool judged sufficient - skipping RAG pipeline",
                         userMessage);
 
+                    var reusableRetrievalResult = BuildReorderedReusableRetrievalResult(reusableConversationContent);
+
                     await _fileDebugLogger.LogSectionAsync("3-arbiter-skip-context", $"Query: {userMessage}",
                         RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(reusableRetrievalResult));
-
+                    
                     return reusableRetrievalResult;
                 }
 
@@ -99,8 +100,12 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 LogRedisSearchResults(filteredRetrievedChunksForContext, filesEligibleForExpansion, userMessage);
 
-                var retrievalResult = new RetrievalResult { ChunkFallbacks = filteredRetrievedChunksForContext, FullFileContents = filesEligibleForExpansion };
-
+                var retrievalResult = new RetrievalResult 
+                { 
+                    ChunkFallbacks = ChunkReordering.ReorderChunksToUShape(filteredRetrievedChunksForContext), 
+                    FullFileContents = ChunkReordering.ReorderFullFilesToUShape(filesEligibleForExpansion, filteredRetrievedChunksForPersistance)
+                };
+                
                 await _conversationReuseService.TryPersistReusableConversationArtifactsAsync(
                     conversationId, filteredRetrievedChunksForPersistance, retrievalResult.FullFileContents);
 
@@ -114,6 +119,19 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving context for question: {UserMessage}", userMessage);
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
+        }
+
+        private static RetrievalResult BuildReorderedReusableRetrievalResult(ReusableConversationArtifacts reusableConversationContent)
+        {
+            var reusableChunks = RetrievalResultMapping.ToRetrievedChunks(reusableConversationContent.ConversationChunks);
+            var fullFileContents = RetrievalResultMapping.ToFullFileContents(reusableConversationContent.ConversationFullFiles);
+
+            return new RetrievalResult
+            {
+                ChunkFallbacks = ChunkReordering.ReorderChunksToUShape(
+                    reusableChunks.Where(x => !fullFileContents.ContainsKey(x.SourceFile ?? string.Empty)).ToList()),
+                FullFileContents = ChunkReordering.ReorderFullFilesToUShape(fullFileContents, reusableChunks)
+            };
         }
 
         private void LogRedisSearchResults

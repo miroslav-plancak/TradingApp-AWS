@@ -16,7 +16,8 @@ namespace TradingApp.Business.Mappers
                 ConversationId = x.ConversationId,
                 Key = x.Key,
                 SourceFile = x.SourceFile,
-                Content = x.Content
+                Content = x.Content,
+                RelevanceScore = x.RelevanceScore
             }).ToList();
         }
 
@@ -29,7 +30,8 @@ namespace TradingApp.Business.Mappers
                 ConversationId = x.ConversationId,
                 Key = x.Key,
                 SourceFile = x.SourceFile,
-                Content = x.Content
+                Content = x.Content,
+                RelevanceScore = x.RelevanceScore
             }).ToList();
         }
     }

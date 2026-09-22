@@ -33,16 +33,6 @@ namespace TradingApp.Business.Services.Regular.Conversation
             {
                 if (requests.Count == 0) return;
 
-                var existingConversationChunks = await _conversationChunkRepository
-                    .GetConversationChunksAsync(requests.FirstOrDefault().ConversationId);
-
-                var existingConvChunkKeys = existingConversationChunks.Select(x => x.Key).ToHashSet();
-
-                if (existingConvChunkKeys.Count != 0)
-                {
-                    requests.RemoveAll(request => existingConvChunkKeys.Contains(request.Key));
-                }
-
                 var conversationChunkEntityRequests = ConversationChunkMapper.ToEntities(requests);
 
                 if (conversationChunkEntityRequests.Count != 0)
@@ -53,9 +43,7 @@ namespace TradingApp.Business.Services.Regular.Conversation
 
                         _logger.LogInformation("ConversationChunkCreationSuccessful | ConversationId: {ConversationId}", conversationChunk.Id);
                     }
-
                 }
-
             }
             catch (Exception ex)
             {

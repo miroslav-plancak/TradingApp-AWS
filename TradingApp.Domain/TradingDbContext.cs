@@ -193,6 +193,7 @@ namespace TradingApp.Domain
                 entity.Property(e => e.Key).IsRequired().HasMaxLength(200);
                 entity.Property(e => e.SourceFile).IsRequired().HasMaxLength(500);
                 entity.Property(e => e.Content).IsRequired();
+                entity.Property(e => e.RelevanceScore).IsRequired().HasDefaultValue(0);
                 entity.Property(e => e.CreatedAt).IsRequired();
             });
 

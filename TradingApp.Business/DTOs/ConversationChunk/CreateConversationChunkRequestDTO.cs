@@ -8,5 +8,6 @@ namespace TradingApp.Business.DTOs.ConversationChunk
         public required string Key { get; set; }
         public required string SourceFile { get; set; }
         public required string Content { get; set; }
+        public required double RelevanceScore { get; set; }
     }
 }
