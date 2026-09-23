@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
