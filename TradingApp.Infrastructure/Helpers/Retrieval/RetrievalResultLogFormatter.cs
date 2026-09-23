@@ -1,10 +1,7 @@
 ﻿using System.Text;
 using TradingApp.Business.DTOs.ConversationMessage;
-using TradingApp.Infrastructure.Models;
-using static TradingApp.Infrastructure.Services.ConversationMemory.ConversationChunkArbiterService;
 using TradingApp.Infrastructure.Models.ConversationMemory;
 using TradingApp.Infrastructure.Models.Retrieval;
-using TradingApp.Infrastructure.Services.ConversationMemory;
 
 namespace TradingApp.Infrastructure.Helpers.Retrieval
 {
@@ -24,6 +21,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
                 foreach (var chunk in retrievalResult.ChunkFallbacks)
                 {
                     sb.AppendLine($"CHUNK #{chunkNumberCounter}");
+                    sb.AppendLine($"KEY: {chunk.Key}");
                     sb.AppendLine($"SOURCEFILE: {chunk.SourceFile}");
                     sb.AppendLine();
                     sb.AppendLine($"KNNSCORE: {chunk.KnnScore}");
@@ -127,5 +125,25 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
             return sb.ToString();
         }
+
+        public static string FormatQueryDecompositionResponseIntoFileLog(List<string>? querries)
+        {
+            if (querries == null || querries.Count == 0)
+                return "Query decomposition retrieved an empty result.";
+
+            var helperDivider = new string('-', 80);
+            var sb = new StringBuilder();
+
+            sb.AppendLine(helperDivider);
+
+            foreach (var query in querries)
+            {
+                sb.AppendLine($"Query: {query}");
+                sb.AppendLine(helperDivider);
+            }
+
+            return sb.ToString();
+        }
+
     }
 }
