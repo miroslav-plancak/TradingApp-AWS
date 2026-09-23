@@ -248,6 +248,12 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddQueryDecompositionService(this IServiceCollection services)
+        {
+            services.AddScoped<IQueryDecompositionService, QueryDecompositionService>();
+            return services;
+        }
+
         // ==================== RAG - ConversationMemory ====================
 
         public static IServiceCollection AddConversationChunkArbiterServices(this IServiceCollection services)

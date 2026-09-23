@@ -1,4 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
+using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
@@ -17,6 +19,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IFileExpansionService _fileExpansionService;
         private readonly IConversationReuseService _conversationReuseService;
+        private readonly IQueryDecompositionService _queryDecompositionService;
 
         private const double RelevanceFloor = 0.53;
 
@@ -28,7 +31,8 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             IChunkRerankingService chunkRerankingService,
             IFileDebugLogger fileDebugLogger,
             IFileExpansionService fileExpansionService,
-            IConversationReuseService conversationReuseService
+            IConversationReuseService conversationReuseService,
+            IQueryDecompositionService queryDecompositionService
         )
         {
             _logger = logger;
@@ -38,6 +42,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _fileDebugLogger = fileDebugLogger;
             _fileExpansionService = fileExpansionService;
             _conversationReuseService = conversationReuseService;
+            _queryDecompositionService = queryDecompositionService;
         }
 
         public async Task<RetrievalResult> RetrieveRelevantContextAsync
@@ -66,48 +71,39 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(userMessage);
 
-                var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(userMessage);
+                var decomposedQueries = await _queryDecompositionService.DecomposeQueryAsync(userMessage);
 
-                var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(userMessage);
+                var combinedCappedChunks = await BuildCombinedCappedChunksAsync(decomposedQueries, routedLlmQueryResponse);
 
-                var unifiedChunks = ChunkFusion.UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
+                var dedupedCombinedCappedChunks = DedupCombinedCappedChunks(combinedCappedChunks);
 
-                var (knnChunksRankMap, lexicalChunksRankMap) = ChunkFusion.ComputeChunksRankMaps(retrievedKNNChunks, retrievedLexicalChunks);
-
-                var unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
-
-                var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(userMessage, unifiedChunksSortedByRrfScore);
-
-                rerankedChunks.RemoveAll(chunk => chunk.RelevanceScore < RelevanceFloor);
-
-                if (rerankedChunks.Count == 0)
+                if (dedupedCombinedCappedChunks.Count == 0)
                 {
                     _logger.LogInformation(
-                        "Query: {userMessage} | No chunks cleared the relevance floor ({RelevanceFloor}) - returning empty context",
-                        userMessage, RelevanceFloor);
+                        "None of the decomposed queries: {decomposedQueries} | have chunks that cleared the relevance floor ({RelevanceFloor}) - returning empty context",
+                        string.Join(", ", decomposedQueries), RelevanceFloor);
 
                     await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userMessage}",
-                        "No chunks cleared the relevance floor - returning empty context.");
+                        "None of the decomposed queries chunks cleared the relevance floor - returning empty context.");
 
                     return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
                 }
 
-                var filesEligibleForExpansion = await _fileExpansionService.DetermineFilesEligibleForExpansionAsync(rerankedChunks, routedLlmQueryResponse);
+                var filesEligibleForExpansion = await _fileExpansionService.DetermineFilesEligibleForExpansionAsync(
+                    dedupedCombinedCappedChunks, routedLlmQueryResponse, decomposedQueries.Count);
 
-                var filteredRetrievedChunksForPersistance = ChunkFiltering.CapChunksPerFile(rerankedChunks, routedLlmQueryResponse);
-
-                var filteredRetrievedChunksForContext = ChunkFiltering.ExcludeChunksCoveredByExpandedFiles(filteredRetrievedChunksForPersistance, filesEligibleForExpansion);
+                var filteredRetrievedChunksForContext = ChunkFiltering.ExcludeChunksCoveredByExpandedFiles(dedupedCombinedCappedChunks, filesEligibleForExpansion);
 
                 LogRedisSearchResults(filteredRetrievedChunksForContext, filesEligibleForExpansion, userMessage);
 
                 var retrievalResult = new RetrievalResult 
                 { 
                     ChunkFallbacks = ChunkReordering.ReorderChunksToUShape(filteredRetrievedChunksForContext), 
-                    FullFileContents = ChunkReordering.ReorderFullFilesToUShape(filesEligibleForExpansion, filteredRetrievedChunksForPersistance)
+                    FullFileContents = ChunkReordering.ReorderFullFilesToUShape(filesEligibleForExpansion, dedupedCombinedCappedChunks)
                 };
                 
                 await _conversationReuseService.TryPersistReusableConversationArtifactsAsync(
-                    conversationId, filteredRetrievedChunksForPersistance, retrievalResult.FullFileContents);
+                    conversationId, dedupedCombinedCappedChunks, retrievalResult.FullFileContents);
 
                 await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {userMessage}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(retrievalResult));
@@ -119,6 +115,43 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving context for question: {UserMessage}", userMessage);
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
+        }
+
+        private async Task<List<RetrievedChunk>> BuildCombinedCappedChunksAsync(List<string> decomposedQueries, LlmQueryClassification routedLlmQueryResponse) 
+        {
+            List<RetrievedChunk> combinedCappedChunks = [];
+
+            foreach (var query in decomposedQueries)
+            {
+                var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(query);
+
+                var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(query);
+
+                var unifiedChunks = ChunkFusion.UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
+
+                var (knnChunksRankMap, lexicalChunksRankMap) = ChunkFusion.ComputeChunksRankMaps(retrievedKNNChunks, retrievedLexicalChunks);
+
+                var  unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
+
+                var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(query, unifiedChunksSortedByRrfScore);
+
+                rerankedChunks.RemoveAll(chunk => chunk.RelevanceScore < RelevanceFloor);
+
+                var cappedChunks = ChunkFiltering.CapChunksPerFile(rerankedChunks, routedLlmQueryResponse);
+
+                combinedCappedChunks.AddRange(cappedChunks);
+            }
+
+            return combinedCappedChunks;
+        }
+
+        private List<RetrievedChunk> DedupCombinedCappedChunks(List<RetrievedChunk> combinedCappedChunks) 
+        {
+            return combinedCappedChunks
+                .GroupBy(x => x.Key)
+                .Select(group => group.OrderByDescending(x => x.RelevanceScore)
+                .First())
+                .ToList();
         }
 
         private static RetrievalResult BuildReorderedReusableRetrievalResult(ReusableConversationArtifacts reusableConversationContent)

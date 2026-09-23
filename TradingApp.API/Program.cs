@@ -59,6 +59,7 @@ builder.Services.AddVoyageRerankingServices();
 builder.Services.AddKnowledgeBaseQueryService();
 builder.Services.AddChunkRerankingService();
 builder.Services.AddFileExpansionService();
+builder.Services.AddQueryDecompositionService();
 builder.Services.AddChunkingRetrievalService();
 builder.Services.AddConversationChunkArbiterServices();
 builder.Services.AddConversationReuseService();

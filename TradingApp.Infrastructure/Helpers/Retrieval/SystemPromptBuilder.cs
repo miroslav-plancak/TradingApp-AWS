@@ -31,6 +31,16 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
           "- If the chunks are only partially relevant, or you are not confident they fully cover the question, return {\"chunkKeys\": []}.\r\n" +
           "- Only cite \"Key\" values that literally appear in the chunks provided - never invent one.";
 
+        public const string QueryDecompositionSystemInstruction =
+            "Decide whether the user's message asks about multiple distinct topics/entities, or just one - even if phrased in a complex or detailed way. " +
+            "A single, detailed question about one topic (e.g. \"explain in detail how X handles retries\") is still ONE query. " +
+            "Only split when the message genuinely names 2+ distinct topics/entities to address separately (e.g. \"compare how X handles retries vs how Y handles retries\").\r\n" +
+            "Respond with exactly a JSON array of strings, nothing else - one element if it's a single query, one element per sub-topic if it's compound. " +
+            "Each element must be a complete, standalone question (not a fragment) that could be searched on its own without the rest of the message for context.\r\n" +
+            "Example (single query): [\"How does OutboxProcessingService handle retries?\"]\r\n" +
+            "Example (multiple queries): [\"How does OutboxProcessingService handle retries?\", \"How does the SNS publish path handle retries?\"]\r\n" +
+            "Do not infer or add topics that are not present in the user's message.";
+
         public static string BuildCompactionSystemPrompt(string? existingSummary)
         {
             var summary = FormatExistingSummary(existingSummary);

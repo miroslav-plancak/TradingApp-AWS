@@ -16,5 +16,20 @@ namespace TradingApp.Infrastructure.Helpers.ConversationMemory
 
             return text.Substring(start, end - start + 1);
         }
+
+        public static string ExtractJsonArray(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "";
+
+            var start = text.IndexOf('[');
+            var end = text.IndexOf(']');
+
+            if(start == -1 || end == -1 || end < start)
+            {
+                return text;
+            }
+
+            return text.Substring(start, end - start + 1);
+        }
     }
 }

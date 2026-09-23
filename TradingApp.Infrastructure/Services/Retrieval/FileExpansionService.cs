@@ -17,7 +17,8 @@ namespace TradingApp.Infrastructure.Services.Retrieval
         public async Task<Dictionary<string, string>> DetermineFilesEligibleForExpansionAsync
         (
            List<RetrievedChunk> rerankedChunks,
-           LlmQueryClassification routedLlmQueryResponse
+           LlmQueryClassification routedLlmQueryResponse,
+           int decomposedQueriesQuantity = 1
         )
         {
             var fileOccurrenceMap = rerankedChunks.GroupBy(x => x.SourceFile ?? string.Empty).ToDictionary(g => g.Key, g => g.Count());
@@ -28,7 +29,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             var filesEligibleForExpansion = filesWithFullContent
                         .Where(kvp => fileOccurrenceMap.TryGetValue(kvp.Key, out var occurrences)
-                            && occurrences >= MinimumOccurrenceThreshold(routedLlmQueryResponse))
+                            && occurrences >= MinimumOccurrenceThreshold(routedLlmQueryResponse) * decomposedQueriesQuantity)
                         .ToDictionary(x => x.Key, x => x.Value);
 
             return filesEligibleForExpansion;
