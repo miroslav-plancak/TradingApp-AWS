@@ -338,11 +338,15 @@ User question
      ▼
 Conversation-reuse check (Claude Haiku 4.5 arbiter over this conversation's persisted chunk/file pool)
      │
-     ├──► pool judged sufficient ──────────────────────────────► System prompt assembly (skip everything below)
+     ├──► pool judged sufficient ──► U-shape reorder ──► System prompt assembly (skip everything below)
      │
      ▼ (no persisted pool yet, or judged insufficient)
 Query routing (Claude Haiku 4.5) ── classifies BROAD vs NARROW, feeds file-expansion + per-file cap below
      │
+     ▼
+Query decomposition (Claude Haiku 4.5) ── splits a compound question into 1+ independent sub-questions
+     │                                     (Count == 1 signals a non-compound question)
+     ▼  ── the block below runs once PER sub-question, not once for the whole message ──
      ├──► KNN search (Redis Stack, Voyage voyage-4-lite embeddings, K=10)
      └──► Lexical/BM25 search (RediSearch, identifier-shaped-token filter)
                     │
@@ -350,16 +354,24 @@ Query routing (Claude Haiku 4.5) ── classifies BROAD vs NARROW, feeds file-e
           Reciprocal Rank Fusion (dedup only — see note below)
                     │
                     ▼
-          Re-ranking (Voyage rerank-2.5, cross-encoder)
+          Re-ranking (Voyage rerank-2.5, cross-encoder) — against THIS sub-question's own text, not the
+          original blended message (fixes a real bug: reranking the blended text silently under-scored
+          a chunk relevant to only one sub-topic, dropping it below the floor)
                     │
                     ▼
           Relevance floor (0.53 on rerank score) ── below floor on everything → honest "no context" answer
                     │
                     ▼
-          Adaptive parent-file expansion (threshold set by query routing: 1 for BROAD, 2 for NARROW)
+          Adaptive per-file chunk cap (5 for BROAD, 3 for NARROW/INCONCLUSIVE) — applied per sub-question,
+          unscaled, so one hot-scoring sub-question can't crowd out a weaker-scoring one for the same file
+                    │
+                    ▼  ── all sub-questions' capped results merge here, deduped keeping max RelevanceScore ──
+          Adaptive parent-file expansion (occurrence threshold: 1 for BROAD, 2 for NARROW — scaled
+          ×sub-question count, since occurrence counting is additive across sub-questions)
                     │
                     ▼
-          Adaptive per-file chunk cap (5 for BROAD, 3 for NARROW/INCONCLUSIVE, for files not fully expanded)
+          U-shape reorder (chunks and expanded files) — worst-scoring item placed dead-center, strongest
+          at both edges, to mitigate the lost-in-the-middle effect on long contexts
                     │
                     ▼
           Persist this turn's chunk/file pool for future reuse-check turns
@@ -384,6 +396,7 @@ misses on its own.
 | Service | Owns |
 |---|---|
 | `QueryRoutingService` | LLM-based BROAD/NARROW classification (Claude Haiku 4.5) |
+| `QueryDecompositionService` | LLM-based (Claude Haiku 4.5) splitting of a compound question into 1+ independent sub-questions |
 | `KnowledgeBaseQueryService` | Every Redis read — KNN search, lexical search, full-file content lookup |
 | `ChunkFusion` (static helper) | RRF scoring + dedup, no dependencies |
 | `ChunkRerankingService` | Voyage rerank-2.5 wrapper |
@@ -408,19 +421,48 @@ FK constraints (matches this schema's existing convention).
 On the first message in a conversation, `AiChatHub` mints a new `Conversation` row and pushes its id to
 the client over a dedicated `ConversationStarted` side-channel (`Clients.Caller.SendAsync`, fired before
 the text stream starts) rather than smuggling it into the `IAsyncEnumerable<string>` stream itself. Every
-subsequent turn on that conversation includes the id, and the full prior history (one `ConversationMessage`
+subsequent turn on that conversation includes the id, and the prior history (one `ConversationMessage`
 row per `User`/`Assistant` message, not per turn) is replayed as Anthropic's alternating `Messages` array —
-no summarization or truncation yet. Both `Conversation` and `ConversationMessage` carry a `ClientRequestId`
+in full until compaction first triggers, and only the messages after its boundary once it has (see
+Conversation Compaction below). Both `Conversation` and `ConversationMessage` carry a `ClientRequestId`
 idempotency key (a table-wide unique filtered index on `Conversations`, a composite
 `(ConversationId, ClientRequestId)` unique filtered index on `ConversationMessages`) so a retried SignalR
 call after a dropped connection can't create duplicate rows.
 
 Each turn's retrieved chunks and expanded files are also persisted into `ConversationChunks`/
-`ConversationFullFiles`, deduplicated per conversation. On the *next* turn, `ConversationChunkArbiterService`
-makes a cheap Haiku call asking whether that persisted pool already covers the new question — a hit skips
-query routing, KNN, lexical search, re-ranking, the relevance floor, and file expansion entirely for that
-turn (see the pipeline diagram above), since the previous turn's retrieved content is judged sufficient to
-answer a same-topic follow-up without re-running retrieval from scratch.
+`ConversationFullFiles`, deduplicated per conversation, carrying `RelevanceScore` end-to-end so U-shape
+reordering (above) has a real score to sort by even on the reuse/skip path. On the *next* turn,
+`ConversationChunkArbiterService` makes a cheap Haiku call asking whether that persisted pool already
+covers the new question — a hit skips query routing, decomposition, KNN, lexical search, re-ranking, the
+relevance floor, and file expansion entirely for that turn (see the pipeline diagram above), since the
+previous turn's retrieved content is judged sufficient to answer a same-topic follow-up without re-running
+retrieval from scratch.
+
+### Conversation Compaction
+
+`ConversationCompactorService.CompactConversationAsync(conversationId, usage, maxTokens)` runs after every
+streamed answer. It checks a trigger threshold against the real `Usage` numbers the streaming call already
+returns (`lastTurnTotalInputTokens + maxTokens >= Sonnet5MaxContextWindow * 0.85`) and no-ops immediately if
+it isn't reached — no wasted call on most turns. Once triggered, a dedicated Claude Sonnet 5 call summarizes
+the conversation so far, and the result is persisted on `Conversation.CompactedSummary` /
+`SummaryCoversMessagesUpTo`. Every subsequent turn replays only `ConversationMessage` rows created *after*
+that boundary (`GetConversationMessagesAsync(..., createdAfter: ...)`), with the summary text prepended
+ahead of them in the `Messages` array sent to Claude — so the model still sees the full conversational
+arc, just compressed before the boundary instead of replayed verbatim. The boundary-walk algorithm that
+decides exactly where to cut lives in its own `ConversationCompactionBoundaryService`, extracted out of
+`ConversationService` once the walk was recognized as a genuinely separate responsibility.
+`ConversationController`'s human-facing message-history endpoint (below) deliberately always passes
+`createdAfter: null` — a person reviewing their own history should see everything, not a
+compaction-truncated view.
+
+### Conversation Management API
+
+`ConversationController` (`TradingApp.API/Controllers/`) exposes conversation lifecycle over REST, separate
+from the streaming Hub above: `GET /api/conversation` (list), `GET /api/conversation/{id}`,
+`GET /api/conversation/{id}/messages` (full, uncompacted history — see above), and
+`DELETE /api/conversation/{id}`. Deliberately excludes `ConversationChunks`/`ConversationFullFiles` — nothing
+outside the backend consumes them today; a debug/admin view over retrieved-chunk data would be a separate,
+deliberately-designed feature, not a byproduct of this controller.
 
 ### Streaming resilience
 
@@ -456,12 +498,12 @@ on the error banner that's conditionally hidden via a `NonRetryableChatFailure` 
 retrying can't fix (bad API key, insufficient credits) — retrying those would just re-run the identical
 request into the identical wall.
 
-The conversation itself is fully multi-turn end to end on the backend (persisted history, the reuse-arbiter
-gate above) — the `conversationId` from `ConversationStarted` is kept and resent on every subsequent
-message. The chat UI, though, still only *renders* the latest single exchange (`lastMessage`/`answer` are
-singular signals reset on every send) — a collapsed placeholder rail is reserved for a real multi-conversation
-history view but isn't wired up yet, blocked on a "list all conversations" backend endpoint that doesn't
-exist at any layer yet (every existing method assumes the caller already knows the `conversationId`).
+The conversation is fully multi-turn end to end, both backend and frontend. The `conversationId` from
+`ConversationStarted` is kept and resent on every subsequent message, and a `ConversationApiService` calls
+the `ConversationController` endpoints above (see Conversation Management API) to drive a real `messages`
+transcript in place of the old single `lastMessage`/`answer` pair — a history rail lists past conversations,
+clicking one loads its full history, a "New conversation" button resets state, and the active conversation
+now survives a page refresh.
 
 ### Full write-ups
 
