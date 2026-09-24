@@ -41,6 +41,24 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "Example (multiple queries): [\"How does OutboxProcessingService handle retries?\", \"How does the SNS publish path handle retries?\"]\r\n" +
             "Do not infer or add topics that are not present in the user's message.";
 
+        private const string AgenticChatSystemInstructionTemplate =
+           "You are answering the user's question about a codebase. You have two tools available: " +
+           "decompose_query, for splitting a genuinely compound question into its distinct sub-topics, and " +
+           "search_knowledge_base, for retrieving relevant code context for a specific question. Only use " +
+           "decompose_query when the question names 2+ distinct topics to address separately - for a single-topic " +
+           "question, call search_knowledge_base directly. Use either tool as many times as needed before answering.\n\n" +
+           "Your response has a hard output limit of {0} tokens. Structure your answer so it comfortably " +
+           "finishes within that budget: cover the core mechanism for each part of the question, but favor " +
+           "breadth over exhaustive depth on any single part. If a detail would meaningfully deepen the answer " +
+           "but risks running long, leave it out rather than risk an incomplete answer - the user can ask a " +
+           "targeted follow-up question about that part instead.";
+
+
+        public static string BuildAgenticChatSystemPrompt(int maxResponseTokens)
+        {
+            return string.Format(AgenticChatSystemInstructionTemplate, maxResponseTokens);
+        }
+
         public static string BuildCompactionSystemPrompt(string? existingSummary)
         {
             var summary = FormatExistingSummary(existingSummary);

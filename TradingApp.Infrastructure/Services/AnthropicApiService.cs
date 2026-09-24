@@ -29,7 +29,7 @@ namespace TradingApp.Infrastructure.Services
             _resiliencePolicy = resiliencePolicy;
         }
 
-        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string? userMessage)
+        public async Task<Message?> DispatchPromptWithFullResponseAsync(MessageCreateParams msgParams, string? userMessage)
         {
             try
             {
@@ -43,15 +43,7 @@ namespace TradingApp.Infrastructure.Services
                     _logger.LogError("AnthropicPromptReturnedNoContent | UserMessage: {UserMessage}", userMessage);
                 }
 
-                foreach(var block in anthropicMessageResponse.Content)
-                {
-                    if(block.TryPickText(out var textBlock) && !string.IsNullOrWhiteSpace(textBlock.Text))
-                    {
-                        return textBlock.Text.Trim();
-                    }
-                }
-
-                return null;
+                return anthropicMessageResponse;
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex))
             {
@@ -63,6 +55,23 @@ namespace TradingApp.Infrastructure.Services
                 _logger.LogError(ex, "AnthropicPromptUnexpectedFailure | UserMessage: {UserMessage}", userMessage);
                 return null;
             }
+        }
+
+        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string? userMessage)
+        {
+            var anthropicMessageResponse = await DispatchPromptWithFullResponseAsync(msgParams, userMessage);
+
+            if (anthropicMessageResponse == null) return null;
+
+            foreach (var block in anthropicMessageResponse.Content)
+            {
+                if (block.TryPickText(out var textBlock) && !string.IsNullOrWhiteSpace(textBlock.Text))
+                {
+                    return textBlock.Text.Trim();
+                }
+            }
+
+            return null;
         }
 
         public async IAsyncEnumerable<string> EstablishStreamAsync

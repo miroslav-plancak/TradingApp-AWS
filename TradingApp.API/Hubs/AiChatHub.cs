@@ -326,12 +326,12 @@ namespace TradingApp.API.Hubs
         private static List<ContentBlockParam> MarkLastAssistantMessageAsCacheBreakpoint(ConversationHistoryMessageDTO message)
         {
             return new List<ContentBlockParam>
-           {
+            {
                new TextBlockParam(message.Content)
                {
                    CacheControl = new CacheControlEphemeral()
                }
-           };
+            };
         }
     }
 }

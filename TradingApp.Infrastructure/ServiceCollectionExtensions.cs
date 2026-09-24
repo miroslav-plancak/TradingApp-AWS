@@ -19,9 +19,11 @@ using TradingApp.Infrastructure.Services;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
+using TradingApp.Infrastructure.Interfaces.Agentic;
 using TradingApp.Infrastructure.Services.ConversationMemory;
 using TradingApp.Infrastructure.Services.Ingestion;
 using TradingApp.Infrastructure.Services.Retrieval;
+using TradingApp.Infrastructure.Services.Agentic;
 using TradingApp.Business.Interfaces.Services.Regular;
 
 namespace TradingApp.Infrastructure
@@ -271,6 +273,14 @@ namespace TradingApp.Infrastructure
         public static IServiceCollection AddConversationCompactorService(this IServiceCollection services)
         {
             services.AddScoped<IConversationCompactorService, ConversationCompactorService>();
+            return services;
+        }
+
+        // ==================== Agentic ====================
+
+        public static IServiceCollection AddAgenticLoopService(this IServiceCollection services)
+        {
+            services.AddScoped<IAgenticLoopService, AgenticLoopService>();
             return services;
         }
     }

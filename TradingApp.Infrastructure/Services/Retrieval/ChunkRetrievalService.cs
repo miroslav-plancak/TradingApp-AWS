@@ -145,6 +145,32 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             return combinedCappedChunks;
         }
 
+
+        public async Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query)
+        {
+            var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(query);
+
+            var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(query);
+
+            var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(query);
+
+            var unifiedChunks = ChunkFusion.UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
+
+            var (knnChunksRankMap, lexicalChunksRankMap) = ChunkFusion.ComputeChunksRankMaps(retrievedKNNChunks, retrievedLexicalChunks);
+
+            var unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
+
+            var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(query, unifiedChunksSortedByRrfScore);
+
+            rerankedChunks.RemoveAll(chunk => chunk.RelevanceScore < RelevanceFloor);
+
+            var cappedChunks = ChunkFiltering.CapChunksPerFile(rerankedChunks, routedLlmQueryResponse);
+
+            var distinctCappedChunks = DedupCombinedCappedChunks(cappedChunks);
+
+            return distinctCappedChunks;
+        }
+
         private List<RetrievedChunk> DedupCombinedCappedChunks(List<RetrievedChunk> combinedCappedChunks) 
         {
             return combinedCappedChunks
