@@ -41,8 +41,14 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "Example (multiple queries): [\"How does OutboxProcessingService handle retries?\", \"How does the SNS publish path handle retries?\"]\r\n" +
             "Do not infer or add topics that are not present in the user's message.";
 
+        public const string SearchCapReachedMessage =
+            "No new results found in the last 3 attempts on this line of inquiry - " +
+            "stop retrying this specific angle and either move on or answer with what you already have.";
+
         private const string AgenticChatSystemInstructionTemplate =
-           "You are answering the user's question about a codebase. You have two tools available: " +
+           "You are answering the user's question about a codebase. You can infer the context from the chat history (if provided), " +
+            "as well as with additional summary of chat history:\n{1}.\n" +
+            "You have two tools available:" +
            "decompose_query, for splitting a genuinely compound question into its distinct sub-topics, and " +
            "search_knowledge_base, for retrieving relevant code context for a specific question. Only use " +
            "decompose_query when the question names 2+ distinct topics to address separately - for a single-topic " +
@@ -54,9 +60,9 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
            "targeted follow-up question about that part instead.";
 
 
-        public static string BuildAgenticChatSystemPrompt(int maxResponseTokens)
+        public static string BuildAgenticChatSystemPrompt(int maxResponseTokens, string? compactedSummary = " No compacted summary provided.")
         {
-            return string.Format(AgenticChatSystemInstructionTemplate, maxResponseTokens);
+            return string.Format(AgenticChatSystemInstructionTemplate, maxResponseTokens, compactedSummary);
         }
 
         public static string BuildCompactionSystemPrompt(string? existingSummary)

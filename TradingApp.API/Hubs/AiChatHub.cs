@@ -1,4 +1,5 @@
-﻿using Anthropic.Models.Messages;
+﻿using Anthropic.Models.Beta.Environments;
+using Anthropic.Models.Messages;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using System;
@@ -12,6 +13,7 @@ using TradingApp.Domain.Models.Enums;
 using TradingApp.Infrastructure.Exceptions;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Interfaces.Agentic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Retrieval;
@@ -27,6 +29,7 @@ namespace TradingApp.API.Hubs
         private readonly IConversationMessageService _conversationMessageService;
         private readonly IConversationSummaryService _conversationSummaryService;
         private readonly IConversationCompactorService _conversationCompactorService;
+        private readonly IAgenticLoopService _agenticLoopService;
 
         public AiChatHub
         (
@@ -37,7 +40,8 @@ namespace TradingApp.API.Hubs
             IConversationService conversationService,
             IConversationSummaryService conversationSummaryService,
             IConversationMessageService conversationMessageService,
-            IConversationCompactorService conversationCompactorService
+            IConversationCompactorService conversationCompactorService,
+            IAgenticLoopService agenticLoopService
         ) : base(logger)
         {
             _fileDebugLogger = fileDebugLogger;
@@ -47,9 +51,93 @@ namespace TradingApp.API.Hubs
             _conversationMessageService = conversationMessageService;
             _conversationSummaryService = conversationSummaryService;
             _conversationCompactorService = conversationCompactorService;
+            _agenticLoopService = agenticLoopService;
         }
 
-        public async IAsyncEnumerable<string> SendUserMessage
+        //////////////////
+        public async Task<string> SendUserMessage
+        (
+         string userMessage,
+         Guid? conversationId,
+         Guid? clientRequestId
+        )
+        {
+
+            if (string.IsNullOrWhiteSpace(userMessage)) throw new HubException("Message cannot be empty.");
+            
+            var (isNewConversation, existingConversation) = await ResolveConversationAsync(conversationId, clientRequestId, userMessage);
+
+            var conversationMessagesHistory = await RetrieveConversationHistoryAsync(existingConversation, userMessage);
+
+            AppendUserMessageToHistory(conversationMessagesHistory, userMessage);
+
+            await _fileDebugLogger.LogSectionAsync("0-conversation-history", $"Current user/assistant correspodence:",
+                            RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
+
+            var conversationHistory = ToAnthropicMessageParams(conversationMessagesHistory);
+            string assistantMessageResponse;
+           
+            try 
+            {
+              assistantMessageResponse = await _agenticLoopService.RunAgenticLoopAsync(
+                 userMessage, conversationHistory, existingConversation.CompactedSummary);
+
+            }
+            catch (Exception ex)
+            {   
+                if (isNewConversation)
+                {
+                   await  _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                }
+
+                _logger.LogError(ex, "General error occured while receiving assistant message response.");
+                throw new HubException(ex.Message);
+            }
+
+            if (string.IsNullOrWhiteSpace(assistantMessageResponse))
+            {   
+                if (isNewConversation)
+                {
+                    await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                }
+
+                _logger.LogError( "Assistant message response is empty.");
+                throw new HubException("Assistant message response failed, try again.");
+            }
+
+            try
+            {
+                await _conversationMessageService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
+                {
+                    ConversationId = existingConversation.ConversationId,
+                    ClientRequestId = clientRequestId,
+                    Role = ConversationMessageRole.User,
+                    Body = userMessage
+                });
+
+                await _conversationMessageService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
+                {
+                    ConversationId = existingConversation.ConversationId,
+                    ClientRequestId = null,
+                    Role = ConversationMessageRole.Assistant,
+                    Body = assistantMessageResponse
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Failed to persist conversation messages for conversation {ConversationId} - the answer was generated successfully but may be missing from history.",
+                    existingConversation.ConversationId);
+            }
+
+            //OPEN QUESTION[1]: this probably needs to happen inside the loop, where we have information about tokendelta obj, but I tried that and concluded that it is even worse then this option. Unsure what to do here.
+            //await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, tokenUsage, parameters.MaxTokens);
+
+            return assistantMessageResponse;
+
+        }
+        /////////////////
+        public async IAsyncEnumerable<string> SendUserMessage_temp_disable
         (
             string userMessage,
             Guid? conversationId,
@@ -70,7 +158,7 @@ namespace TradingApp.API.Hubs
                             RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
            
             var parameters = ConfigureMessageParams(retrievalResult, conversationMessagesHistory, existingConversation.CompactedSummary);
-
+     
             IAsyncEnumerator<string> enumerator = null;
 
             enumerator = _anthropicApiService.EstablishStreamAsync

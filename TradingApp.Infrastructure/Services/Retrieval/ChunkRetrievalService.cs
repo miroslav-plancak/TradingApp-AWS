@@ -148,27 +148,35 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
         public async Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query)
         {
-            var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(query);
+            try
+            {
+                var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(query);
 
-            var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(query);
+                var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(query);
 
-            var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(query);
+                var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(query);
 
-            var unifiedChunks = ChunkFusion.UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
+                var unifiedChunks = ChunkFusion.UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
 
-            var (knnChunksRankMap, lexicalChunksRankMap) = ChunkFusion.ComputeChunksRankMaps(retrievedKNNChunks, retrievedLexicalChunks);
+                var (knnChunksRankMap, lexicalChunksRankMap) = ChunkFusion.ComputeChunksRankMaps(retrievedKNNChunks, retrievedLexicalChunks);
 
-            var unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
+                var unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
 
-            var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(query, unifiedChunksSortedByRrfScore);
+                var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(query, unifiedChunksSortedByRrfScore);
 
-            rerankedChunks.RemoveAll(chunk => chunk.RelevanceScore < RelevanceFloor);
+                rerankedChunks.RemoveAll(chunk => chunk.RelevanceScore < RelevanceFloor);
 
-            var cappedChunks = ChunkFiltering.CapChunksPerFile(rerankedChunks, routedLlmQueryResponse);
+                var cappedChunks = ChunkFiltering.CapChunksPerFile(rerankedChunks, routedLlmQueryResponse);
 
-            var distinctCappedChunks = DedupCombinedCappedChunks(cappedChunks);
+                var distinctCappedChunks = DedupCombinedCappedChunks(cappedChunks);
 
-            return distinctCappedChunks;
+                return distinctCappedChunks;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected failure occurred while retrieving chunks for query: {Query}", query);
+                return [];
+            }
         }
 
         private List<RetrievedChunk> DedupCombinedCappedChunks(List<RetrievedChunk> combinedCappedChunks) 
