@@ -35,15 +35,19 @@ namespace TradingApp.Infrastructure.Services.Agentic
             _chunkRetrievalService = chunkRetrievalService;
         }
 
-        public async Task<string?> RunAgenticLoopAsync(string userMessage)
+        public async Task<string?> RunAgenticLoopAsync
+        (
+            string userMessage,
+            IReadOnlyList<MessageParam> conversationMessagesHistory,
+            string? compactedSummary
+        )
         {
             _logger.LogInformation("RunAgenticLoopAsyncStarted | UserMessage:{UserMessage}", userMessage);
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", "Loop started", userMessage);
 
-            var messages = new List<MessageParam>
-            {
-                new MessageParam {Role = Role.User, Content = userMessage}
-            };
+            List<MessageParam> messages = conversationMessagesHistory.Count == 0
+                ? new List<MessageParam> { new MessageParam { Role = Role.User, Content = userMessage } }
+                : new List<MessageParam>(conversationMessagesHistory);
 
             var seenChunkKeys = new HashSet<string>();
             var searchKnowledgeBaseToolCounter = 0;
@@ -54,7 +58,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 {
                     Model = "claude-sonnet-5",
                     MaxTokens = MaxResponseTokens,
-                    System = SystemPromptBuilder.BuildAgenticChatSystemPrompt(MaxResponseTokens),
+                    System = SystemPromptBuilder.BuildAgenticChatSystemPrompt(MaxResponseTokens, compactedSummary),
                     Tools = new List<ToolUnion>
                     {
                         AgenticToolDefinitions.SearchKnowledgeBase,
@@ -113,10 +117,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
                         if (toolUseBlock.Name == "search_knowledge_base" && searchKnowledgeBaseToolCounter >= 3)
                         {
-                            toolTextResult = "No new results found in the last 3 attempts on this line of inquiry - " +
-                                "stop retrying this specific angle and either move on or answer with what you already have.";
+                            toolTextResult = SystemPromptBuilder.SearchCapReachedMessage;
 
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", 
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
                                 "Search capped — consecutive empty limit reached", toolUseBlock.Input);
                         }
                         else
@@ -149,7 +152,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             string result;
 
             switch (toolName)
-            {
+            {   //TODO: make these enum types and move bodies out of case blocks
                 case "decompose_query":
                     {
                         var question = input["question"].GetString() ?? string.Empty;
