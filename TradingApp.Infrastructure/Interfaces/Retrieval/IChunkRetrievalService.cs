@@ -10,5 +10,6 @@ namespace TradingApp.Infrastructure.Interfaces.Retrieval
             string userMessage,
             Guid conversationId
         );
+        Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query);
     }
 }
