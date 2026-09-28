@@ -7,5 +7,6 @@ namespace TradingApp.Infrastructure.Interfaces.Retrieval
     {
         Task<Dictionary<string, string>> DetermineFilesEligibleForExpansionAsync(
             List<RetrievedChunk> rerankedChunks, LlmQueryClassification routedLlmQueryResponse , int decomposedQueriesQuantity = 1);
+        Task<Dictionary<string, string>> GetExistingFullFileContentsMapAsync(IEnumerable<string?> distinctFileNames);
     }
 }

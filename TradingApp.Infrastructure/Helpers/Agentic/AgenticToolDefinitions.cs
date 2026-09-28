@@ -6,33 +6,6 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
 {
     public static class AgenticToolDefinitions
     {
-        public static readonly Tool SearchKnowledgeBase = new Tool
-        {
-            Name = AgenticTool.search_knowledge_base.ToString(),
-
-            Description =
-                "Searches the TradingApp-AWS codebase for information relevant to a single, focused question." +
-                "Returns the most relevant code chunks, ranked by relevance. Call this once per distinct topic " +
-                "- if the question covers multiple unrelated topics, call decompose_query first to get focused " +
-                "sub-questions, then call this tool once per sub-question.",
-
-            InputSchema = new InputSchema
-            {
-                Type = JsonSerializer.SerializeToElement("object"),
-
-                Properties = new Dictionary<string, JsonElement>
-                {
-                    ["query"] = JsonSerializer.SerializeToElement(new 
-                    {
-                        type = "string",
-                        description = "A focused, standalone question about one specific topic in the codebase."
-                    }),
-                },
-
-                Required = new List<string> { "query"}
-            }
-        };
-
         public static readonly Tool DecomposeQuery = new Tool
         {
             Name = AgenticTool.decompose_query.ToString(),
@@ -58,6 +31,64 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                 }, 
 
                 Required =  new List<string> { "question" }
+            }
+        };
+
+        public static readonly Tool SearchKnowledgeBase = new Tool
+        {
+            Name = AgenticTool.search_knowledge_base.ToString(),
+
+            Description =
+                "Searches the TradingApp-AWS codebase for information relevant to a single, focused question." +
+                "Returns the most relevant code chunks, ranked by relevance. Call this once per distinct topic " +
+                "- if the question covers multiple unrelated topics, call decompose_query first to get focused " +
+                "sub-questions, then call this tool once per sub-question.",
+
+            InputSchema = new InputSchema
+            {
+                Type = JsonSerializer.SerializeToElement("object"),
+
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["query"] = JsonSerializer.SerializeToElement(new
+                    {
+                        type = "string",
+                        description = "A focused, standalone question about one specific topic in the codebase."
+                    }),
+                },
+
+                Required = new List<string> { "query" }
+            }
+        };
+
+        public static readonly Tool GetFullFile = new Tool
+        {
+            Name = AgenticTool.get_full_file.ToString(),
+
+            Description =
+             "Fetches the complete, unabridged content of a single source file, when a chunk-level excerpt from " +
+             "search_knowledge_base isn't enough — for example, understanding a whole class's structure or " +
+             "confirming there's no other relevant logic elsewhere in the file. " +
+             "Only call this for a fileName that appeared in a prior search_knowledge_base result with " +
+             "FullFileIndexed: true. Calling it for a file that wasn't returned by search_knowledge_base, or " +
+             "was returned with FullFileIndexed: false, will return no content and waste a call — search first, " +
+             "then decide from the FullFileIndexed flag whether this is worth calling.",
+
+            InputSchema = new InputSchema
+            {
+                Type = JsonSerializer.SerializeToElement("object"),
+
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["fileName"] = JsonSerializer.SerializeToElement(new
+                    {
+                        type = "string",
+                        description = "The exact file name as it appeared in the FileName field of a prior " +
+                       "search_knowledge_base result (e.g. 'OutboxProcessingService.cs'). Must match exactly."
+                    }),
+                },
+
+                Required = new List<string> { "fileName" }
             }
         };
     }

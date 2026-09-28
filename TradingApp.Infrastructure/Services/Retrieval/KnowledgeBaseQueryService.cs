@@ -5,8 +5,6 @@ using Polly.CircuitBreaker;
 using StackExchange.Redis;
 using System.Text.RegularExpressions;
 using TradingApp.Infrastructure.Helpers;
-using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Models;
 using TradingApp.Infrastructure.Helpers.Ingestion;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
 using TradingApp.Infrastructure.Interfaces.Retrieval;

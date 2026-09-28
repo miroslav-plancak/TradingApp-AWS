@@ -1,5 +1,4 @@
-﻿using Anthropic.Models.Beta.Environments;
-using Anthropic.Models.Messages;
+﻿using Anthropic.Models.Messages;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using System;
@@ -24,7 +23,7 @@ namespace TradingApp.API.Hubs
     {
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IAnthropicApiService _anthropicApiService;
-        private readonly IChunkRetrievalService _chunkRetrievalService;
+        private readonly IContextRetrievalService _chunkRetrievalService;
         private readonly IConversationService _conversationService;
         private readonly IConversationMessageService _conversationMessageService;
         private readonly IConversationSummaryService _conversationSummaryService;
@@ -36,7 +35,7 @@ namespace TradingApp.API.Hubs
             ILogger<AiChatHub> logger,
             IFileDebugLogger fileDebugLogger,
             IAnthropicApiService anthropicApiService,
-            IChunkRetrievalService chunkRetrievalService,
+            IContextRetrievalService chunkRetrievalService,
             IConversationService conversationService,
             IConversationSummaryService conversationSummaryService,
             IConversationMessageService conversationMessageService,

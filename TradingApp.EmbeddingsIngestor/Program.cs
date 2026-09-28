@@ -15,6 +15,8 @@ services.AddVoyageApiServices();
 services.AddVoyageEmbeddingServices();
 services.AddRedisConnection();
 services.AddChunkingIngestionService();
+services.AddResiliencePolicy(ResiliencePolicyKey.VoyageAPI,
+    "VoyageAPI",2, _ => { return TimeSpan.FromMilliseconds(200); });
 
 var serviceProvider = services.BuildServiceProvider();
 
@@ -29,7 +31,12 @@ var sourceFiles = new[]
     @"C:\workspace\TradingApp-AWS\TradingApp.Business\Services\Regular\OrderService.cs",            // 8,591 chars
     @"C:\workspace\TradingApp-AWS\TradingApp.Infrastructure\ServiceCollectionExtensions.cs",        // 12,164 chars
     @"C:\workspace\TradingApp-AWS\Functions\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.cs", // 14,175 chars
-    @"C:\workspace\TradingApp-AWS\Functions\ScheduledOutboxMessageProcessor\Services\OutboxProcessingService.cs", // 21,201 chars 
+    @"C:\workspace\TradingApp-AWS\Functions\ScheduledOutboxMessageProcessor\Services\OutboxProcessingService.cs", // 21,201 chars
+
+    //get_full_file testing range 1500-2500 characters
+    @"C:\workspace\TradingApp-AWS\TradingApp.Business\Mappers\OrderMapper.cs",                      // 1,985 chars 
+    @"C:\workspace\TradingApp-AWS\TradingApp.Business\Interfaces\Services\Regular\IDeadlLetterService.cs", // 1,628 chars 
+    @"C:\workspace\TradingApp-AWS\TradingApp.Domain\TradingDbContextExtensions.cs",                 // 1,802 chars 
 };
 
 var chunkIngestionService = serviceProvider.GetRequiredService<IChunkIngestionService>();
