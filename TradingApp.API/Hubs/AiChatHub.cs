@@ -54,7 +54,6 @@ namespace TradingApp.API.Hubs
             _agenticLoopService = agenticLoopService;
         }
 
-        //////////////////
         public async Task<string> SendUserMessage
         (
          string userMessage,
@@ -130,13 +129,9 @@ namespace TradingApp.API.Hubs
                     existingConversation.ConversationId);
             }
 
-            //OPEN QUESTION[1]: this probably needs to happen inside the loop, where we have information about tokendelta obj, but I tried that and concluded that it is even worse then this option. Unsure what to do here.
-            //await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, tokenUsage, parameters.MaxTokens);
-
             return assistantMessageResponse;
-
         }
-        /////////////////
+
         public async IAsyncEnumerable<string> SendUserMessage_temp_disable
         (
             string userMessage,
