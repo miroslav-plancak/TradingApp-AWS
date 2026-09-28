@@ -222,7 +222,7 @@ namespace TradingApp.Infrastructure
 
         public static IServiceCollection AddChunkingRetrievalService(this IServiceCollection services)
         {
-            services.AddScoped<IChunkRetrievalService, ChunkRetrievalService>();
+            services.AddScoped<IContextRetrievalService, ContextRetrievalService>();
             return services;
         }
 

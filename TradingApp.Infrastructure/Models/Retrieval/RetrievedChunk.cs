@@ -9,5 +9,6 @@ namespace TradingApp.Infrastructure.Models.Retrieval
         public double? LexicalScore { get; set; }
         public double RelevanceScore { get; set; }
         public double ReciprocalRankFusionScore { get; set; }
+        public bool FullFileIndexed { get; set; }
     }
 }

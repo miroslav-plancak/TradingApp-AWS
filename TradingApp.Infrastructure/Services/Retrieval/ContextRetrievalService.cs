@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using System.Collections.Generic;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
@@ -10,9 +9,9 @@ using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Retrieval
 {
-    public class ChunkRetrievalService : IChunkRetrievalService
+    public class ContextRetrievalService : IContextRetrievalService
     {
-        private readonly ILogger<ChunkRetrievalService> _logger;
+        private readonly ILogger<ContextRetrievalService> _logger;
         private readonly IQueryRoutingService _queryRoutingService;
         private readonly IKnowledgeBaseQueryService _knowledgeBaseQueryService;
         private readonly IChunkRerankingService _chunkRerankingService;
@@ -23,9 +22,9 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
         private const double RelevanceFloor = 0.53;
 
-        public ChunkRetrievalService
+        public ContextRetrievalService
         (
-            ILogger<ChunkRetrievalService> logger,
+            ILogger<ContextRetrievalService> logger,
             IQueryRoutingService queryRoutingService,
             IKnowledgeBaseQueryService knowledgeBaseQueryService,
             IChunkRerankingService chunkRerankingService,
@@ -170,6 +169,17 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 var distinctCappedChunks = DedupCombinedCappedChunks(cappedChunks);
 
+                var fullFilesMap = await _fileExpansionService.GetExistingFullFileContentsMapAsync(distinctCappedChunks.Select(x => x.SourceFile));
+
+                foreach (var chunk in distinctCappedChunks)
+                {
+                    chunk.FullFileIndexed = fullFilesMap.ContainsKey(chunk.SourceFile ?? string.Empty);
+                }
+
+                //TODO: change log name
+                await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {query}",
+                   RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(new RetrievalResult { ChunkFallbacks = distinctCappedChunks }));
+
                 return distinctCappedChunks;
             }
             catch (Exception ex)
@@ -177,6 +187,13 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving chunks for query: {Query}", query);
                 return [];
             }
+        }
+
+        public async Task<string> GetFullFileContentAsync(string fileName)
+        {
+            var fileContents = await _knowledgeBaseQueryService.GetSourceFileContentsAsync(new[] { fileName });
+            var content = fileContents.TryGetValue(fileName, out var value) ? value : string.Empty;
+            return content;
         }
 
         private List<RetrievedChunk> DedupCombinedCappedChunks(List<RetrievedChunk> combinedCappedChunks) 

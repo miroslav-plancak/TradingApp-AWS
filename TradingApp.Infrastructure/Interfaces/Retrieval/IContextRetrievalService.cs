@@ -1,9 +1,8 @@
 using TradingApp.Infrastructure.Models.Retrieval;
-using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Interfaces.Retrieval
 {
-    public interface IChunkRetrievalService
+    public interface IContextRetrievalService
     {
         Task<RetrievalResult> RetrieveRelevantContextAsync
         (
@@ -11,5 +10,6 @@ namespace TradingApp.Infrastructure.Interfaces.Retrieval
             Guid conversationId
         );
         Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query);
+        Task<string> GetFullFileContentAsync(string fileName);
     }
 }

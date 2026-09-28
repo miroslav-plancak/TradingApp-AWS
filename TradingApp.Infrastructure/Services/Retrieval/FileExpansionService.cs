@@ -40,7 +40,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             return RetrievalPolicyResolver.ResolvePolicyValue(routedLlmQueryResponse, x => x.MinimumOccurrenceThreshold);
         }
 
-        private async Task<Dictionary<string, string>> GetExistingFullFileContentsMapAsync(IEnumerable<string?> distinctFileNames)
+        public async Task<Dictionary<string, string>> GetExistingFullFileContentsMapAsync(IEnumerable<string?> distinctFileNames)
         {
             var allFetchedFileContents = await _knowledgeBaseQueryService.GetSourceFileContentsAsync(distinctFileNames.OfType<string>());
             var filesWithContent = allFetchedFileContents.Where(x => x.Value != string.Empty).ToDictionary(x => x.Key, x => x.Value);

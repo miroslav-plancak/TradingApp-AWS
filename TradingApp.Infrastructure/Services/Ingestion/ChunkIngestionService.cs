@@ -35,6 +35,7 @@ namespace TradingApp.Infrastructure.Services.Ingestion
             if (processedSourceFiles.Count != 0)
             {
                 var fullFileRecords = BuildFullFileRecordList(processedSourceFiles.Where(x => !x.ExceedsFullIndexCap).ToList());
+
                 await PersistFullFileRecordsAsync(fullFileRecords);
 
                 foreach (var file in processedSourceFiles)

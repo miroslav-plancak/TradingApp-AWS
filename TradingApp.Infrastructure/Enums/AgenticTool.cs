@@ -3,6 +3,7 @@
     public enum AgenticTool
     {
         decompose_query,
-        search_knowledge_base
+        search_knowledge_base,
+        get_full_file
     }
 }

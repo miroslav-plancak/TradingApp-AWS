@@ -16,7 +16,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IAnthropicApiService _anthropicApiService;
         private readonly IQueryDecompositionService _queryDecompositionService;
-        private readonly IChunkRetrievalService _chunkRetrievalService;
+        private readonly IContextRetrievalService _chunkRetrievalService;
 
         private const int MaxResponseTokens = 4096;
 
@@ -26,7 +26,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             IFileDebugLogger fileDebugLogger,
             IAnthropicApiService anthropicApiService,
             IQueryDecompositionService queryDecompositionService,
-            IChunkRetrievalService chunkRetrievalService
+            IContextRetrievalService chunkRetrievalService
         )
         {
             _logger = logger;
@@ -62,8 +62,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     System = SystemPromptBuilder.BuildAgenticChatSystemPrompt(MaxResponseTokens, compactedSummary),
                     Tools = new List<ToolUnion>
                     {
+                        AgenticToolDefinitions.DecomposeQuery,
                         AgenticToolDefinitions.SearchKnowledgeBase,
-                        AgenticToolDefinitions.DecomposeQuery
+                        AgenticToolDefinitions.GetFullFile
                     },
                     Messages = messages
                 };
@@ -171,7 +172,11 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         result = await HandleSearchKnowledgeBaseAsync(input, seenChunkKeys);
                         break;
                     }
-
+                case AgenticTool.get_full_file:
+                    {
+                        result = await HandleGetFullFileAsync(input);
+                        break;
+                    }
                 default:
                     result = $"Unknown tool: {toolName}";
                     break;
@@ -194,15 +199,26 @@ namespace TradingApp.Infrastructure.Services.Agentic
         {
             var query = input["query"].GetString() ?? string.Empty;
             var retrievedChunks = await _chunkRetrievalService.RetrieveRelevantChunksAsync(query);
-            var newChunks = retrievedChunks.Where(chunk => seenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList();
+            var newChunks = retrievedChunks.Where(chunk => seenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList(); //use seenChunkKeys to exclude files as well and remoev chunks that are inside of expanded file
             var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(newChunks);
 
             return string.Join("\n", uShapeSortedChunks.Select((chunk, i) =>
                 $"#{i + 1}\n Key: {chunk.Key} " +
                 $"\n FileName: {chunk.SourceFile}" +
                 $"\n RelevanceScore: {chunk.RelevanceScore}" +
+                $"\n FullFileIndexed: {chunk.FullFileIndexed}" +
                 $"\n\n{chunk.Content} "
             ));
+        }
+
+        private async Task<string> HandleGetFullFileAsync(IReadOnlyDictionary<string, JsonElement> input)
+        {
+            var fileName = input["fileName"].GetString() ?? string.Empty;
+            var fullFileContent = await _chunkRetrievalService.GetFullFileContentAsync(fileName);
+
+            return string.IsNullOrEmpty(fullFileContent)
+                ? $"No full file content available for {fileName}."
+                : $"FileName: {fileName} \n\n{fullFileContent}";
         }
     }
 }
