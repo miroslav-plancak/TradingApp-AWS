@@ -1,5 +1,6 @@
 ﻿using Anthropic.Models.Messages;
 using System.Text.Json;
+using TradingApp.Infrastructure.Enums;
 
 namespace TradingApp.Infrastructure.Helpers.Agentic
 {
@@ -7,7 +8,7 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
     {
         public static readonly Tool SearchKnowledgeBase = new Tool
         {
-            Name = "search_knowledge_base",
+            Name = AgenticTool.search_knowledge_base.ToString(),
 
             Description =
                 "Searches the TradingApp-AWS codebase for information relevant to a single, focused question." +
@@ -34,7 +35,7 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
 
         public static readonly Tool DecomposeQuery = new Tool
         {
-            Name = "decompose_query",
+            Name = AgenticTool.decompose_query.ToString(),
 
             Description =
                 "Splits a question covering multiple distinct topics into a list of focused, standalone " +

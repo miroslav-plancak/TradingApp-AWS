@@ -1,6 +1,7 @@
 ﻿using Anthropic.Models.Messages;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Agentic;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
@@ -113,9 +114,16 @@ namespace TradingApp.Infrastructure.Services.Agentic
                             Input = toolUseBlock.Input 
                         });
 
+                        var isKnownTool = Enum.TryParse<AgenticTool>(toolUseBlock.Name, out var tool);
                         string toolTextResult;
 
-                        if (toolUseBlock.Name == "search_knowledge_base" && searchKnowledgeBaseToolCounter >= 3)
+                        if (!isKnownTool)
+                        {
+                            toolTextResult = $"Unknown tool: {toolUseBlock.Name}";
+                            _logger.LogWarning("RunAgenticLoopAsync | UnknownToolCalled:{ToolName} | Input: {Input}", toolUseBlock.Name, toolUseBlock.Input);
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Unknown tool called: {toolUseBlock.Name}", toolUseBlock.Input);
+                        }
+                        else if (tool == AgenticTool.search_knowledge_base && searchKnowledgeBaseToolCounter >= 3)
                         {
                             toolTextResult = SystemPromptBuilder.SearchCapReachedMessage;
 
@@ -124,9 +132,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         }
                         else
                         {
-                            toolTextResult = await ExecuteToolAsync(toolUseBlock.Name, toolUseBlock.Input, seenChunkKeys);
+                            toolTextResult = await ExecuteToolAsync(tool, toolUseBlock.Input, seenChunkKeys);
 
-                            if(toolUseBlock.Name == "search_knowledge_base")
+                            if(tool == AgenticTool.search_knowledge_base)
                             {
                                 searchKnowledgeBaseToolCounter = string.IsNullOrEmpty(toolTextResult) ? searchKnowledgeBaseToolCounter + 1 : 0;
                             }
@@ -144,7 +152,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             }
         }
 
-        private async Task<string> ExecuteToolAsync(string toolName, IReadOnlyDictionary<string, JsonElement> input, HashSet<string> seenChunkKeys)
+        private async Task<string> ExecuteToolAsync(AgenticTool toolName, IReadOnlyDictionary<string, JsonElement> input, HashSet<string> seenChunkKeys)
         {
             _logger.LogInformation("RunAgenticLoopAsync | ToolCalled:{ToolName} | Input: {Input}", toolName, input);
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Tool called: {toolName}", input);
@@ -152,26 +160,15 @@ namespace TradingApp.Infrastructure.Services.Agentic
             string result;
 
             switch (toolName)
-            {   //TODO: make these enum types and move bodies out of case blocks
-                case "decompose_query":
+            {   
+                case AgenticTool.decompose_query:
                     {
-                        var question = input["question"].GetString() ?? string.Empty;
-                        var subQueries = await _queryDecompositionService.DecomposeQueryAsync(question);
-                        result = string.Join("\n", subQueries.Select((subQuery, i) => $"{i + 1}.{subQuery}"));
+                        result = await HandleDecomposeQueryAsync(input);
                         break;
                     }
-                case "search_knowledge_base":
+                case AgenticTool.search_knowledge_base:
                     {
-                        var query = input["query"].GetString() ?? string.Empty;
-                        var retrievedChunks = await _chunkRetrievalService.RetrieveRelevantChunksAsync(query);
-                        var newChunks = retrievedChunks.Where(chunk => seenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList();
-                        var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(newChunks);
-                        result = string.Join("\n", uShapeSortedChunks.Select((chunk, i) =>
-                            $"#{i + 1}\n Key: {chunk.Key} " +
-                            $"\n FileName: {chunk.SourceFile}" +
-                            $"\n RelevanceScore: {chunk.RelevanceScore}" +
-                            $"\n\n{chunk.Content} "
-                        ));
+                        result = await HandleSearchKnowledgeBaseAsync(input, seenChunkKeys);
                         break;
                     }
 
@@ -183,6 +180,29 @@ namespace TradingApp.Infrastructure.Services.Agentic
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Result from: {toolName}", result);
 
             return result;
+        }
+
+        private async Task<string> HandleDecomposeQueryAsync(IReadOnlyDictionary<string, JsonElement> input)
+        {
+            var question = input["question"].GetString() ?? string.Empty;
+            var subQueries = await _queryDecompositionService.DecomposeQueryAsync(question);
+
+            return string.Join("\n", subQueries.Select((subQuery, i) => $"{i + 1}.{subQuery}"));
+        }
+
+        private async Task<string> HandleSearchKnowledgeBaseAsync(IReadOnlyDictionary<string, JsonElement> input, HashSet<string> seenChunkKeys) 
+        {
+            var query = input["query"].GetString() ?? string.Empty;
+            var retrievedChunks = await _chunkRetrievalService.RetrieveRelevantChunksAsync(query);
+            var newChunks = retrievedChunks.Where(chunk => seenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList();
+            var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(newChunks);
+
+            return string.Join("\n", uShapeSortedChunks.Select((chunk, i) =>
+                $"#{i + 1}\n Key: {chunk.Key} " +
+                $"\n FileName: {chunk.SourceFile}" +
+                $"\n RelevanceScore: {chunk.RelevanceScore}" +
+                $"\n\n{chunk.Content} "
+            ));
         }
     }
 }
