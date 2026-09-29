@@ -7,6 +7,8 @@ using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Agentic;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
+using TradingApp.Infrastructure.Models.Agentic;
+using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Agentic
 {
@@ -52,6 +54,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
             var seenChunkKeys = new HashSet<string>();
             var searchKnowledgeBaseToolCounter = 0;
+            var chunksByToolUseId = new Dictionary<string, List<RetrievedChunk>>(); 
 
             while (true)
             {
@@ -133,11 +136,32 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         }
                         else
                         {
-                            toolTextResult = await ExecuteToolAsync(tool, toolUseBlock.Input, seenChunkKeys);
+                            var toolExecutionContext = new ToolExecutionContext 
+                            {
+                               ToolUseId = toolUseBlock.ID, 
+                               ToolName = tool, 
+                               Input =  toolUseBlock.Input, 
+                               SeenChunkKeys =  seenChunkKeys, 
+                               ChunksByToolUseId = chunksByToolUseId 
+                            };
+
+                            toolTextResult = await ExecuteToolAsync(toolExecutionContext);
 
                             if(tool == AgenticTool.search_knowledge_base)
                             {
                                 searchKnowledgeBaseToolCounter = string.IsNullOrEmpty(toolTextResult) ? searchKnowledgeBaseToolCounter + 1 : 0;
+                            }
+                            else if (tool == AgenticTool.get_full_file && !toolTextResult.StartsWith("No full file content available"))
+                            {
+                                var fileName = toolUseBlock.Input["fileName"].GetString() ?? string.Empty;
+                                var removalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(fileName, messages, chunksByToolUseId); 
+
+                                _logger.LogInformation("RemoveNowRedundantChunksForFile " +
+                                    "| FileName:{FileName} | Removals:{RemovalCount}", fileName, removalsLog.Count);
+
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                    $"Chunk dedup after get_full_file: {fileName}",
+                                    removalsLog.Count > 0 ? string.Join("\n", removalsLog) : "No prior chunks found for this file - nothing to dedup.");
                             }
                         }
 
@@ -153,36 +177,36 @@ namespace TradingApp.Infrastructure.Services.Agentic
             }
         }
 
-        private async Task<string> ExecuteToolAsync(AgenticTool toolName, IReadOnlyDictionary<string, JsonElement> input, HashSet<string> seenChunkKeys)
+        private async Task<string> ExecuteToolAsync(ToolExecutionContext context)
         {
-            _logger.LogInformation("RunAgenticLoopAsync | ToolCalled:{ToolName} | Input: {Input}", toolName, input);
-            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Tool called: {toolName}", input);
+            _logger.LogInformation("RunAgenticLoopAsync | ToolCalled:{ToolName} | Input: {Input}", context.ToolName, context.Input);
+            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Tool called: {context.ToolName}", context.Input);
 
             string result;
 
-            switch (toolName)
-            {   
+            switch (context.ToolName)
+            {
                 case AgenticTool.decompose_query:
                     {
-                        result = await HandleDecomposeQueryAsync(input);
+                        result = await HandleDecomposeQueryAsync(context.Input);
                         break;
                     }
                 case AgenticTool.search_knowledge_base:
                     {
-                        result = await HandleSearchKnowledgeBaseAsync(input, seenChunkKeys);
+                        result = await HandleSearchKnowledgeBaseAsync(context);
                         break;
                     }
                 case AgenticTool.get_full_file:
                     {
-                        result = await HandleGetFullFileAsync(input);
+                        result = await HandleGetFullFileAsync(context.Input);
                         break;
                     }
                 default:
-                    result = $"Unknown tool: {toolName}";
+                    result = $"Unknown tool: {context.ToolName}";
                     break;
             }
 
-            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Result from: {toolName}", result);
+            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Result from: {context.ToolName}", result);
 
             return result;
         }
@@ -195,20 +219,16 @@ namespace TradingApp.Infrastructure.Services.Agentic
             return string.Join("\n", subQueries.Select((subQuery, i) => $"{i + 1}.{subQuery}"));
         }
 
-        private async Task<string> HandleSearchKnowledgeBaseAsync(IReadOnlyDictionary<string, JsonElement> input, HashSet<string> seenChunkKeys) 
+        private async Task<string> HandleSearchKnowledgeBaseAsync(ToolExecutionContext context)
         {
-            var query = input["query"].GetString() ?? string.Empty;
+            var query = context.Input["query"].GetString() ?? string.Empty;
             var retrievedChunks = await _chunkRetrievalService.RetrieveRelevantChunksAsync(query);
-            var newChunks = retrievedChunks.Where(chunk => seenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList(); //use seenChunkKeys to exclude files as well and remoev chunks that are inside of expanded file
+            var newChunks = retrievedChunks.Where(chunk => context.SeenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList(); 
             var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(newChunks);
 
-            return string.Join("\n", uShapeSortedChunks.Select((chunk, i) =>
-                $"#{i + 1}\n Key: {chunk.Key} " +
-                $"\n FileName: {chunk.SourceFile}" +
-                $"\n RelevanceScore: {chunk.RelevanceScore}" +
-                $"\n FullFileIndexed: {chunk.FullFileIndexed}" +
-                $"\n\n{chunk.Content} "
-            ));
+            context.ChunksByToolUseId[context.ToolUseId] = uShapeSortedChunks;
+
+            return ChunkResultDeduplication.FormatChunksForToolResult(uShapeSortedChunks);
         }
 
         private async Task<string> HandleGetFullFileAsync(IReadOnlyDictionary<string, JsonElement> input)
