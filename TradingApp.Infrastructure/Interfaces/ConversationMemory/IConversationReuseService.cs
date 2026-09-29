@@ -1,6 +1,5 @@
 using TradingApp.Infrastructure.Models.ConversationMemory;
 using TradingApp.Infrastructure.Models.Retrieval;
-using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Interfaces.ConversationMemory
 {
@@ -14,8 +13,8 @@ namespace TradingApp.Infrastructure.Interfaces.ConversationMemory
         Task TryPersistReusableConversationArtifactsAsync
         (
             Guid conversationId,
-            List<RetrievedChunk> retrievedChunks,
-            Dictionary<string, string> fullFileContents
+            List<RetrievedChunk>? retrievedChunks = null,
+            Dictionary<string, string>? fullFileContents = null
         );
     }
 }

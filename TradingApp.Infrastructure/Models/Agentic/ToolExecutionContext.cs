@@ -6,6 +6,7 @@ namespace TradingApp.Infrastructure.Models.Agentic
 {
     public class ToolExecutionContext
     {
+        public Guid ConversationId { get; set; }
         public string ToolUseId { get; set; } = string.Empty;
         public AgenticTool ToolName { get; set; }
         public required IReadOnlyDictionary<string, JsonElement> Input { get; set; } 
