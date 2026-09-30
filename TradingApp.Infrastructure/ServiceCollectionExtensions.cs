@@ -264,6 +264,12 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddConversationFullFileArbiterServices(this IServiceCollection services)
+        {
+            services.AddScoped<IConversationFullFileArbiterService, ConversationFullFileArbiterService>();
+            return services;
+        }
+        
         public static IServiceCollection AddConversationReuseService(this IServiceCollection services)
         {
             services.AddScoped<IConversationReuseService, ConversationReuseService>();

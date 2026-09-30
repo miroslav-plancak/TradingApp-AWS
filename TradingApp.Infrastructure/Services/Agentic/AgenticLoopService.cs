@@ -232,14 +232,17 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var reusableContextArtifacts = await _conversationReuseService.TryRetrieveReusableConversationArtifactsAsync(
                 context.ConversationId, query);
 
-            if (reusableContextArtifacts.ConversationChunks.Count == 0)
+            if (reusableContextArtifacts.ConversationChunks.Count == 0 && reusableContextArtifacts.ConversationFullFiles.Count == 0)
             {
                 return "No re-usable context found.";
             }
 
             var mappedChunks = RetrievalResultMapping.ToRetrievedChunks(reusableContextArtifacts.ConversationChunks);
             var newChunks = mappedChunks.Where(chunk => context.SeenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList();
-            var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(newChunks);
+            var fullFileDedupKeys = reusableContextArtifacts.ConversationFullFiles.Select(x => x.SourceFile).ToHashSet();
+
+            var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(
+                newChunks.Where(chunk => !fullFileDedupKeys.Contains(chunk.SourceFile ?? string.Empty)).ToList());
 
             var fullFilesMap = await _fileExpansionService.GetExistingFullFileContentsMapAsync(uShapeSortedChunks.Select(x => x.SourceFile));
 

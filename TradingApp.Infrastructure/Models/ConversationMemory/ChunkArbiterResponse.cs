@@ -2,7 +2,7 @@
 
 namespace TradingApp.Infrastructure.Models.ConversationMemory
 {
-    public class ArbiterResponse
+    public class ChunkArbiterResponse
     {
         [JsonPropertyName("chunkKeys")]
         public List<string> ChunkKeys { get; set; } = [];

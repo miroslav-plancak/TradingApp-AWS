@@ -13,19 +13,22 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         private readonly IConversationChunkService _conversationChunkService;
         private readonly IConversationChunkArbiterService _conversationChunkArbiterService;
         private readonly IConversationFullFileService _conversationFullFileService;
+        private readonly IConversationFullFileArbiterService _conversationFullFileArbiterService;
 
         public ConversationReuseService
         (
             ILogger<ConversationReuseService> logger,
             IConversationChunkService conversationChunkService,
             IConversationChunkArbiterService conversationChunkArbiterService,
-            IConversationFullFileService conversationFullFileService
+            IConversationFullFileService conversationFullFileService,
+            IConversationFullFileArbiterService conversationFullFileArbiterService
         )
         {
             _logger = logger;
             _conversationChunkService = conversationChunkService;
             _conversationChunkArbiterService = conversationChunkArbiterService;
             _conversationFullFileService = conversationFullFileService;
+            _conversationFullFileArbiterService = conversationFullFileArbiterService;
         }
 
         public async Task<ReusableConversationArtifacts> TryRetrieveReusableConversationArtifactsAsync
@@ -40,12 +43,14 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
                 var reusableConversationChunks = await _conversationChunkArbiterService.DetermineSufficientChunksAsync(userMessage, allExistingConversationChunks);
 
-                var reusableConversationFullFiles = await _conversationFullFileService.GetConversationFullFilesAsync(conversationId);
+                var allExistingFullFiles = await _conversationFullFileService.GetConversationFullFilesAsync(conversationId);
+
+                var reusableFullFiles = await _conversationFullFileArbiterService.DetermineSufficientFullFilesAsync(userMessage,allExistingFullFiles);
 
                 return new ReusableConversationArtifacts()
                 {
                     ConversationChunks = reusableConversationChunks,
-                    ConversationFullFiles = reusableConversationFullFiles
+                    ConversationFullFiles = reusableFullFiles
                 };
 
             }
