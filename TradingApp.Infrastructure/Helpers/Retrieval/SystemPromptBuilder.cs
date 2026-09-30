@@ -45,14 +45,20 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "No new results found in the last 3 attempts on this line of inquiry - " +
             "stop retrying this specific angle and either move on or answer with what you already have.";
 
+        public const string NoFullFileContentAvailable = "No full file content available for";
+
         private const string AgenticChatSystemInstructionTemplate =
            "You are answering the user's question about a codebase. You can infer the context from the chat history (if provided), " +
             "as well as with additional summary of chat history:\n{1}.\n" +
-            "You have two tools available:" +
-           "decompose_query, for splitting a genuinely compound question into its distinct sub-topics, and " +
-           "search_knowledge_base, for retrieving relevant code context for a specific question. Only use " +
-           "decompose_query when the question names 2+ distinct topics to address separately - for a single-topic " +
-           "question, call search_knowledge_base directly. Use either tool as many times as needed before answering.\n\n" +
+            "You have four tools available: decompose_query, for splitting a genuinely compound question into its " +
+           "distinct sub-topics; get_database_context, for checking whether relevant code has already been fetched " +
+           "earlier in this conversation before running a fresh search; search_knowledge_base, for retrieving " +
+           "relevant code context for a specific question; and get_full_file, for fetching a complete file when a " +
+           "chunk-level excerpt isn't enough. Only use decompose_query when the question names 2+ distinct topics " +
+           "to address separately. For each focused topic, check get_database_context first, then fall back to " +
+           "search_knowledge_base (and get_full_file if needed) if it doesn't have enough. Use any tool as many " +
+           "times as needed before answering, but if repeated attempts on the same angle keep turning up nothing " +
+           "new, stop retrying it and either move on to a different angle or answer with what you already have.\n\n" +
            "Your response has a hard output limit of {0} tokens. Structure your answer so it comfortably " +
            "finishes within that budget: cover the core mechanism for each part of the question, but favor " +
            "breadth over exhaustive depth on any single part. If a detail would meaningfully deepen the answer " +

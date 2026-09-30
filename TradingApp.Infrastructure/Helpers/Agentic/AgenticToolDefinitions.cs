@@ -1,5 +1,7 @@
 ﻿using Anthropic.Models.Messages;
+using Polly;
 using System.Text.Json;
+using TradingApp.Domain.Models.Entities.Conversation;
 using TradingApp.Infrastructure.Enums;
 
 namespace TradingApp.Infrastructure.Helpers.Agentic
@@ -67,12 +69,13 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
 
             Description =
              "Fetches the complete, unabridged content of a single source file, when a chunk-level excerpt from " +
-             "search_knowledge_base isn't enough — for example, understanding a whole class's structure or " +
-             "confirming there's no other relevant logic elsewhere in the file. " +
-             "Only call this for a fileName that appeared in a prior search_knowledge_base result with " +
-             "FullFileIndexed: true. Calling it for a file that wasn't returned by search_knowledge_base, or " +
-             "was returned with FullFileIndexed: false, will return no content and waste a call — search first, " +
-             "then decide from the FullFileIndexed flag whether this is worth calling.",
+             "search_knowledge_base or get_database_context isn't enough — for example, understanding a whole " +
+             "class's structure or confirming there's no other relevant logic elsewhere in the file. " +
+             "Only call this for a fileName that appeared in a prior search_knowledge_base or get_database_context " +
+             "chunk result with FullFileIndexed: true. Calling it for a file that wasn't returned by either tool, " +
+             "or was returned with FullFileIndexed: false, will return no content and waste a call — check the " +
+             "FullFileIndexed flag on the chunk first, from whichever tool returned it, before deciding this is " +
+             "worth calling.",
 
             InputSchema = new InputSchema
             {
@@ -84,11 +87,39 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                     {
                         type = "string",
                         description = "The exact file name as it appeared in the FileName field of a prior " +
-                       "search_knowledge_base result (e.g. 'OutboxProcessingService.cs'). Must match exactly."
+                       "search_knowledge_base or get_database_context chunk result (e.g. 'OutboxProcessingService.cs'). Must match exactly."
                     }),
                 },
 
                 Required = new List<string> { "fileName" }
+            }
+        };
+
+        public static readonly Tool GetDatabaseContext = new Tool
+        {
+            Name = AgenticTool.get_database_context.ToString(),
+
+            Description =
+              "Checks whether relevant code has already been fetched earlier in this conversation, before running a " +
+              "fresh search. Call this once per focused topic - if the question covers multiple unrelated topics, call " +
+              "decompose_query first, then call this tool once per sub-question. If it returns \"No re-usable context " +
+              "found\", or the returned context is insufficient to fully answer the question, fall back to " +
+              "search_knowledge_base and get_full_file for that topic.",
+
+            InputSchema = new InputSchema
+            {
+                Type = JsonSerializer.SerializeToElement("object"),
+
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["query"] = JsonSerializer.SerializeToElement(new
+                    {
+                        type = "string",
+                        description = "A focused, standalone question about one specific topic in the codebase." 
+                    }),
+                },
+
+                Required = new List<string> { "query" }
             }
         };
     }

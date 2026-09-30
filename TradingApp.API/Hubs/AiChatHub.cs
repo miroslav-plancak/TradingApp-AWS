@@ -78,7 +78,7 @@ namespace TradingApp.API.Hubs
             try 
             {
               assistantMessageResponse = await _agenticLoopService.RunAgenticLoopAsync(
-                 userMessage, conversationHistory, existingConversation.CompactedSummary);
+                 userMessage, existingConversation.ConversationId, conversationHistory, existingConversation.CompactedSummary);
 
             }
             catch (Exception ex)

@@ -48,6 +48,12 @@ namespace TradingApp.LocalHarnessCore
                     Console.WriteLine($"QueueDoesNotExist | {queueUrl} | {ex.Message} | This queue isn't coming back - stopping harness.");
                     return;
                 }
+                catch (AmazonServiceException ex)
+                {
+                    Console.WriteLine($"ReceiveMessageFailed (service-side) | {ex.Message} | Backing off 5s before retrying.");
+                    await Task.Delay(TimeSpan.FromSeconds(5));
+                    continue;
+                }
                 catch (AmazonClientException ex)
                 {
                     Console.WriteLine($"ReceiveMessageFailed | {ex.Message} | Backing off 5s before retrying.");

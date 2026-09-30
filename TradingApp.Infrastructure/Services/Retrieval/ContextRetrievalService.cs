@@ -176,7 +176,6 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                     chunk.FullFileIndexed = fullFilesMap.ContainsKey(chunk.SourceFile ?? string.Empty);
                 }
 
-                //TODO: change log name
                 await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {query}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(new RetrievalResult { ChunkFallbacks = distinctCappedChunks }));
 

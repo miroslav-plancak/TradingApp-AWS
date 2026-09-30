@@ -7,6 +7,7 @@ namespace TradingApp.Infrastructure.Interfaces.Agentic
         Task<string?> RunAgenticLoopAsync
         (
             string userMessage,
+            Guid conversationId,
             IReadOnlyList<MessageParam> conversationMessagesHistory,
             string? compactedSummary
         );

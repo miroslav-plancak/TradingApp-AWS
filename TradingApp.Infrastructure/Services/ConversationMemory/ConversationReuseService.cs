@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
@@ -41,7 +40,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
                 var reusableConversationChunks = await _conversationChunkArbiterService.DetermineSufficientChunksAsync(userMessage, allExistingConversationChunks);
 
-                var reusableConversationFullFiles = await _conversationFullFileService.ResolveFullFilesForChunksAsync(reusableConversationChunks);
+                var reusableConversationFullFiles = await _conversationFullFileService.GetConversationFullFilesAsync(conversationId);
 
                 return new ReusableConversationArtifacts()
                 {
@@ -60,17 +59,17 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         public async Task TryPersistReusableConversationArtifactsAsync
         (
             Guid conversationId,
-            List<RetrievedChunk> retrievedChunks,
-            Dictionary<string, string> fullFileContents
+            List<RetrievedChunk>? retrievedChunks,
+            Dictionary<string, string>? fullFileContents
         )
         {
             try
             {
                 await _conversationChunkService.CreateConversationChunksAsync(
-                    RetrievalResultMapping.ToCreateConversationChunkRequestDTOs(retrievedChunks, conversationId));
+                    RetrievalResultMapping.ToCreateConversationChunkRequestDTOs(retrievedChunks ?? [], conversationId));
 
                 await _conversationFullFileService.CreateConversationFullFilesAsync(
-                    RetrievalResultMapping.ToCreateConversationFullFileRequestDTOs(fullFileContents, conversationId));
+                    RetrievalResultMapping.ToCreateConversationFullFileRequestDTOs(fullFileContents ?? [], conversationId));
             }
             catch (Exception ex)
             {

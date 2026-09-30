@@ -6,6 +6,7 @@ using TradingApp.Infrastructure.Helpers.Agentic;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Agentic;
+using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Agentic;
 using TradingApp.Infrastructure.Models.Retrieval;
@@ -18,7 +19,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IAnthropicApiService _anthropicApiService;
         private readonly IQueryDecompositionService _queryDecompositionService;
-        private readonly IContextRetrievalService _chunkRetrievalService;
+        private readonly IContextRetrievalService _contextRetrievalService;
+        private readonly IConversationReuseService _conversationReuseService;
+        private readonly IFileExpansionService _fileExpansionService;
 
         private const int MaxResponseTokens = 4096;
 
@@ -28,19 +31,24 @@ namespace TradingApp.Infrastructure.Services.Agentic
             IFileDebugLogger fileDebugLogger,
             IAnthropicApiService anthropicApiService,
             IQueryDecompositionService queryDecompositionService,
-            IContextRetrievalService chunkRetrievalService
+            IContextRetrievalService contextRetrievalService,
+            IConversationReuseService conversationResuseService,
+            IFileExpansionService fileExpansionService
         )
         {
             _logger = logger;
             _fileDebugLogger = fileDebugLogger;
             _anthropicApiService = anthropicApiService;
             _queryDecompositionService = queryDecompositionService;
-            _chunkRetrievalService = chunkRetrievalService;
+            _contextRetrievalService = contextRetrievalService;
+            _conversationReuseService = conversationResuseService;
+            _fileExpansionService = fileExpansionService;
         }
-
+        //TODO: probably extract these props into a payload object at some point.
         public async Task<string?> RunAgenticLoopAsync
         (
             string userMessage,
+            Guid conversationId,
             IReadOnlyList<MessageParam> conversationMessagesHistory,
             string? compactedSummary
         )
@@ -67,7 +75,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     {
                         AgenticToolDefinitions.DecomposeQuery,
                         AgenticToolDefinitions.SearchKnowledgeBase,
-                        AgenticToolDefinitions.GetFullFile
+                        AgenticToolDefinitions.GetFullFile,
+                        AgenticToolDefinitions.GetDatabaseContext
                     },
                     Messages = messages
                 };
@@ -138,6 +147,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         {
                             var toolExecutionContext = new ToolExecutionContext 
                             {
+                               ConversationId = conversationId,
                                ToolUseId = toolUseBlock.ID, 
                                ToolName = tool, 
                                Input =  toolUseBlock.Input, 
@@ -151,7 +161,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                             {
                                 searchKnowledgeBaseToolCounter = string.IsNullOrEmpty(toolTextResult) ? searchKnowledgeBaseToolCounter + 1 : 0;
                             }
-                            else if (tool == AgenticTool.get_full_file && !toolTextResult.StartsWith("No full file content available"))
+                            else if (tool == AgenticTool.get_full_file && !toolTextResult.StartsWith(SystemPromptBuilder.NoFullFileContentAvailable))
                             {
                                 var fileName = toolUseBlock.Input["fileName"].GetString() ?? string.Empty;
                                 var removalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(fileName, messages, chunksByToolUseId); 
@@ -198,7 +208,12 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     }
                 case AgenticTool.get_full_file:
                     {
-                        result = await HandleGetFullFileAsync(context.Input);
+                        result = await HandleGetFullFileAsync(context);
+                        break;
+                    }
+                case AgenticTool.get_database_context:
+                    {
+                        result = await HandleGetDatabaseContextAsync(context);
                         break;
                     }
                 default:
@@ -209,6 +224,45 @@ namespace TradingApp.Infrastructure.Services.Agentic
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Result from: {context.ToolName}", result);
 
             return result;
+        }
+
+        private async Task<string> HandleGetDatabaseContextAsync(ToolExecutionContext context)
+        {
+            var query = context.Input["query"].GetString() ?? string.Empty;
+            var reusableContextArtifacts = await _conversationReuseService.TryRetrieveReusableConversationArtifactsAsync(
+                context.ConversationId, query);
+
+            if (reusableContextArtifacts.ConversationChunks.Count == 0)
+            {
+                return "No re-usable context found.";
+            }
+
+            var mappedChunks = RetrievalResultMapping.ToRetrievedChunks(reusableContextArtifacts.ConversationChunks);
+            var newChunks = mappedChunks.Where(chunk => context.SeenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList();
+            var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(newChunks);
+
+            var fullFilesMap = await _fileExpansionService.GetExistingFullFileContentsMapAsync(uShapeSortedChunks.Select(x => x.SourceFile));
+
+            foreach(var chunk in uShapeSortedChunks)
+            {
+                chunk.FullFileIndexed = fullFilesMap.ContainsKey(chunk.SourceFile ?? string.Empty);
+            }
+
+            context.ChunksByToolUseId[context.ToolUseId] = uShapeSortedChunks;
+
+            var formattedChunks = uShapeSortedChunks.Count > 0
+                ? ChunkResultDeduplication.FormatChunksForToolResult(uShapeSortedChunks)
+                : string.Empty;
+
+            var fullFileContents = RetrievalResultMapping.ToFullFileContents(reusableContextArtifacts.ConversationFullFiles);
+
+            var formattedFullFiles = fullFileContents.Count > 0
+                ? string.Join("\n\n", fullFileContents.Select(x => $"FileName: {x.Key} \n\n{x.Value}"))
+                : string.Empty;
+
+            var combinedResult = string.Join("\n\n", new[] { formattedChunks, formattedFullFiles }.Where(s => !string.IsNullOrEmpty(s)));
+
+            return string.IsNullOrEmpty(combinedResult) ? "No re-usable context found." : combinedResult;
         }
 
         private async Task<string> HandleDecomposeQueryAsync(IReadOnlyDictionary<string, JsonElement> input)
@@ -222,23 +276,34 @@ namespace TradingApp.Infrastructure.Services.Agentic
         private async Task<string> HandleSearchKnowledgeBaseAsync(ToolExecutionContext context)
         {
             var query = context.Input["query"].GetString() ?? string.Empty;
-            var retrievedChunks = await _chunkRetrievalService.RetrieveRelevantChunksAsync(query);
+            var retrievedChunks = await _contextRetrievalService.RetrieveRelevantChunksAsync(query); 
             var newChunks = retrievedChunks.Where(chunk => context.SeenChunkKeys.Add(chunk.Key ?? string.Empty)).ToList(); 
             var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(newChunks);
 
             context.ChunksByToolUseId[context.ToolUseId] = uShapeSortedChunks;
 
+            await _conversationReuseService.TryPersistReusableConversationArtifactsAsync(context.ConversationId, newChunks, []);
+
             return ChunkResultDeduplication.FormatChunksForToolResult(uShapeSortedChunks);
         }
 
-        private async Task<string> HandleGetFullFileAsync(IReadOnlyDictionary<string, JsonElement> input)
+        private async Task<string> HandleGetFullFileAsync(ToolExecutionContext context)
         {
-            var fileName = input["fileName"].GetString() ?? string.Empty;
-            var fullFileContent = await _chunkRetrievalService.GetFullFileContentAsync(fileName);
+            var fileName = context.Input["fileName"].GetString() ?? string.Empty;
+            var fullFileContent = await _contextRetrievalService.GetFullFileContentAsync(fileName);
 
-            return string.IsNullOrEmpty(fullFileContent)
-                ? $"No full file content available for {fileName}."
-                : $"FileName: {fileName} \n\n{fullFileContent}";
+            if (string.IsNullOrEmpty(fullFileContent))
+            {
+                return $"{SystemPromptBuilder.NoFullFileContentAvailable} {fileName}.";
+            }
+            else
+            {
+                Dictionary<string, string> fullFileDictionaryEntry = [];
+                fullFileDictionaryEntry.Add(fileName, fullFileContent);
+                await _conversationReuseService.TryPersistReusableConversationArtifactsAsync(context.ConversationId, [], fullFileDictionaryEntry);
+
+                return $"FileName: {fileName} \n\n{fullFileContent}";
+            }
         }
     }
 }
