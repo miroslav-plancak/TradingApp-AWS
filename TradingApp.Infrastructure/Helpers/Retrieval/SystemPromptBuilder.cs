@@ -23,13 +23,21 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "or NARROW (asking about one specific fact, value, or line)." +
            " Respond with exactly one word: BROAD or NARROW.";
 
-        public const string ArbiterSystemInstruction =
+        public const string ChunkArbiterSystemInstruction =
           "Decide whether the user's question can be FULLY and accurately answered using only the chunks provided below - " +
           "not merely related to them, but sufficient to answer completely. Each chunk is a JSON object with a \"Key\" field.\r\n" +
           "Respond with exactly this JSON shape: {\"chunkKeys\": [...]}. Provide no explanation for your choice - pure JSON only.\r\n" +
           "- If one or more chunks together are sufficient to fully answer the question, list the \"Key\" value of each chunk you used.\r\n" +
           "- If the chunks are only partially relevant, or you are not confident they fully cover the question, return {\"chunkKeys\": []}.\r\n" +
           "- Only cite \"Key\" values that literally appear in the chunks provided - never invent one.";
+
+        public const string FullFileArbiterSystemInstruction =
+          "Decide whether the user's question can be FULLY and accurately answered using only the full files provided below - " +
+          "not merely related to them, but sufficient to answer completely. Each full file is a JSON object with a \"SourceFile\" field.\r\n" +
+          "Respond with exactly this JSON shape: {\"sourceFiles\": [...]}. Provide no explanation for your choice - pure JSON only.\r\n" +
+          "- If one or more full files together are sufficient to fully answer the question, list the \"SourceFile\" value of each full file you used.\r\n" +
+          "- If the full files are only partially relevant, or you are not confident they fully cover the question, return {\"sourceFiles\": []}.\r\n" +
+          "- Only cite \"SourceFile\" values that literally appear in the full files provided - never invent one.";
 
         public const string QueryDecompositionSystemInstruction =
             "Decide whether the user's message asks about multiple distinct topics/entities, or just one - even if phrased in a complex or detailed way. " +

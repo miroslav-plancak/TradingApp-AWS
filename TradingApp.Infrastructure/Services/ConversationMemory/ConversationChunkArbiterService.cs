@@ -43,7 +43,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             {
                 Model = "claude-haiku-4-5",
                 MaxTokens = 512,
-                System = SystemPromptBuilder.ArbiterSystemInstruction,
+                System = SystemPromptBuilder.ChunkArbiterSystemInstruction,
                 Messages = [new() { Role = Role.User, Content = BuildArbiterUserMessage(userMessage, conversationChunksContext) }]
             };
 
@@ -54,10 +54,10 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
                 try
                 {
-                    var arbiterResponse = JsonSerializer.Deserialize<ArbiterResponse>(extractedJson);
+                    var arbiterResponse = JsonSerializer.Deserialize<ChunkArbiterResponse>(extractedJson);
 
-                    await _fileDebugLogger.LogSectionAsync("2b-arbiter-picked-keys", "ConversationChunk keys picked by the LLM",
-                        RetrievalResultLogFormatter.FormatArbiterResponseIntoFileLog(arbiterResponse));
+                    await _fileDebugLogger.LogSectionAsync("2b-chunk-arbiter-picked-keys", "ConversationChunk keys picked by the LLM",
+                        RetrievalResultLogFormatter.FormatChunkArbiterResponseIntoFileLog(arbiterResponse));
 
                     if (arbiterResponse?.ChunkKeys?.Count > 0)
                     {

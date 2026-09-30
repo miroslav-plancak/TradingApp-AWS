@@ -63,6 +63,7 @@ builder.Services.AddQueryDecompositionService();
 builder.Services.AddAgenticLoopService();
 builder.Services.AddChunkingRetrievalService();
 builder.Services.AddConversationChunkArbiterServices();
+builder.Services.AddConversationFullFileArbiterServices();
 builder.Services.AddConversationReuseService();
 builder.Services.AddConversationCompactorService();
 // This is a separate IConnectionMultiplexer connection from SignalR's AddStackExchangeRedis backplane

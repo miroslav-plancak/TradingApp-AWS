@@ -107,9 +107,9 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             return sb.ToString();
         }
 
-        public static string FormatArbiterResponseIntoFileLog(ArbiterResponse? messages)
+        public static string FormatChunkArbiterResponseIntoFileLog(ChunkArbiterResponse? response)
         {
-            if (messages == null || messages.ChunkKeys.Count == 0)
+            if (response == null || response.ChunkKeys.Count == 0)
                 return "Arbiter judged the existing conversationChunks pool insufficient - 0 keys returned.";
 
             var helperDivider = new string('-', 80);
@@ -117,9 +117,28 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
             sb.AppendLine(helperDivider);
 
-            foreach (var message in messages.ChunkKeys)
+            foreach (var chunkKey in response.ChunkKeys)
             {
-                sb.AppendLine($"ChunkKey: {message}");
+                sb.AppendLine($"ChunkKey: {chunkKey}");
+                sb.AppendLine(helperDivider);
+            }
+
+            return sb.ToString();
+        }
+
+        public static string FormatFullFileArbiterResponseIntoFileLog(FullFileArbiterResponse? response)
+        {
+            if (response == null || response.SourceFiles.Count == 0)
+                return "Arbiter judged the existing source files pool insufficient - 0 keys returned.";
+
+            var helperDivider = new string('-', 80);
+            var sb = new StringBuilder();
+
+            sb.AppendLine(helperDivider);
+
+            foreach (var sourceFile in response.SourceFiles)
+            {
+                sb.AppendLine($"SourceFile: {sourceFile}");
                 sb.AppendLine(helperDivider);
             }
 

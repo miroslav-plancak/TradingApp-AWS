@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using TradingApp.Business.DTOs;
 using TradingApp.Business.DTOs.DeadLetter;
 using TradingApp.Domain.Models.Enums;
 
