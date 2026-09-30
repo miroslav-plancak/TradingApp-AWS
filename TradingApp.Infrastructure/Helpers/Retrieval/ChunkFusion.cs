@@ -21,6 +21,8 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
                 .Select(group => new RetrievedChunk
                 {
                     Key = group.Key,
+                    ChunkIndex = group.First().ChunkIndex,
+                    TotalChunkCount = group.First().TotalChunkCount,
                     SourceFile = group.First().SourceFile,
                     Content = group.First().Content,
                     KnnScore = group.Select(x => x.KnnScore).FirstOrDefault(x => x != null),

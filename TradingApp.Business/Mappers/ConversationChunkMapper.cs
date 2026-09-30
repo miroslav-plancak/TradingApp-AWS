@@ -14,6 +14,8 @@ namespace TradingApp.Business.Mappers
             return dtos.Select(x => new ConversationChunk
             {
                 ConversationId = x.ConversationId,
+                ChunkIndex = x.ChunkIndex,
+                TotalChunkCount = x.TotalChunkCount,
                 Key = x.Key,
                 SourceFile = x.SourceFile,
                 Content = x.Content,
@@ -29,6 +31,8 @@ namespace TradingApp.Business.Mappers
             {
                 ConversationId = x.ConversationId,
                 Key = x.Key,
+                ChunkIndex = x.ChunkIndex,
+                TotalChunkCount = x.TotalChunkCount,
                 SourceFile = x.SourceFile,
                 Content = x.Content,
                 RelevanceScore = x.RelevanceScore

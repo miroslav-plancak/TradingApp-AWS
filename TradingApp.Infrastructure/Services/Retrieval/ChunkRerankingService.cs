@@ -29,7 +29,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             string userMessage,
             List<RetrievedChunk> retrievedChunks
         )
-        {                                              
+        {
             await _fileDebugLogger.LogSectionAsync("1-rag-candidates-pre-rerank", $"Query: {userMessage}",
                    RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(new RetrievalResult { ChunkFallbacks = retrievedChunks }));
 
@@ -46,6 +46,8 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                         return new RetrievedChunk
                         {
                             Key = originalRetrievedChunk.Key,
+                            ChunkIndex = originalRetrievedChunk.ChunkIndex,
+                            TotalChunkCount = originalRetrievedChunk.TotalChunkCount,
                             SourceFile = originalRetrievedChunk.SourceFile,
                             Content = originalRetrievedChunk.Content,
                             KnnScore = originalRetrievedChunk.KnnScore,
@@ -55,7 +57,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                         };
                     })
                     .ToList();
-                
+
                 await _fileDebugLogger.LogSectionAsync("2-rag-post-rerank", $"Query: {userMessage}",
                   RetrievalResultLogFormatter.FormatRerankResultIntoFileLog(rerankResults.ToList()));
 

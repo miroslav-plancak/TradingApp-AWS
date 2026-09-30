@@ -3,9 +3,9 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
 using StackExchange.Redis;
-using System.Text.RegularExpressions;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Helpers.Ingestion;
+using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Retrieval;
@@ -48,10 +48,10 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                      "PARAMS", "2", "BLOB", queryBytes,
                      "SORTBY", "score",
                      "DIALECT", "2",
-                     "RETURN", "3", "sourceFile", "content", "score");
+                     "RETURN", "5", "chunkIndex","totalChunkCount", "sourceFile", "content", "score");
                 });
 
-                var retrievedKNNChunks = MapKnnSearchResultToRetrievedChunkList(searchResult);
+                var retrievedKNNChunks = RedisResultParser.MapKnnSearchResultToRetrievedChunkList(searchResult);
 
                 return retrievedKNNChunks;
             }
@@ -76,32 +76,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             return queryBytes;
         }
 
-        private static List<RetrievedChunk> MapKnnSearchResultToRetrievedChunkList(RedisResult knnSearchResult)
-        {
-            var retrievedChunks = new List<RetrievedChunk>();
-
-            for (var i = 1; i < knnSearchResult.Length; i += 2)
-            {
-                var key = (string?)knnSearchResult[i];
-                var fieldMap = BuildFieldMap(knnSearchResult[i + 1]);
-
-                retrievedChunks.Add(new RetrievedChunk
-                {
-                    Key = key,
-                    KnnScore = fieldMap.TryGetValue("score", out var score) && double.TryParse(score, out var knnScore) ? knnScore : null,
-                    SourceFile = fieldMap.TryGetValue("sourceFile", out var sourceFile) ? sourceFile : string.Empty,
-                    Content = fieldMap.TryGetValue("content", out var content) ? content : string.Empty
-                });
-            }
-
-            return retrievedChunks;
-        }
-
         public async Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userMessage)
         {
             try
             {
-                var parsedUserMessage = ParseUserMessage(userMessage);
+                var parsedUserMessage = RedisResultParser.ParseUserMessage(userMessage);
 
                 if (parsedUserMessage.Length == 0)
                 {
@@ -116,12 +95,12 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                                            $"@content:({parsedUserMessage})",
                                            "SCORER", "BM25",
                                            "WITHSCORES",
-                                           "RETURN", "2", "sourceFile", "content",
+                                           "RETURN", "4", "chunkIndex", "totalChunkCount", "sourceFile", "content",
                                            "LIMIT", "0", "10",
                                            "DIALECT", "2");
                 });
 
-                var retrievedLexicalChunks = MapLexicalSearchResultToRetrievedChunkList(lexicalSearchResult);
+                var retrievedLexicalChunks = RedisResultParser.MapLexicalSearchResultToRetrievedChunkList(lexicalSearchResult);
 
                 return retrievedLexicalChunks;
             }
@@ -135,60 +114,6 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 _logger.LogError(ex, "Database error for user question: {UserMessage}", userMessage);
                 return new List<RetrievedChunk>();
             }
-        }
-
-        private static string ParseUserMessage(string userMessage)
-        {
-            var terms = Regex.Split(userMessage, @"[^\w]+")
-               .Where(t => t.Length > 0)
-               .Where(IsValidIdentifier)
-               .ToList();
-
-            return string.Join("|", terms);
-        }
-
-        private static bool IsValidIdentifier(string token)
-        {
-            var hasUnderscore = token.Contains('_');
-            var hasInternalCaps = token.Skip(1).Any(char.IsUpper);
-            var isAllCaps = token.Length > 1 && token.All(char.IsUpper);
-
-            return hasUnderscore || hasInternalCaps || isAllCaps;
-        }
-
-        private static List<RetrievedChunk> MapLexicalSearchResultToRetrievedChunkList(RedisResult lexicalSearchResult)
-        {
-            var retrievedChunks = new List<RetrievedChunk>();
-
-            for (var i = 1; i < lexicalSearchResult.Length; i += 3)
-            {
-                var key = (string?)lexicalSearchResult[i];
-                var lexicalScore = (double)lexicalSearchResult[i + 1];
-                var fieldMap = BuildFieldMap(lexicalSearchResult[i + 2]);
-
-                retrievedChunks.Add(new RetrievedChunk
-                {
-                    Key = key,
-                    LexicalScore = lexicalScore,
-                    SourceFile = fieldMap.TryGetValue("sourceFile", out var sourceFile) ? sourceFile : string.Empty,
-                    Content = fieldMap.TryGetValue("content", out var content) ? content : string.Empty
-                });
-            }
-
-            return retrievedChunks;
-        }
-
-        private static Dictionary<string, string> BuildFieldMap(RedisResult searchResult)
-        {
-            var fieldMap = new Dictionary<string, string>();
-
-            for (var f = 0; f < searchResult.Length; f += 2)
-            {
-                fieldMap[(string)searchResult[f]!] = (string)searchResult[f + 1]!;
-
-            }
-
-            return fieldMap;
         }
 
         public async Task<Dictionary<string, string>> GetSourceFileContentsAsync(IEnumerable<string> sourceFiles)
@@ -222,6 +147,5 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             return results.ToDictionary(r => r.sourceFile, r => r.content);
         }
-
     }
 }

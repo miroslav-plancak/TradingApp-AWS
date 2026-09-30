@@ -71,7 +71,8 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                 $"#{i + 1}\n Key: {chunk.Key} " +
                 $"\n FileName: {chunk.SourceFile}" +
                 $"\n RelevanceScore: {chunk.RelevanceScore}" +
-                $"\n FullFileIndexed: {chunk.FullFileIndexed}" +
+                $"\n IsFullFileReconstructable: {chunk.IsFullFileReconstructable}" +
+                $"\n IsFullFileIndexed: {chunk.IsFullFileIndexed}" +
                 $"\n\n{chunk.Content} "
             ));
         }

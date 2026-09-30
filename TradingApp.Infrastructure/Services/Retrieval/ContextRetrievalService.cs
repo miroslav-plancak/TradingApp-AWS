@@ -43,7 +43,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _conversationReuseService = conversationReuseService;
             _queryDecompositionService = queryDecompositionService;
         }
-
+        //TODO: remove this at some point because it is unsed
         public async Task<RetrievalResult> RetrieveRelevantContextAsync
         (
             string userMessage,
@@ -64,7 +64,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                     await _fileDebugLogger.LogSectionAsync("3-arbiter-skip-context", $"Query: {userMessage}",
                         RetrievalResultLogFormatter.FormatRetrievalResultIntoFileLog(reusableRetrievalResult));
-                    
+
                     return reusableRetrievalResult;
                 }
 
@@ -95,12 +95,12 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 LogRedisSearchResults(filteredRetrievedChunksForContext, filesEligibleForExpansion, userMessage);
 
-                var retrievalResult = new RetrievalResult 
-                { 
-                    ChunkFallbacks = ChunkReordering.ReorderChunksToUShape(filteredRetrievedChunksForContext), 
+                var retrievalResult = new RetrievalResult
+                {
+                    ChunkFallbacks = ChunkReordering.ReorderChunksToUShape(filteredRetrievedChunksForContext),
                     FullFileContents = ChunkReordering.ReorderFullFilesToUShape(filesEligibleForExpansion, dedupedCombinedCappedChunks)
                 };
-                
+
                 await _conversationReuseService.TryPersistReusableConversationArtifactsAsync(
                     conversationId, dedupedCombinedCappedChunks, retrievalResult.FullFileContents);
 
@@ -115,8 +115,8 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 return new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
             }
         }
-
-        private async Task<List<RetrievedChunk>> BuildCombinedCappedChunksAsync(List<string> decomposedQueries, LlmQueryClassification routedLlmQueryResponse) 
+        //TODO: remove this at some point because it unused
+        private async Task<List<RetrievedChunk>> BuildCombinedCappedChunksAsync(List<string> decomposedQueries, LlmQueryClassification routedLlmQueryResponse)
         {
             List<RetrievedChunk> combinedCappedChunks = [];
 
@@ -130,7 +130,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 var (knnChunksRankMap, lexicalChunksRankMap) = ChunkFusion.ComputeChunksRankMaps(retrievedKNNChunks, retrievedLexicalChunks);
 
-                var  unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
+                var unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
 
                 var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(query, unifiedChunksSortedByRrfScore);
 
@@ -143,7 +143,6 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             return combinedCappedChunks;
         }
-
 
         public async Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query)
         {
@@ -173,7 +172,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 foreach (var chunk in distinctCappedChunks)
                 {
-                    chunk.FullFileIndexed = fullFilesMap.ContainsKey(chunk.SourceFile ?? string.Empty);
+                    chunk.IsFullFileIndexed = fullFilesMap.ContainsKey(chunk.SourceFile ?? string.Empty);
                 }
 
                 await _fileDebugLogger.LogSectionAsync("3-rag-final-context", $"Query: {query}",
@@ -195,7 +194,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             return content;
         }
 
-        private List<RetrievedChunk> DedupCombinedCappedChunks(List<RetrievedChunk> combinedCappedChunks) 
+        private List<RetrievedChunk> DedupCombinedCappedChunks(List<RetrievedChunk> combinedCappedChunks)
         {
             return combinedCappedChunks
                 .GroupBy(x => x.Key)

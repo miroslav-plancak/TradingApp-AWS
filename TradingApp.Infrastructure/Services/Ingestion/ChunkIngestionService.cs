@@ -41,12 +41,15 @@ namespace TradingApp.Infrastructure.Services.Ingestion
                 foreach (var file in processedSourceFiles)
                 {
                     var chunks = TextChunker.ChunkText(file.FileContent);
+                    var chunkIndex = 0;
 
                     foreach (var chunk in chunks)
                     {
                         chunkedRecords.Add(new ChunkRecord
                         {
                             Id = chunkedRecords.Count,
+                            ChunkIndex = chunkIndex++,
+                            TotalChunkCount = chunks.Count,
                             SourceFile = file.FileName,
                             Content = chunk
                         });
@@ -82,8 +85,10 @@ namespace TradingApp.Infrastructure.Services.Ingestion
             {
                 await _database.HashSetAsync($"chunk:{chunkRecord.Id}",
                     [
-                        new HashEntry("content", chunkRecord.Content),
                         new HashEntry("sourceFile", chunkRecord.SourceFile),
+                        new HashEntry("chunkIndex", chunkRecord.ChunkIndex),
+                        new HashEntry("content", chunkRecord.Content),
+                        new HashEntry("totalChunkCount", chunkRecord.TotalChunkCount),
                         new HashEntry("embedding", EmbeddingPacker.RePackEmbeddingFromFloatToByte(chunkRecord.Embedding))
                     ]);
             }

@@ -269,7 +269,7 @@ namespace TradingApp.Infrastructure
             services.AddScoped<IConversationFullFileArbiterService, ConversationFullFileArbiterService>();
             return services;
         }
-        
+
         public static IServiceCollection AddConversationReuseService(this IServiceCollection services)
         {
             services.AddScoped<IConversationReuseService, ConversationReuseService>();

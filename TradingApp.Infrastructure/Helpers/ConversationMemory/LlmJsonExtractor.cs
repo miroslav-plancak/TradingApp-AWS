@@ -24,7 +24,7 @@ namespace TradingApp.Infrastructure.Helpers.ConversationMemory
             var start = text.IndexOf('[');
             var end = text.IndexOf(']');
 
-            if(start == -1 || end == -1 || end < start)
+            if (start == -1 || end == -1 || end < start)
             {
                 return text;
             }

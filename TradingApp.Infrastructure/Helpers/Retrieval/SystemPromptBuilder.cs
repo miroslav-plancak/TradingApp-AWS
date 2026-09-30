@@ -11,7 +11,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "You may be given an existing summary in addition to new messages - merge them into one " +
             "updated summary rather than treating them separately. Only include information actually " +
             "present in the provided content; do not infer or invent details.";
-
+        //TODO: remove this once you clean up AiChatHub from the old implementaion
         private const string ChatSystemInstruction =
                 "Answer the user's question using the following code context (if it's relevant) " +
                 "and additional summary (if it is provided). If the context doesn't contain the " +
@@ -62,7 +62,13 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
            "distinct sub-topics; get_database_context, for checking whether relevant code has already been fetched " +
            "earlier in this conversation before running a fresh search; search_knowledge_base, for retrieving " +
            "relevant code context for a specific question; and get_full_file, for fetching a complete file when a " +
-           "chunk-level excerpt isn't enough. Only use decompose_query when the question names 2+ distinct topics " +
+           "chunk-level excerpt isn't enough. Chunks returned by search_knowledge_base and get_database_context each " +
+           "include two flags: IsFullFileReconstructable (true means the chunks you already have together form the " +
+           "complete file - no need to call get_full_file) and IsFullFileIndexed (true means the full file could be " +
+           "fetched if still needed; false means don't call it, it will return no content). If IsFullFileReconstructable " +
+           "is true, you already have everything. If IsFullFileIndexed is true but IsFullFileReconstructable is false, " +
+           "calling get_full_file is worth it. " +
+            "Only use decompose_query when the question names 2+ distinct topics " +
            "to address separately. For each focused topic, check get_database_context first, then fall back to " +
            "search_knowledge_base (and get_full_file if needed) if it doesn't have enough. Use any tool as many " +
            "times as needed before answering, but if repeated attempts on the same angle keep turning up nothing " +
@@ -85,7 +91,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
             return string.Join("\n\n", new string?[] { CompactionSystemInstruction, summary }.Where(section => !string.IsNullOrWhiteSpace(section)));
         }
-
+        //TODO: remove this once you clean up AiChatHub from the old implementaion
         public static string BuildChatSystemPrompt(RetrievalResult retrievalResult, string? existingSummary = "")
         {
             var summary = FormatExistingSummary(existingSummary);

@@ -6,6 +6,8 @@ namespace TradingApp.Domain.Models.Entities.ConversationChunk
     {
         public Guid Id { get; set; }
         public required Guid ConversationId { get; set; }
+        public required int ChunkIndex { get; set; }
+        public required int TotalChunkCount { get; set; }
         public required string Key { get; set; }
         public required string SourceFile { get; set; }
         public required string Content { get; set; }
