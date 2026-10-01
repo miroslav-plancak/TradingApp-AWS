@@ -35,7 +35,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 Model = "claude-haiku-4-5",
                 MaxTokens = 512,
                 System = SystemPromptBuilder.QueryDecompositionSystemInstruction,
-                Messages = [new() { Role = Role.User, Content = userMessage}]
+                Messages = [new() { Role = Role.User, Content = userMessage }]
             };
 
             try
@@ -52,7 +52,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                     if (decomposedQueries == null || decomposedQueries.Count == 0)
                     {
-                        _logger.LogWarning( "QueryDecompositionRetrievedEmptyResult | DecomposedQueries: {QueriesCount}", decomposedQueries?.Count);
+                        _logger.LogWarning("QueryDecompositionRetrievedEmptyResult | DecomposedQueries: {QueriesCount}", decomposedQueries?.Count);
                         return [userMessage];
                     }
 

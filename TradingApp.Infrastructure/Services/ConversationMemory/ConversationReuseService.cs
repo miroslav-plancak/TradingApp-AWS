@@ -45,7 +45,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
                 var allExistingFullFiles = await _conversationFullFileService.GetConversationFullFilesAsync(conversationId);
 
-                var reusableFullFiles = await _conversationFullFileArbiterService.DetermineSufficientFullFilesAsync(userMessage,allExistingFullFiles);
+                var reusableFullFiles = await _conversationFullFileArbiterService.DetermineSufficientFullFilesAsync(userMessage, allExistingFullFiles);
 
                 return new ReusableConversationArtifacts()
                 {

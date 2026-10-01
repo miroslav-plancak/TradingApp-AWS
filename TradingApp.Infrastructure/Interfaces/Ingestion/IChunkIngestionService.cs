@@ -1,5 +1,4 @@
 using TradingApp.Infrastructure.Models.Ingestion;
-using TradingApp.Infrastructure.Models;
 
 namespace TradingApp.Infrastructure.Interfaces.Ingestion
 {

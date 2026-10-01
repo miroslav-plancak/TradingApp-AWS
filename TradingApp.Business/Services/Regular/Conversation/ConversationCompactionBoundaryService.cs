@@ -67,7 +67,7 @@ namespace TradingApp.Business.Services.Regular.Conversation
                 var messagesToCompact = allConversationMessages.Where(x => x.CreatedAt < lastFullTurnMessage.CreatedAt);
                 var messagesToCompactDtos = ConversationMessageMapper.ToConversationHistoryMessageDTOs(messagesToCompact);
 
-                if(messagesToCompact.Count() == 0)
+                if (messagesToCompact.Count() == 0)
                 {
                     _logger.LogInformation("GetMessagesForCompactionAsyncFoundNoMessagesToCompact ");
 

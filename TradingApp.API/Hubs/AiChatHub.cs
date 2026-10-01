@@ -62,7 +62,7 @@ namespace TradingApp.API.Hubs
         {
 
             if (string.IsNullOrWhiteSpace(userMessage)) throw new HubException("Message cannot be empty.");
-            
+
             var (isNewConversation, existingConversation) = await ResolveConversationAsync(conversationId, clientRequestId, userMessage);
 
             var conversationMessagesHistory = await RetrieveConversationHistoryAsync(existingConversation, userMessage);
@@ -74,18 +74,18 @@ namespace TradingApp.API.Hubs
 
             var conversationHistory = ToAnthropicMessageParams(conversationMessagesHistory);
             string assistantMessageResponse;
-           
-            try 
+
+            try
             {
-              assistantMessageResponse = await _agenticLoopService.RunAgenticLoopAsync(
-                 userMessage, existingConversation.ConversationId, conversationHistory, existingConversation.CompactedSummary);
+                assistantMessageResponse = await _agenticLoopService.RunAgenticLoopAsync(
+                   userMessage, existingConversation.ConversationId, conversationHistory, existingConversation.CompactedSummary);
 
             }
             catch (Exception ex)
-            {   
+            {
                 if (isNewConversation)
                 {
-                   await  _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                    await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
                 }
 
                 _logger.LogError(ex, "General error occured while receiving assistant message response.");
@@ -93,13 +93,13 @@ namespace TradingApp.API.Hubs
             }
 
             if (string.IsNullOrWhiteSpace(assistantMessageResponse))
-            {   
+            {
                 if (isNewConversation)
                 {
                     await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
                 }
 
-                _logger.LogError( "Assistant message response is empty.");
+                _logger.LogError("Assistant message response is empty.");
                 throw new HubException("Assistant message response failed, try again.");
             }
 
@@ -150,9 +150,9 @@ namespace TradingApp.API.Hubs
 
             await _fileDebugLogger.LogSectionAsync("0-conversation-history", $"Current user/assistant correspodence:",
                             RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
-           
+
             var parameters = ConfigureMessageParams(retrievalResult, conversationMessagesHistory, existingConversation.CompactedSummary);
-     
+
             IAsyncEnumerator<string> enumerator = null;
 
             enumerator = _anthropicApiService.EstablishStreamAsync

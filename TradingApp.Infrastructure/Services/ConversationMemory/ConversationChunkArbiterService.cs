@@ -16,7 +16,6 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         private readonly IAnthropicApiService _anthropicApiService;
         private readonly IFileDebugLogger _fileDebugLogger;
 
-
         public ConversationChunkArbiterService
         (
             ILogger<ConversationChunkArbiterService> logger,

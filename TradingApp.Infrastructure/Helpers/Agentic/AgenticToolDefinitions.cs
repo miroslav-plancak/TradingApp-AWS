@@ -19,20 +19,20 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                 "detailed question about one topic. Returns a list of sub-questions; call search_knowledge_base " +
                 "once for each.",
 
-            InputSchema = new InputSchema 
+            InputSchema = new InputSchema
             {
-                Type = JsonSerializer.SerializeToElement("object"), 
+                Type = JsonSerializer.SerializeToElement("object"),
 
-                Properties = new Dictionary<string, JsonElement> 
+                Properties = new Dictionary<string, JsonElement>
                 {
                     ["question"] = JsonSerializer.SerializeToElement(new
                     {
                         type = "string",
                         description = "The original user question to evaluate for decomposition."
                     })
-                }, 
+                },
 
-                Required =  new List<string> { "question" }
+                Required = new List<string> { "question" }
             }
         };
 
@@ -72,10 +72,12 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
              "search_knowledge_base or get_database_context isn't enough — for example, understanding a whole " +
              "class's structure or confirming there's no other relevant logic elsewhere in the file. " +
              "Only call this for a fileName that appeared in a prior search_knowledge_base or get_database_context " +
-             "chunk result with FullFileIndexed: true. Calling it for a file that wasn't returned by either tool, " +
-             "or was returned with FullFileIndexed: false, will return no content and waste a call — check the " +
-             "FullFileIndexed flag on the chunk first, from whichever tool returned it, before deciding this is " +
-             "worth calling.",
+             "chunk result with IsFullFileIndexed: true. Calling it for a file that wasn't returned by either tool, " +
+             "or was returned with IsFullFileIndexed: false, will return no content and waste a call — check the " +
+             "IsFullFileIndexed flag on the chunk first, from whichever tool returned it, before deciding this is " +
+             "worth calling. Also check IsFullFileReconstructable on those same chunks first — if it's true, the " +
+             "chunks you already have together already form the complete file, and calling this tool would be " +
+             "redundant regardless of IsFullFileIndexed.",
 
             InputSchema = new InputSchema
             {
@@ -115,7 +117,7 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                     ["query"] = JsonSerializer.SerializeToElement(new
                     {
                         type = "string",
-                        description = "A focused, standalone question about one specific topic in the codebase." 
+                        description = "A focused, standalone question about one specific topic in the codebase."
                     }),
                 },
 

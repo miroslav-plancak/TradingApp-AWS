@@ -41,7 +41,7 @@ namespace TradingApp.Business.Repositories
                     conversationChunk.Id = existingRow.Id;
                     conversationChunk.CreatedAt = existingRow.CreatedAt;
 
-                   _tradingDbContext.ConversationChunks.Update(conversationChunk);
+                    _tradingDbContext.ConversationChunks.Update(conversationChunk);
                     await _tradingDbContext.SaveChangesAsync();
 
                     return conversationChunk;

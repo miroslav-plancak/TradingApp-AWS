@@ -155,6 +155,6 @@ namespace TradingApp.Business.Services.Regular.Conversation
             }
         }
 
-     
+
     }
 }

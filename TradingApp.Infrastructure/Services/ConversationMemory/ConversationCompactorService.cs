@@ -38,13 +38,13 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
         public async Task CompactConversationAsync(Guid conversationId, MessageDeltaUsage usage, long maxTokens)
         {
-            if(!IsCompactionThresholdReached(usage, maxTokens)) return;
+            if (!IsCompactionThresholdReached(usage, maxTokens)) return;
 
             var conversationDTO = await _conversationSummaryService.GetConversationCompactionStateAsync(conversationId);
             var messagesForCompaction = await _conversationCompactionBoundaryService.GetMessagesForCompactionAsync(
                 conversationDTO, Sonnet5AfterCompactContextWindow);
 
-            if (messagesForCompaction.Count == 0) 
+            if (messagesForCompaction.Count == 0)
             {
                 _logger.LogInformation("ConversationCompactionNothingToCompactYet | ConversationId: {ConversationId}", conversationId);
                 return;
@@ -88,9 +88,9 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                 .Select(message => new MessageParam()
                 {
                     Role = message.Role,
-                    Content =  message.Content
+                    Content = message.Content
                 })
-                .Append(new MessageParam { Role = Role.User, Content="Compact the message history according to the instructions above."})
+                .Append(new MessageParam { Role = Role.User, Content = "Compact the message history according to the instructions above." })
                 .ToList();
         }
     }

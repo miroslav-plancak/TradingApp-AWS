@@ -15,7 +15,7 @@ namespace TradingApp.Business.Services.Regular.Conversation
         private readonly ILogger<ConversationMessageService> _logger;
 
         public ConversationMessageService
-        (   
+        (
             IConversationRepository conversationRepository,
             ILogger<ConversationMessageService> logger
         )

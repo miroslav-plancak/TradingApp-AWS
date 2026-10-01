@@ -11,6 +11,8 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             return chunks.Select(x => new RetrievedChunk
             {
                 Key = x.Key,
+                ChunkIndex = x.ChunkIndex,
+                TotalChunkCount = x.TotalChunkCount,
                 SourceFile = x.SourceFile,
                 Content = x.Content,
                 KnnScore = null,
@@ -37,6 +39,8 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             {
                 ConversationId = conversationId,
                 Key = x.Key,
+                ChunkIndex = x.ChunkIndex,
+                TotalChunkCount = x.TotalChunkCount,
                 SourceFile = x.SourceFile,
                 Content = x.Content,
                 RelevanceScore = x.RelevanceScore

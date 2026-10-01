@@ -191,6 +191,8 @@ namespace TradingApp.Domain
                 entity.HasIndex(e => new { e.ConversationId, e.Key }).IsUnique();
                 entity.Property(e => e.ConversationId).IsRequired();
                 entity.Property(e => e.Key).IsRequired().HasMaxLength(200);
+                entity.Property(e => e.ChunkIndex).IsRequired();
+                entity.Property(e => e.TotalChunkCount).IsRequired();
                 entity.Property(e => e.SourceFile).IsRequired().HasMaxLength(500);
                 entity.Property(e => e.Content).IsRequired();
                 entity.Property(e => e.RelevanceScore).IsRequired().HasDefaultValue(0);

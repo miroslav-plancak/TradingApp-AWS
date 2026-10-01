@@ -8,7 +8,11 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
         {
             var sortedByRelevanceScore = chunks.OrderByDescending(x => x.RelevanceScore).ToList();
 
-            return ApplyUShapeOrder(sortedByRelevanceScore);
+            var uShapedSort = ApplyUShapeOrder(sortedByRelevanceScore);
+
+            var groupedBySourceFileUShapedSort = uShapedSort.GroupBy(x => x.SourceFile).SelectMany(group => group).ToList();
+
+            return groupedBySourceFileUShapedSort;
         }
 
         public static Dictionary<string, string> ReorderFullFilesToUShape
