@@ -7,5 +7,6 @@ namespace TradingApp.Infrastructure.Interfaces.Ingestion
         Task<List<ChunkRecord>> ReadAndChunkSourceFiles(string[] sourceFiles);
         Task<List<ChunkRecord>> EmbedChunkedRecordsAsync(List<ChunkRecord> chunkedRecords);
         Task PersistChunkedRecordsToRedisAsync(List<ChunkRecord> chunkedRecords);
+        Task PersistEntireSourceFilesCorpusAsync(string[] sourceFiles);
     }
 }

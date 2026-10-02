@@ -212,6 +212,12 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddCorpusFileDescriptionService(this IServiceCollection services)
+        {
+            services.AddScoped<ICorpusFileDescriptionService, CorpusFileDescriptionService>();
+            return services;
+        }
+
         // ==================== RAG - Retrieval ====================
 
         public static IServiceCollection AddVoyageRerankingServices(this IServiceCollection services)
@@ -253,6 +259,12 @@ namespace TradingApp.Infrastructure
         public static IServiceCollection AddQueryDecompositionService(this IServiceCollection services)
         {
             services.AddScoped<IQueryDecompositionService, QueryDecompositionService>();
+            return services;
+        }
+
+        public static IServiceCollection AddCorpusManifestService(this IServiceCollection services)
+        {
+            services.AddScoped<ICorpusManifestService, CorpusManifestService>();
             return services;
         }
 

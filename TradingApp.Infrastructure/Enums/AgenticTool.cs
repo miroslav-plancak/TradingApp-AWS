@@ -5,6 +5,7 @@
         decompose_query,
         search_knowledge_base,
         get_full_file,
-        get_database_context
+        get_database_context,
+        get_all_indexed_files
     }
 }

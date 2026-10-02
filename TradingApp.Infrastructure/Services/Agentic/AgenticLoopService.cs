@@ -9,6 +9,7 @@ using TradingApp.Infrastructure.Interfaces.Agentic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Agentic;
+using TradingApp.Infrastructure.Models.Ingestion;
 using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Agentic
@@ -22,6 +23,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
         private readonly IContextRetrievalService _contextRetrievalService;
         private readonly IConversationReuseService _conversationReuseService;
         private readonly IFileExpansionService _fileExpansionService;
+        private readonly ICorpusManifestService _corpusManifestService;
 
         private const int MaxResponseTokens = 4096;
 
@@ -33,7 +35,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
             IQueryDecompositionService queryDecompositionService,
             IContextRetrievalService contextRetrievalService,
             IConversationReuseService conversationResuseService,
-            IFileExpansionService fileExpansionService
+            IFileExpansionService fileExpansionService,
+            ICorpusManifestService corpusManifestService
         )
         {
             _logger = logger;
@@ -43,6 +46,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             _contextRetrievalService = contextRetrievalService;
             _conversationReuseService = conversationResuseService;
             _fileExpansionService = fileExpansionService;
+            _corpusManifestService = corpusManifestService;
         }
         //TODO: probably extract these props into a payload object at some point.
         public async Task<string?> RunAgenticLoopAsync
@@ -76,7 +80,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         AgenticToolDefinitions.DecomposeQuery,
                         AgenticToolDefinitions.SearchKnowledgeBase,
                         AgenticToolDefinitions.GetFullFile,
-                        AgenticToolDefinitions.GetDatabaseContext
+                        AgenticToolDefinitions.GetDatabaseContext,
+                        AgenticToolDefinitions.GetAllIndexedFiles
                     },
                     Messages = messages
                 };
@@ -216,6 +221,11 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         result = await HandleGetDatabaseContextAsync(context);
                         break;
                     }
+                case AgenticTool.get_all_indexed_files:
+                    {
+                        result = await HandleGetAllIndexedFileNames();
+                        break;
+                    }
                 default:
                     result = $"Unknown tool: {context.ToolName}";
                     break;
@@ -332,6 +342,26 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
                 return $"FileName: {fileName} \n\n{fullFileContent}";
             }
+        }
+
+        public async Task<string> HandleGetAllIndexedFileNames()
+        {
+            var corpusManifest = await _corpusManifestService.GetEntireCorpusManifestAsync();
+
+            if (corpusManifest.Count == 0)
+            {
+                return SystemPromptBuilder.NoSourceFileNamesFound;
+            }
+
+            return FormatCorpusManifestForToolResult(corpusManifest);
+        }
+
+        private static string FormatCorpusManifestForToolResult(List<ProcessedCorpusSourceFile> corpusManifest)
+        {
+            return string.Join("\n\n", corpusManifest.Select(file =>
+                $"FileName: {file.Name}\n" +
+                $"Description: {file.Description}\n" +
+                $"IsFullyIndexed: {file.IsFullyIndexed}"));
         }
     }
 }

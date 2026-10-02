@@ -11,6 +11,7 @@
 		<ProjectReference Include="..\TradingApp.Infrastructure\TradingApp.Infrastructure.csproj" />
 	</ItemGroup>
 	<ItemGroup>
+	  <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="6.0.1" />
 	  <PackageReference Include="StackExchange.Redis" Version="3.1.13" />
 	</ItemGroup>
 </Project>

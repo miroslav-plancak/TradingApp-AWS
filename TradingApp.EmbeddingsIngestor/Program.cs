@@ -2,7 +2,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TradingApp.Infrastructure;
+using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
+using TradingApp.Infrastructure.Services;
 
 var configuration = new ConfigurationBuilder()
     .AddUserSecrets<Program>()
@@ -11,12 +13,20 @@ var configuration = new ConfigurationBuilder()
 var services = new ServiceCollection();
 services.AddSingleton<IConfiguration>(configuration);
 services.AddLogging(builder => builder.AddConsole());
+services.AddSingleton<IFileDebugLogger, FileDebugLogger>();
 services.AddVoyageApiServices();
 services.AddVoyageEmbeddingServices();
 services.AddRedisConnection();
+services.AddAnthropicClient();
+services.AddAnthropicApiService();
 services.AddChunkingIngestionService();
+services.AddCorpusFileDescriptionService();
 services.AddResiliencePolicy(ResiliencePolicyKey.VoyageAPI,
     "VoyageAPI", 2, _ => { return TimeSpan.FromMilliseconds(200); });
+services.AddResiliencePolicy(ResiliencePolicyKey.AnthropicAPI,
+    "AnthropicAPI", 2, _ => { return TimeSpan.FromMilliseconds(200); });
+services.AddResiliencePolicy(ResiliencePolicyKey.RedisAPI,
+    "RedisAPI", 2, _ => { return TimeSpan.FromMilliseconds(200); });
 
 var serviceProvider = services.BuildServiceProvider();
 
@@ -41,6 +51,8 @@ var sourceFiles = new[]
 };
 
 var chunkIngestionService = serviceProvider.GetRequiredService<IChunkIngestionService>();
+
+await chunkIngestionService.PersistEntireSourceFilesCorpusAsync(sourceFiles);
 
 var chunkedRecords = await chunkIngestionService.ReadAndChunkSourceFiles(sourceFiles);
 
