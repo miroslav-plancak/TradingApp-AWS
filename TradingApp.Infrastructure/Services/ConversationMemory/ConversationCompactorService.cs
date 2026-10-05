@@ -36,37 +36,38 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             _conversationCompactionBoundaryService = conversationCompactionBoundaryService;
         }
 
-        public async Task CompactConversationAsync(Guid conversationId, MessageDeltaUsage usage, long maxTokens)
+        public async Task CompactConversationAsync(Guid conversationId, Usage usage, long maxTokens)
         {
             if (!IsCompactionThresholdReached(usage, maxTokens)) return;
 
-            var conversationDTO = await _conversationSummaryService.GetConversationCompactionStateAsync(conversationId);
-            var messagesForCompaction = await _conversationCompactionBoundaryService.GetMessagesForCompactionAsync(
-                conversationDTO, Sonnet5AfterCompactContextWindow);
-
-            if (messagesForCompaction.Count == 0)
-            {
-                _logger.LogInformation("ConversationCompactionNothingToCompactYet | ConversationId: {ConversationId}", conversationId);
-                return;
-            }
-
-            var parameters = new MessageCreateParams
-            {
-                Model = "claude-sonnet-5",
-                MaxTokens = 7000,
-                System = SystemPromptBuilder.BuildCompactionSystemPrompt(conversationDTO.CompactedSummary),
-                Messages = ToAnthropicMessageParams(messagesForCompaction),
-            };
-
             try
             {
-                var response = await _anthropicApiService.DispatchPromptAsync(parameters);
+                var conversationDTO = await _conversationSummaryService.GetConversationCompactionStateAsync(conversationId);
+                var messagesForCompaction = await _conversationCompactionBoundaryService.GetMessagesForCompactionAsync(
+                    conversationDTO, Sonnet5AfterCompactContextWindow);
 
-                if (!string.IsNullOrWhiteSpace(response))
+                if (messagesForCompaction.Count == 0)
                 {
-                    var lastCompactedMessageTimeStamp = messagesForCompaction.Last().CreatedAt;
-                    await _conversationSummaryService.UpdateCompactedConversationSummaryAsync(conversationId, response, lastCompactedMessageTimeStamp);
+                    _logger.LogInformation("ConversationCompactionNothingToCompactYet | ConversationId: {ConversationId}", conversationId);
+                    return;
                 }
+
+                var parameters = new MessageCreateParams
+                {
+                    Model = "claude-sonnet-5",
+                    MaxTokens = 7000,
+                    System = SystemPromptBuilder.BuildCompactionSystemPrompt(conversationDTO.CompactedSummary),
+                    Messages = ToAnthropicMessageParams(messagesForCompaction),
+                };
+
+           
+                    var response = await _anthropicApiService.DispatchPromptAsync(parameters);
+
+                    if (!string.IsNullOrWhiteSpace(response))
+                    {
+                        var lastCompactedMessageTimeStamp = messagesForCompaction.Last().CreatedAt;
+                        await _conversationSummaryService.UpdateCompactedConversationSummaryAsync(conversationId, response, lastCompactedMessageTimeStamp);
+                    }
             }
             catch (Exception ex)
             {
@@ -74,7 +75,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             }
         }
 
-        private static bool IsCompactionThresholdReached(MessageDeltaUsage usage, long maxTokens)
+        private static bool IsCompactionThresholdReached(Usage usage, long maxTokens)
         {
             var lastTurnTotalInputTokens = usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens;
             return (lastTurnTotalInputTokens + maxTokens) >= Sonnet5MaxContextWindow * CompactThreshold;

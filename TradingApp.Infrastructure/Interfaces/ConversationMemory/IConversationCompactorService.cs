@@ -4,6 +4,6 @@ namespace TradingApp.Infrastructure.Interfaces.ConversationMemory
 {
     public interface IConversationCompactorService
     {
-        Task CompactConversationAsync(Guid conversationId, MessageDeltaUsage usage, long maxTokens);
+        Task CompactConversationAsync(Guid conversationId, Usage usage, long maxTokens);
     }
 }

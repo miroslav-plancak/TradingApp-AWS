@@ -48,21 +48,17 @@ namespace TradingApp.Infrastructure.Services.Agentic
             _fileExpansionService = fileExpansionService;
             _corpusManifestService = corpusManifestService;
         }
-        //TODO: probably extract these props into a payload object at some point.
-        public async Task<string?> RunAgenticLoopAsync
-        (
-            string userMessage,
-            Guid conversationId,
-            IReadOnlyList<MessageParam> conversationMessagesHistory,
-            string? compactedSummary
-        )
+       
+        public async Task<AgenticLoopResponse> RunAgenticLoopAsync(AgenticLoopRequest request)
         {
-            _logger.LogInformation("RunAgenticLoopAsyncStarted | UserMessage:{UserMessage}", userMessage);
-            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", "Loop started", userMessage);
+            _logger.LogInformation("RunAgenticLoopAsyncStarted | UserMessage:{UserMessage}", request.UserMessage);
+            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", "Loop started", request.UserMessage);
 
-            List<MessageParam> messages = conversationMessagesHistory.Count == 0
-                ? new List<MessageParam> { new MessageParam { Role = Role.User, Content = userMessage } }
-                : new List<MessageParam>(conversationMessagesHistory);
+            List<MessageParam> messages = request.ConversationMessagesHistory.Count == 0
+                ? new List<MessageParam> { new MessageParam { Role = Role.User, Content = request.UserMessage } }
+                : new List<MessageParam>(request.ConversationMessagesHistory);
+
+            AgenticLoopResponse agenticLoopResponse = new();
 
             var seenChunkKeys = new HashSet<string>();
             var searchKnowledgeBaseToolCounter = 0;
@@ -74,7 +70,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 {
                     Model = "claude-sonnet-5",
                     MaxTokens = MaxResponseTokens,
-                    System = SystemPromptBuilder.BuildAgenticChatSystemPrompt(MaxResponseTokens, compactedSummary),
+                    System = SystemPromptBuilder.BuildAgenticChatSystemPrompt(MaxResponseTokens, request.CompactedSummary),
                     Tools = new List<ToolUnion>
                     {
                         AgenticToolDefinitions.DecomposeQuery,
@@ -86,14 +82,14 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     Messages = messages
                 };
 
-                var response = await _anthropicApiService.DispatchPromptWithFullResponseAsync(parameters, userMessage);
+                var response = await _anthropicApiService.DispatchPromptWithFullResponseAsync(parameters, request.UserMessage);
 
                 if (response == null)
                 {
-                    _logger.LogWarning("RunAgenticLoopAsyncFailedRetrievingResponse| UserMessage:{UserMessage}", userMessage);
+                    _logger.LogWarning("RunAgenticLoopAsyncFailedRetrievingResponse| UserMessage:{UserMessage}", request.UserMessage);
                     await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
                         "Loop ended — null response", "DispatchPromptWithFullResponseAsync returned null");
-                    return null;
+                    return agenticLoopResponse;
                 }
 
                 if (response.StopReason != StopReason.ToolUse)
@@ -104,14 +100,25 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         {
                             _logger.LogInformation("RunAgenticLoopAsyncEnded | StopReason:{StopReason}", response.StopReason);
                             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — {response.StopReason}", textBlock.Text);
-                            return textBlock.Text;
+
+                            agenticLoopResponse.MessageResponse = textBlock.Text;
+                            agenticLoopResponse.TokenUsage = response.Usage;
+                            agenticLoopResponse.MaxTokens = parameters.MaxTokens;
+
+                            return agenticLoopResponse;
+                          
                         }
                     }
 
                     _logger.LogWarning("RunAgenticLoopAsyncEndedTextBlockNotFound | StopReason:{StopReason}", response.StopReason);
                     await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
                         $"Loop ended — {response.StopReason}, no text block found", "");
-                    return null;
+
+                    agenticLoopResponse.MessageResponse = "";
+                    agenticLoopResponse.TokenUsage = response.Usage;
+                    agenticLoopResponse.MaxTokens = parameters.MaxTokens;
+
+                    return agenticLoopResponse;
                 }
 
                 var assistantContent = new List<ContentBlockParam>();
@@ -152,7 +159,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         {
                             var toolExecutionContext = new ToolExecutionContext
                             {
-                                ConversationId = conversationId,
+                                ConversationId = request.ConversationId,
                                 ToolUseId = toolUseBlock.ID,
                                 ToolName = tool,
                                 Input = toolUseBlock.Input,
