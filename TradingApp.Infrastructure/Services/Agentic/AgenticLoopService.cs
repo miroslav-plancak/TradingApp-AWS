@@ -365,10 +365,12 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
         private static string FormatCorpusManifestForToolResult(List<ProcessedCorpusSourceFile> corpusManifest)
         {
-            return string.Join("\n\n", corpusManifest.Select(file =>
+            var manifest = string.Join("\n\n", corpusManifest.Select(file =>
                 $"FileName: {file.Name}\n" +
                 $"Description: {file.Description}\n" +
                 $"IsFullyIndexed: {file.IsFullyIndexed}"));
+
+            return manifest + SystemPromptBuilder.ManifestAbsentFileReminder;
         }
     }
 }

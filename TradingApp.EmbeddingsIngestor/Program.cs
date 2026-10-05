@@ -32,12 +32,13 @@ var serviceProvider = services.BuildServiceProvider();
 
 var sourceFiles = new[]
 {
-    @"C:\workspace\TradingApp-AWS\TradingApp.Domain\Models\Enums\ResiliencePolicyKey.cs",          // 119 chars
-    @"C:\workspace\TradingApp-AWS\TradingApp.Domain\Models\Enums\OrderStatus.cs",                  // 188 chars
+    @"C:\workspace\TradingApp-AWS\TradingApp.Domain\Models\Enums\ResiliencePolicyKey.cs",           // 119 chars
+    @"C:\workspace\TradingApp-AWS\TradingApp.Domain\Models\Enums\OrderStatus.cs",                   // 188 chars
     @"C:\workspace\TradingApp-AWS\TradingApp.Business\Interfaces\Repositories\IOrderRepository.cs", // 569 chars
     @"C:\workspace\TradingApp-AWS\TradingApp.API\Hubs\AiChatHub.cs",                                // 3,060 chars
     @"C:\workspace\TradingApp-AWS\TradingApp.API\Controllers\DeadLetterController.cs",              // 4,634 chars
     @"C:\workspace\TradingApp-AWS\TradingApp.Infrastructure\Services\IntegrationEventPublisher.cs", // 7,229 chars
+    @"C:\workspace\TradingApp-AWS\TradingApp.Infrastructure\Helpers\ResiliencePolicyBuilder.cs",    // 8,171 chars
     @"C:\workspace\TradingApp-AWS\TradingApp.Business\Services\Regular\OrderService.cs",            // 8,591 chars
     @"C:\workspace\TradingApp-AWS\TradingApp.Infrastructure\ServiceCollectionExtensions.cs",        // 12,164 chars
     @"C:\workspace\TradingApp-AWS\Functions\ScheduledOrderStatusProcessor\ScheduledOrderStatusProcessor.cs", // 14,175 chars
