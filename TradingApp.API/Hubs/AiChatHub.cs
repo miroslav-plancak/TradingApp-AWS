@@ -15,6 +15,7 @@ using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Agentic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
+using TradingApp.Infrastructure.Models.Agentic;
 using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.API.Hubs
@@ -55,9 +56,9 @@ namespace TradingApp.API.Hubs
 
         public async Task<string> SendUserMessage
         (
-         string userMessage,
-         Guid? conversationId,
-         Guid? clientRequestId
+             string userMessage,
+             Guid? conversationId,
+             Guid? clientRequestId
         )
         {
 
@@ -73,13 +74,18 @@ namespace TradingApp.API.Hubs
                             RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
 
             var conversationHistory = ToAnthropicMessageParams(conversationMessagesHistory);
-            string assistantMessageResponse;
+
+            AgenticLoopResponse agenticLoopResponse;
 
             try
             {
-                assistantMessageResponse = await _agenticLoopService.RunAgenticLoopAsync(
-                   userMessage, existingConversation.ConversationId, conversationHistory, existingConversation.CompactedSummary);
-
+                agenticLoopResponse = await _agenticLoopService.RunAgenticLoopAsync( new AgenticLoopRequest 
+                {
+                    UserMessage = userMessage,
+                    ConversationId= existingConversation.ConversationId, 
+                    ConversationMessagesHistory = conversationHistory,
+                    CompactedSummary = existingConversation.CompactedSummary
+                });
             }
             catch (Exception ex)
             {
@@ -92,7 +98,7 @@ namespace TradingApp.API.Hubs
                 throw new HubException(ex.Message);
             }
 
-            if (string.IsNullOrWhiteSpace(assistantMessageResponse))
+            if (string.IsNullOrWhiteSpace(agenticLoopResponse.MessageResponse))
             {
                 if (isNewConversation)
                 {
@@ -118,7 +124,7 @@ namespace TradingApp.API.Hubs
                     ConversationId = existingConversation.ConversationId,
                     ClientRequestId = null,
                     Role = ConversationMessageRole.Assistant,
-                    Body = assistantMessageResponse
+                    Body = agenticLoopResponse.MessageResponse
                 });
             }
             catch (Exception ex)
@@ -127,8 +133,10 @@ namespace TradingApp.API.Hubs
                     "Failed to persist conversation messages for conversation {ConversationId} - the answer was generated successfully but may be missing from history.",
                     existingConversation.ConversationId);
             }
+            
+            await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, agenticLoopResponse.TokenUsage, agenticLoopResponse.MaxTokens);
 
-            return assistantMessageResponse;
+            return agenticLoopResponse.MessageResponse;
         }
 
         public async IAsyncEnumerable<string> SendUserMessage_temp_disable
@@ -191,7 +199,8 @@ namespace TradingApp.API.Hubs
                 },
                 async (tokenUsage) =>
                 {
-                    await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, tokenUsage, parameters.MaxTokens);
+                    Usage tempTokenUsage = null;
+                    await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, tempTokenUsage, parameters.MaxTokens);
                 }
             ).GetAsyncEnumerator();
 

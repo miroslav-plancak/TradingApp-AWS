@@ -1,16 +1,11 @@
 ﻿using Anthropic.Models.Messages;
+using TradingApp.Infrastructure.Models.Agentic;
 
 namespace TradingApp.Infrastructure.Interfaces.Agentic
 {
     public interface IAgenticLoopService
     {
-        Task<string?> RunAgenticLoopAsync
-        (
-            string userMessage,
-            Guid conversationId,
-            IReadOnlyList<MessageParam> conversationMessagesHistory,
-            string? compactedSummary
-        );
+        Task<AgenticLoopResponse> RunAgenticLoopAsync(AgenticLoopRequest request);
         Task<string> HandleGetAllIndexedFileNames();
     }
 }

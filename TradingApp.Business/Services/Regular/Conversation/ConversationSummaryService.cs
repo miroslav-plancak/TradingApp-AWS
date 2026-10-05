@@ -38,7 +38,7 @@ namespace TradingApp.Business.Services.Regular.Conversation
                     throw new KeyNotFoundException($"Conversation {conversationId} not found.");
                 }
 
-                var conversationDTO = ConversationMapper.ToConversationCompactionStateDTO(conversationEntity);
+                var conversationDTO = ConversationMapper.ToConversationCompactionStateDTO (conversationEntity);
 
                 _logger.LogInformation("GetConversationCompactionStateAsyncRetrieved  | ConversationId: {ConversationId} " +
                     "| CompactedUntilMessage: {CompactedUntilMessage}",
