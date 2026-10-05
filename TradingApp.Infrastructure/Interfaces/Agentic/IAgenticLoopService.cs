@@ -11,5 +11,6 @@ namespace TradingApp.Infrastructure.Interfaces.Agentic
             IReadOnlyList<MessageParam> conversationMessagesHistory,
             string? compactedSummary
         );
+        Task<string> HandleGetAllIndexedFileNames();
     }
 }

@@ -43,6 +43,11 @@ namespace TradingApp.API.PushDispatch
                 {
                     break;
                 }
+                catch (QueueDoesNotExistException ex)
+                {
+                    logger.LogError("QueueDoesNotExist | {QueueUrl} | {Message} | This queue is not coming back - stopping listener.", queueUrl, ex.Message);
+                    return;
+                }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "ReceiveMessage failed on {QueueUrl}, backing off 5s", queueUrl);

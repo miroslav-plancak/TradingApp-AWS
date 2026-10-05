@@ -3,6 +3,7 @@ using Polly;
 using System.Text.Json;
 using TradingApp.Domain.Models.Entities.Conversation;
 using TradingApp.Infrastructure.Enums;
+using TradingApp.Infrastructure.Helpers.Retrieval;
 
 namespace TradingApp.Infrastructure.Helpers.Agentic
 {
@@ -105,7 +106,7 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
               "Checks whether relevant code has already been fetched earlier in this conversation, before running a " +
               "fresh search. Call this once per focused topic - if the question covers multiple unrelated topics, call " +
               "decompose_query first, then call this tool once per sub-question. If it returns \"No re-usable context " +
-              "found\", or the returned context is insufficient to fully answer the question, fall back to " +
+              "found.\", or the returned context is insufficient to fully answer the question, fall back to " +
               "search_knowledge_base and get_full_file for that topic.",
 
             InputSchema = new InputSchema
@@ -122,6 +123,30 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                 },
 
                 Required = new List<string> { "query" }
+            }
+        };
+
+        public static readonly Tool GetAllIndexedFiles = new Tool
+        {
+            Name = AgenticTool.get_all_indexed_files.ToString(),
+
+            Description =
+               "Returns the complete manifest of every file currently indexed in the knowledge base - a table of " +
+               "contents for what's available, not a targeted search. For each file this includes its FileName, a " +
+               "one-sentence Description of what it actually does, and IsFullyIndexed (true means get_full_file can " +
+               "fetch its complete content; false means don't call get_full_file for it, it will return no content). " +
+               "Call this when search_knowledge_base returns nothing relevant for a topic and you're unsure whether " +
+               "the content is indexed at all, before retrying with different search phrasing. Use the Description " +
+               "field to judge relevance - you usually won't know the exact file name in advance, so look for a " +
+               "plausible match based on what each file does, not an exact name match. If nothing in the manifest " +
+               "looks related, the tool call result returns " +
+               $"\"{SystemPromptBuilder.NoSourceFileNamesFound}\", " +
+               "treat that as a strong signal the content isn't indexed, and prefer telling the user you don't have this " +
+               " information over continuing to retry search_knowledge_base or get_full_file with different wording.",
+              
+            InputSchema = new InputSchema
+            {
+                Type = JsonSerializer.SerializeToElement("object")
             }
         };
     }

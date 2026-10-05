@@ -60,6 +60,7 @@ builder.Services.AddKnowledgeBaseQueryService();
 builder.Services.AddChunkRerankingService();
 builder.Services.AddFileExpansionService();
 builder.Services.AddQueryDecompositionService();
+builder.Services.AddCorpusManifestService();
 builder.Services.AddAgenticLoopService();
 builder.Services.AddChunkingRetrievalService();
 builder.Services.AddConversationChunkArbiterServices();

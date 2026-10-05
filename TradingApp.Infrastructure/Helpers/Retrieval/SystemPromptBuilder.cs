@@ -4,6 +4,14 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 {
     public static class SystemPromptBuilder
     {
+        public const string SearchCapReachedMessage =
+        "No new results found in the last 3 attempts on this line of inquiry - " +
+        "stop retrying this specific angle and either move on or answer with what you already have.";
+
+        public const string NoFullFileContentAvailable = "No full file content available for";
+
+        public const string NoSourceFileNamesFound = "No source file names found.";
+
         private const string CompactionSystemInstruction =
             "Compact the given conversation messages into a single summary that preserves:\n\n" +
             "- how things work and why (mechanisms and reasoning), not just conclusions\n" +
@@ -49,40 +57,62 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "Example (multiple queries): [\"How does OutboxProcessingService handle retries?\", \"How does the SNS publish path handle retries?\"]\r\n" +
             "Do not infer or add topics that are not present in the user's message.";
 
-        public const string SearchCapReachedMessage =
-            "No new results found in the last 3 attempts on this line of inquiry - " +
-            "stop retrying this specific angle and either move on or answer with what you already have.";
+        public const string CorpusFileDescriptionSystemInstruction =
+            "Given a numbered list of source files below, each with a FileName and its full Content, produce a " +
+            "single, brief, one-sentence description of what each file actually does or is responsible for - " +
+            "not a restatement of its name, a genuine summary of its real responsibility.\r\n" +
+            "Respond with exactly this JSON shape: [{\"name\": \"...\", \"description\": \"...\"}, ...] - pure JSON only, no explanation.\r\n" +
+            "- You MUST return exactly one object per file provided, in any order - never skip a file, never merge two files into one entry, never add an entry for a file not provided.\r\n" +
+            "- The \"name\" value must exactly match the FileName given for that file - never invent or alter one.\r\n" +
+            "- Each \"description\" should be short enough to scan quickly (roughly one sentence) but specific enough to judge whether the file is relevant to a given topic - name the concrete responsibility " +
+            "(e.g. \"retries SNS topic publishes that failed and were deferred\"), not a vague restatement like \"handles processing.\"\r\n" +
+            "Example: [{\"name\": \"OrderMapper.cs\", \"description\": \"Maps between Order entities and their request/response DTOs.\"}, " +
+            "{\"name\": \"IDeadlLetterService.cs\", \"description\": \"Defines the contract for creating, querying, and resolving dead-letter logs.\"}]";
 
-        public const string NoFullFileContentAvailable = "No full file content available for";
+        private const string AgenticChatSystemInstruction =
+         "You are answering the user's question about a codebase. You can infer the context from the chat history " +
+         "(if provided), as well as with additional summary of chat history:\n{1}.\n\n" +
 
-        private const string AgenticChatSystemInstructionTemplate =
-           "You are answering the user's question about a codebase. You can infer the context from the chat history (if provided), " +
-            "as well as with additional summary of chat history:\n{1}.\n" +
-            "You have four tools available: decompose_query, for splitting a genuinely compound question into its " +
-           "distinct sub-topics; get_database_context, for checking whether relevant code has already been fetched " +
-           "earlier in this conversation before running a fresh search; search_knowledge_base, for retrieving " +
-           "relevant code context for a specific question; and get_full_file, for fetching a complete file when a " +
-           "chunk-level excerpt isn't enough. Chunks returned by search_knowledge_base and get_database_context each " +
-           "include two flags: IsFullFileReconstructable (true means the chunks you already have together form the " +
-           "complete file - no need to call get_full_file) and IsFullFileIndexed (true means the full file could be " +
-           "fetched if still needed; false means don't call it, it will return no content). If IsFullFileReconstructable " +
-           "is true, you already have everything. If IsFullFileIndexed is true but IsFullFileReconstructable is false, " +
-           "calling get_full_file is worth it. " +
-            "Only use decompose_query when the question names 2+ distinct topics " +
-           "to address separately. For each focused topic, check get_database_context first, then fall back to " +
-           "search_knowledge_base (and get_full_file if needed) if it doesn't have enough. Use any tool as many " +
-           "times as needed before answering, but if repeated attempts on the same angle keep turning up nothing " +
-           "new, stop retrying it and either move on to a different angle or answer with what you already have.\n\n" +
-           "Your response has a hard output limit of {0} tokens. Structure your answer so it comfortably " +
-           "finishes within that budget: cover the core mechanism for each part of the question, but favor " +
-           "breadth over exhaustive depth on any single part. If a detail would meaningfully deepen the answer " +
-           "but risks running long, leave it out rather than risk an incomplete answer - the user can ask a " +
-           "targeted follow-up question about that part instead.";
+         "Tools available:\n" +
+         "1. decompose_query - splits a question that names 2+ distinct topics into separate, focused sub-questions. " +
+         "Only use it when the question genuinely covers multiple topics to address separately.\n" +
 
+         "2. get_database_context - checks whether relevant code has already been fetched earlier in this " +
+         "conversation, before running a fresh search.\n" +
+
+         "3. search_knowledge_base - retrieves relevant code context for a specific, focused question.\n" +
+
+         "4. get_full_file - fetches a complete file when a chunk-level excerpt isn't enough.\n" +
+
+         "5. get_all_indexed_files - returns the complete manifest of every file currently indexed, including a " +
+         "one-sentence description of what each file does and whether its full content can be fetched. Call this " +
+         "when search_knowledge_base returns nothing relevant for a topic and you're unsure whether the content is " +
+         "indexed at all, before retrying with different search phrasing. Use each file's description to judge " +
+         "plausible relevance - you usually won't know the exact file name in advance. If nothing looks related, " +
+         "treat that as a strong signal the content isn't indexed.\n\n" +
+
+         "Chunks returned by search_knowledge_base and get_database_context each include two flags:\n" +
+         "- IsFullFileReconstructable: true means the chunks you already have together form the complete file - no " +
+         "need to call get_full_file.\n" +
+         "- IsFullFileIndexed: true means the full file could be fetched if still needed; false means don't call it, " +
+         "it will return no content.\n" +
+         "If IsFullFileReconstructable is true, you already have everything. If IsFullFileIndexed is true but " +
+         "IsFullFileReconstructable is false, calling get_full_file is worth it.\n\n" +
+
+         "Flow: for each focused topic, check get_database_context first, then fall back to search_knowledge_base " +
+         "(and get_full_file if needed) if it doesn't have enough. Use any tool as many times as needed before " +
+         "answering, but if repeated attempts on the same angle keep turning up nothing new, stop retrying it and " +
+         "either move on to a different angle or answer with what you already have.\n\n" +
+
+         "Your response has a hard output limit of {0} tokens. Structure your answer so it comfortably finishes " +
+         "within that budget: cover the core mechanism for each part of the question, but favor breadth over " +
+         "exhaustive depth on any single part. If a detail would meaningfully deepen the answer but risks running " +
+         "long, leave it out rather than risk an incomplete answer - the user can ask a targeted follow-up question " +
+         "about that part instead.";
 
         public static string BuildAgenticChatSystemPrompt(int maxResponseTokens, string? compactedSummary = " No compacted summary provided.")
         {
-            return string.Format(AgenticChatSystemInstructionTemplate, maxResponseTokens, compactedSummary);
+            return string.Format(AgenticChatSystemInstruction, maxResponseTokens, compactedSummary);
         }
 
         public static string BuildCompactionSystemPrompt(string? existingSummary)

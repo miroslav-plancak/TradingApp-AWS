@@ -9,21 +9,64 @@ namespace TradingApp.Infrastructure.Services.Ingestion
     public class ChunkIngestionService : IChunkIngestionService
     {
         private readonly IVoyageEmbeddingService _voyageEmbeddingService;
+        private readonly ICorpusFileDescriptionService _corpusFileDescriptionService;
         private readonly IConnectionMultiplexer _connectionMultiplexer;
         private readonly IDatabase _database;
         private readonly ILogger<ChunkIngestionService> _logger;
 
+        private const int FullIndexCap = 2500;
+
         public ChunkIngestionService
         (
             IVoyageEmbeddingService voyageEmbeddingService,
+            ICorpusFileDescriptionService corpusFileDescriptionService,
             IConnectionMultiplexer connectionMultiplexer,
             ILogger<ChunkIngestionService> logger
         )
         {
             _voyageEmbeddingService = voyageEmbeddingService;
+            _corpusFileDescriptionService = corpusFileDescriptionService;
             _connectionMultiplexer = connectionMultiplexer;
             _logger = logger;
             _database = _connectionMultiplexer.GetDatabase();
+        }
+
+        public async Task PersistEntireSourceFilesCorpusAsync(string[] sourceFiles)
+        {
+            List<RawCorpusSourceFile> rawCorpusSourceFiles = [];
+
+            foreach (var sourceFile in sourceFiles)
+            {
+                rawCorpusSourceFiles.Add(new RawCorpusSourceFile
+                {
+                    Name = Path.GetFileName(sourceFile),
+                    Content = File.ReadAllText(sourceFile)
+                });
+            }
+
+            var descriptions = await _corpusFileDescriptionService.ProcessRawCorpusSourceFilesAsync([.. rawCorpusSourceFiles]);
+            var descriptionsByName = descriptions.ToDictionary(x => x.Name, x => x.Description);
+
+            var processedCorpusSourceFiles = rawCorpusSourceFiles.Select(rawFile => new ProcessedCorpusSourceFile
+            {
+                Name = rawFile.Name,
+                Description = descriptionsByName.TryGetValue(rawFile.Name, out var description) ? description : string.Empty,
+                IsFullyIndexed = rawFile.Content.Length < FullIndexCap
+            }).ToList();
+
+            await _database.KeyDeleteAsync("corpus:sourcefiles");
+            await _database.SetAddAsync("corpus:sourcefiles", [.. processedCorpusSourceFiles.Select(x => new RedisValue(x.Name))]);
+
+            foreach (var processedFile in processedCorpusSourceFiles)
+            {
+                await _database.HashSetAsync($"corpus:file:{processedFile.Name}",
+                    [
+                        new HashEntry("description", processedFile.Description),
+                        new HashEntry("isfullyindexed", processedFile.IsFullyIndexed)
+                    ]);
+            }
+
+            _logger.LogInformation("Total source files across entire corpus added: {SourceFilesCount}", processedCorpusSourceFiles.Count);
         }
 
         public async Task<List<ChunkRecord>> ReadAndChunkSourceFiles(string[] sourceFiles)
@@ -137,7 +180,7 @@ namespace TradingApp.Infrastructure.Services.Ingestion
                 {
                     FileName = Path.GetFileName(sourceFile),
                     FileContent = fileContent,
-                    ExceedsFullIndexCap = fileContent.Length >= 2500
+                    ExceedsFullIndexCap = fileContent.Length >= FullIndexCap
                 };
             }).ToList();
     }
