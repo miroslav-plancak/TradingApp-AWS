@@ -12,6 +12,11 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
         public const string NoSourceFileNamesFound = "No source file names found.";
 
+        public const string ManifestAbsentFileReminder =
+        "\n\nIf the file you are looking for is not in the list above, it is not indexed in this knowledge base. " +
+        "Do not retry search_knowledge_base or get_full_file for that file's content - answer from what you " +
+        "already have, or state plainly that it isn't in the knowledge base.";
+
         private const string CompactionSystemInstruction =
             "Compact the given conversation messages into a single summary that preserves:\n\n" +
             "- how things work and why (mechanisms and reasoning), not just conclusions\n" +
@@ -89,7 +94,9 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
          "when search_knowledge_base returns nothing relevant for a topic and you're unsure whether the content is " +
          "indexed at all, before retrying with different search phrasing. Use each file's description to judge " +
          "plausible relevance - you usually won't know the exact file name in advance. If nothing looks related, " +
-         "treat that as a strong signal the content isn't indexed.\n\n" +
+         "the content is NOT indexed - stop searching for it. Do not retry search_knowledge_base or call " +
+         "get_full_file for a file that is not in this list; treat its absence as final, not as a reason to " +
+         "search harder.\n\n" +
 
          "Chunks returned by search_knowledge_base and get_database_context each include two flags:\n" +
          "- IsFullFileReconstructable: true means the chunks you already have together form the complete file - no " +
