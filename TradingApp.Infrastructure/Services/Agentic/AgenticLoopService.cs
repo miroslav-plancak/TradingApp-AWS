@@ -1,5 +1,6 @@
 ﻿using Anthropic.Models.Messages;
 using Microsoft.Extensions.Logging;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using TradingApp.Infrastructure.Enums;
@@ -65,7 +66,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var searchKnowledgeBaseToolCounter = 0;
             var chunksByToolUseId = new Dictionary<string, List<RetrievedChunk>>();
             var anthropicCallCounter = 0;
-
+            var maxTokensIterationCounter = 0;
+            var maxTokensResponseAccumulator = new StringBuilder();
+          
             while (true)
             {
                 var callNumber = ++anthropicCallCounter;
@@ -96,25 +99,105 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     return agenticLoopResponse;
                 }
 
-                if (response.StopReason != StopReason.ToolUse)
+                if (response.StopReason == StopReason.MaxTokens)
+                {
+                    TextBlock? maxTokensTextBlock = null;
+                    var maxTokensToolUseBlock = false;
+
+                    foreach (var block in response.Content)
+                    {
+                        if (maxTokensTextBlock == null && block.TryPickText(out var foundTextBlock))
+                        {
+                            maxTokensTextBlock = foundTextBlock;
+                        }
+                        else if (block.TryPickToolUse(out _))
+                        {
+                            maxTokensToolUseBlock = true;
+                        }
+                    }
+
+                    // textBlock and toolUseBlock in the same response is narration before toolUse - we retry. (isContinuable = false)
+                    // textBlock exists and toolUseBlock is absent in the response - we continue. (isContinuable = true)
+                    var isContinuable = maxTokensTextBlock != null && !maxTokensToolUseBlock;
+
+                    ++maxTokensIterationCounter;
+
+                    if (maxTokensIterationCounter != 2)
+                    {
+                        if (isContinuable)
+                        {
+                            _logger.LogInformation("RunAgenticLoopAsyncStoppedTextBlockExists | continuing | StopReason:{StopReason} ", response.StopReason);
+
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                $"Loop stopped —  StopReason:{response.StopReason} | continuing", maxTokensTextBlock!.Text);
+
+                            maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
+
+                            messages.Add(new MessageParam
+                            {
+                                Role = Role.User,
+                                Content = SystemPromptBuilder.BuildMaxTokensContinuationMessage(maxTokensResponseAccumulator.ToString())
+                            });
+                        }
+                        else
+                        {
+                            // toolUseBlock or thinkingBlock cut off mid way - retry with same request, no messages saved.
+                            _logger.LogInformation("RunAgenticLoopAsyncStoppedNoUsableText | retrying | StopReason:{StopReason}",
+                                response.StopReason);
+
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", 
+                                $"Loop stopped —  StopReason: {response.StopReason} | retrying",
+                                "no usable textBlock detected - retrying unchanged");
+                        }
+
+                        continue;
+                    }
+                    else
+                    {
+                        _logger.LogInformation("RunAgenticLoopAsyncMaxTokenBudgetSpent | returning | StopReason:{StopReason}", response.StopReason);
+
+                        if (isContinuable)
+                        {
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason} | returning response",
+                                maxTokensTextBlock!.Text);
+
+                            maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
+                        }
+                        else
+                        {
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                $"Loop ended — StopReason: {response.StopReason} | returning without response", 
+                                "no usable textBlock detected - returning empty response");
+                        }
+
+                        agenticLoopResponse.MessageResponse = maxTokensResponseAccumulator.ToString();
+                        agenticLoopResponse.TokenUsage = response.Usage;
+                        agenticLoopResponse.MaxTokens = parameters.MaxTokens * 2;
+
+                        return agenticLoopResponse;
+                    }
+                }
+                else if (response.StopReason != StopReason.ToolUse)
                 {
                     foreach (var block in response.Content)
                     {
                         if (block.TryPickText(out var textBlock))
                         {
-                            _logger.LogInformation("RunAgenticLoopAsyncEnded | StopReason:{StopReason}", response.StopReason);
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — {response.StopReason}", textBlock.Text);
+                            _logger.LogInformation("RunAgenticLoopAsyncEnded | StopReason: {StopReason}", response.StopReason);
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason}",
+                                textBlock.Text);
 
-                            agenticLoopResponse.MessageResponse = textBlock.Text;
+                            maxTokensResponseAccumulator.Append(textBlock.Text);
+
+                            agenticLoopResponse.MessageResponse = maxTokensIterationCounter == 1 ? maxTokensResponseAccumulator.ToString() : textBlock.Text;
                             agenticLoopResponse.TokenUsage = response.Usage;
                             agenticLoopResponse.MaxTokens = parameters.MaxTokens;
 
                             return agenticLoopResponse;
-                          
                         }
                     }
-
                     _logger.LogWarning("RunAgenticLoopAsyncEndedTextBlockNotFound | StopReason:{StopReason}", response.StopReason);
+
                     await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
                         $"Loop ended — {response.StopReason}, no text block found", "");
 

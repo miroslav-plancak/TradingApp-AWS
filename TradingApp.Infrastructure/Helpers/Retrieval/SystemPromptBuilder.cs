@@ -5,17 +5,23 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
     public static class SystemPromptBuilder
     {
         public const string SearchCapReachedMessage =
-        "No new results found in the last 3 attempts on this line of inquiry - " +
-        "stop retrying this specific angle and either move on or answer with what you already have.";
+            "No new results found in the last 3 attempts on this line of inquiry - " +
+            "stop retrying this specific angle and either move on or answer with what you already have.";
 
         public const string NoFullFileContentAvailable = "No full file content available for";
 
         public const string NoSourceFileNamesFound = "No source file names found.";
 
         public const string ManifestAbsentFileReminder =
-        "\n\nIf the file you are looking for is not in the list above, it is not indexed in this knowledge base. " +
-        "Do not retry search_knowledge_base or get_full_file for that file's content - answer from what you " +
-        "already have, or state plainly that it isn't in the knowledge base.";
+            "\n\nIf the file you are looking for is not in the list above, it is not indexed in this knowledge base. " +
+            "Do not retry search_knowledge_base or get_full_file for that file's content - answer from what you " +
+            "already have, or state plainly that it isn't in the knowledge base.";
+
+        public const string MaxTokensContinuationMessage =
+            "Your previous response was cut off mid-way because it ran out of tokens. " +
+            "Here is exactly what you had generated so far:\n\n\"{0}\"\n\n" +
+            "Continue generating from exactly where that text left off. Do not repeat any of it, and do not add any preamble, " +
+            "acknowledgement, or commentary before continuing - just resume the answer directly.";
 
         private const string CompactionSystemInstruction =
             "Compact the given conversation messages into a single summary that preserves:\n\n" +
@@ -127,6 +133,11 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             var summary = FormatExistingSummary(existingSummary);
 
             return string.Join("\n\n", new string?[] { CompactionSystemInstruction, summary }.Where(section => !string.IsNullOrWhiteSpace(section)));
+        }
+
+        public static string BuildMaxTokensContinuationMessage(string assistantResponse)
+        {
+            return string.Format(MaxTokensContinuationMessage, assistantResponse);
         }
         //TODO: remove this once you clean up AiChatHub from the old implementaion
         public static string BuildChatSystemPrompt(RetrievalResult retrievalResult, string? existingSummary = "")
