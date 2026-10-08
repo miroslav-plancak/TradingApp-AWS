@@ -146,7 +146,7 @@ policies are keyed by `ResiliencePolicyKey` — `Sql` / `Aws` for the order-proc
 `AnthropicAPI` / `VoyageAPI` / `RedisAPI` for the [AI Chat](#ai-chat--retrieval-augmented-code-assistant)
 pipeline below, and `SqlFast` (2 retries / 200ms, vs. the standard policy's 3-attempt exponential backoff)
 specifically for `ConversationMessage`/`ConversationChunk`/`ConversationFullFile` persistence — those calls
-sit inline in the live streaming path, so they get a tighter retry budget to avoid adding much latency to
+sit inline in the live request path, so they get a tighter retry budget to avoid adding much latency to
 an already-in-progress response — so a downed SQL Server can't trip the same breaker guarding an SNS/SQS
 call, and a struggling Voyage API can't trip the one guarding Redis. Each policy wraps a 3-attempt
 exponential-backoff retry inside a circuit breaker (opens after 3 consecutive failures, 2-minute
@@ -325,28 +325,49 @@ warm Lambda execution environment.
 
 ## AI Chat — Retrieval-Augmented Code Assistant
 
-A RAG-grounded chat feature (`AiChatHub`, a SignalR streaming Hub) that answers questions about this
+A RAG-grounded chat feature (`AiChatHub`, a SignalR Hub) that answers questions about this
 codebase, backed by real retrieval over the actual `.cs` source rather than the model's own training
 data. Built as a hands-on practice exercise — a genuinely separate subsystem from the order-processing
 domain above, sharing only the DI container and resilience infrastructure.
 
-### Pipeline
+### Agentic Retrieval Loop
+
+Retrieval is not a fixed upfront pipeline — the model drives it itself via tool calls.
+`AgenticLoopService.RunAgenticLoopAsync` runs a `StopReason`-driven loop: a response that comes back
+with `stop_reason: tool_use` has every `tool_use` block in it executed (today sequentially — concurrent
+execution for multiple blocks in one response is tracked as task `#77`, not yet built), the results get
+appended, and the loop sends another request; a response with `stop_reason: end_turn` ends the loop and
+its text is the final answer. The model decides per-turn whether to search at all, how many times, and
+whether a full file is worth fetching — there's no mandatory retrieval step before it can answer.
 
 ```
 User question
      │
      ▼
-Conversation-reuse check (Claude Haiku 4.5 arbiter over this conversation's persisted chunk/file pool)
+RunAgenticLoopAsync (StopReason-driven while loop, Claude Sonnet 5)
      │
-     ├──► pool judged sufficient ──► U-shape reorder ──► System prompt assembly (skip everything below)
+     ├──► stop_reason: tool_use ── execute every tool_use block in this response, append
+     │                              tool_results, send another request
+     │        ├─ decompose_query        — splits a compound question into focused sub-questions
+     │        ├─ get_database_context   — checks this conversation's own persisted chunk/file pool first
+     │        │                           (Haiku arbiters judge sufficiency — separately for chunks vs.
+     │        │                           full files — before falling back to a fresh search)
+     │        ├─ search_knowledge_base  — one focused question in, ranked chunks out (pipeline below)
+     │        ├─ get_full_file          — complete file content, guarded against redundant calls
+     │        └─ get_all_indexed_files  — full corpus manifest: filename, description, IsFullyIndexed
      │
-     ▼ (no persisted pool yet, or judged insufficient)
-Query routing (Claude Haiku 4.5) ── classifies BROAD vs NARROW, feeds file-expansion + per-file cap below
+     └──► stop_reason: end_turn ── the text in this response is the final answer, loop ends
+```
+
+`search_knowledge_base`'s own internal pipeline is unchanged from the original design, it just now
+answers one focused question per call instead of running automatically once for the whole message:
+
+```
+query in
      │
      ▼
-Query decomposition (Claude Haiku 4.5) ── splits a compound question into 1+ independent sub-questions
-     │                                     (Count == 1 signals a non-compound question)
-     ▼  ── the block below runs once PER sub-question, not once for the whole message ──
+Query routing (Claude Haiku 4.5) ── BROAD vs NARROW, feeds the per-file cap below
+     │
      ├──► KNN search (Redis Stack, Voyage voyage-4-lite embeddings, K=10)
      └──► Lexical/BM25 search (RediSearch, identifier-shaped-token filter)
                     │
@@ -354,30 +375,15 @@ Query decomposition (Claude Haiku 4.5) ── splits a compound question into 1+
           Reciprocal Rank Fusion (dedup only — see note below)
                     │
                     ▼
-          Re-ranking (Voyage rerank-2.5, cross-encoder) — against THIS sub-question's own text, not the
-          original blended message (fixes a real bug: reranking the blended text silently under-scored
-          a chunk relevant to only one sub-topic, dropping it below the floor)
+          Re-ranking (Voyage rerank-2.5, cross-encoder) — against this call's own query text
                     │
                     ▼
-          Relevance floor (0.53 on rerank score) ── below floor on everything → honest "no context" answer
+          Relevance floor (0.53 on rerank score) ── below floor on everything → empty result
                     │
                     ▼
-          Adaptive per-file chunk cap (5 for BROAD, 3 for NARROW/INCONCLUSIVE) — applied per sub-question,
-          unscaled, so one hot-scoring sub-question can't crowd out a weaker-scoring one for the same file
-                    │
-                    ▼  ── all sub-questions' capped results merge here, deduped keeping max RelevanceScore ──
-          Adaptive parent-file expansion (occurrence threshold: 1 for BROAD, 2 for NARROW — scaled
-          ×sub-question count, since occurrence counting is additive across sub-questions)
-                    │
-                    ▼
-          U-shape reorder (chunks and expanded files) — worst-scoring item placed dead-center, strongest
-          at both edges, to mitigate the lost-in-the-middle effect on long contexts
-                    │
-                    ▼
-          Persist this turn's chunk/file pool for future reuse-check turns
-                    │
-                    ▼
-          System prompt assembly → Claude Sonnet 5 → streamed back over SignalR
+          Per-file chunk cap (5 for BROAD, 3 for NARROW) ── AgenticLoopService then dedups against
+          every chunk already seen elsewhere this turn, U-shape reorders, and flags each chunk's
+          IsFullFileIndexed / IsFullFileReconstructable before formatting the tool_result
 ```
 
 RRF's fusion step deduplicates chunks found by both search methods, but its own ranking is provably
@@ -395,22 +401,49 @@ misses on its own.
 
 | Service | Owns |
 |---|---|
-| `QueryRoutingService` | LLM-based BROAD/NARROW classification (Claude Haiku 4.5) |
-| `QueryDecompositionService` | LLM-based (Claude Haiku 4.5) splitting of a compound question into 1+ independent sub-questions |
-| `KnowledgeBaseQueryService` | Every Redis read — KNN search, lexical search, full-file content lookup |
-| `ChunkFusion` (static helper) | RRF scoring + dedup, no dependencies |
+| `AgenticLoopService` | Drives the `StopReason`-based tool-calling loop; dispatches each `tool_use` block to its handler, enforces the safety mechanisms below |
+| `AgenticToolDefinitions` (static) | The 5 tool schemas (name, description, JSON Schema input) sent to Claude every call |
+| `QueryRoutingService` | LLM-based BROAD/NARROW classification (Claude Haiku 4.5), feeds `search_knowledge_base`'s per-file cap |
+| `QueryDecompositionService` | LLM-based (Claude Haiku 4.5) splitting of a compound question into sub-questions — now called as the `decompose_query` tool, not an automatic upfront step |
+| `ContextRetrievalService` | KNN + lexical search, RRF fusion, reranking, relevance floor, per-file cap — the pipeline behind `search_knowledge_base` and `get_full_file` |
+| `ChunkFusion` / `ChunkFiltering` / `ChunkReordering` / `ChunkResultDeduplication` (static helpers) | RRF scoring+dedup, per-file capping, U-shape reordering, and cross-tool-call chunk dedup within one turn, respectively |
 | `ChunkRerankingService` | Voyage rerank-2.5 wrapper |
-| `FileExpansionService` | Decides which files get expanded to full text, adaptively |
-| `SystemPromptBuilder` | Assembles the final context sent to Claude |
-| `ConversationReuseService` | Reads/writes this conversation's persisted chunk/full-file pool, calls the arbiter below to decide whether it's reusable |
-| `ConversationChunkArbiterService` | LLM-based (Claude Haiku 4.5) sufficiency judgment over the persisted pool vs. the new question — the gate that skips the rest of the pipeline on a hit |
-| `IFileDebugLogger` | Generic, reusable file-based debug logger (retrieval tuning, not app logging) |
+| `FileExpansionService` | Looks up which source files already have persisted full-text content available |
+| `SystemPromptBuilder` | Every LLM-facing instruction string and sentinel tool_result message in the pipeline, centralized |
+| `ConversationReuseService` + `ConversationChunkArbiterService` / `ConversationFullFileArbiterService` | Behind `get_database_context` — two independent Haiku arbiters judge whether this conversation's already-persisted chunks, and separately its already-persisted full files, already answer the new sub-question |
+| `CorpusManifestService` (read) / `ChunkIngestionService` (write) / `CorpusFileDescriptionService` | Behind `get_all_indexed_files` — per-file `IsFullyIndexed` flag plus a one-sentence Haiku-generated description, computed and persisted to Redis once at ingestion time, not per query |
+| `IFileDebugLogger` | Generic, reusable file-based debug logger — the agentic loop logs every real Anthropic round-trip and every tool call/result here, tagged `[Call #N]` |
 
 `AiChatHub.SendUserMessage(string userMessage, Guid? conversationId, Guid? clientRequestId)`
-(`TradingApp.API/Hubs/AiChatHub.cs`) is the orchestrating SignalR streaming Hub method — `async
-IAsyncEnumerable<string>`, one `yield return` per streamed text chunk — calling
-`ChunkRetrievalService.RetrieveRelevantContextAsync(userMessage, conversationId)` (the thin orchestrator
-composing the services above) before streaming Claude's answer back.
+(`TradingApp.API/Hubs/AiChatHub.cs`) is the orchestrating SignalR Hub method — `Task<string>`, **not
+streaming** (see [Streaming](#streaming-not-currently-wired-to-the-live-path) below) — resolving the
+conversation, loading its history, calling `AgenticLoopService.RunAgenticLoopAsync(...)` for the
+complete answer, persisting both the user message and the answer, then triggering compaction (below)
+before returning. Every tool-calling round-trip the loop needs happens server-side, inside that one
+call; the client sees nothing until the whole exchange — potentially several Anthropic requests deep —
+is finished.
+
+### Agentic Tools: Guarding Against Wasted Calls
+
+Three deliberate mechanisms stop the model from burning real tool calls on requests already known to be
+pointless, all enforced in code rather than relied on as prompt instructions alone (prompt-level
+guidance alone proved unreliable even when the model had clearly already seen the relevant signal):
+
+- **Consecutive-empty-search cap** — after 3 `search_knowledge_base` calls in a row return nothing this
+  turn, further calls are short-circuited with a canned "stop retrying this angle" message instead of
+  running the real retrieval pipeline again.
+- **`get_full_file` waste guard** — before executing a `get_full_file` call for real, two independent
+  checks run: (1) does this conversation's `get_all_indexed_files` manifest already say this file is
+  not fully indexed, or is the file simply absent from the manifest entirely; (2) have this turn's own
+  `search_knowledge_base`/`get_database_context` chunks for that exact file already shown
+  `IsFullFileReconstructable: true` (meaning the chunks already *are* the whole file). Either hit skips
+  the real lookup and returns the same "no content available" sentinel immediately — this cannot undo
+  the round-trip the model already committed to by calling the tool, it only avoids the wasted backend
+  work and gives a sharper corrective message for the rest of the turn.
+- **Cross-call chunk dedup** — `ChunkResultDeduplication` prevents the same chunk from appearing twice
+  in one turn's tool results (once a `get_full_file` call supersedes a file, any of its chunks already
+  sitting in an earlier tool_result this turn get stripped in place, since the full file now covers
+  them).
 
 ### Conversation Persistence
 
@@ -420,7 +453,8 @@ FK constraints (matches this schema's existing convention).
 
 On the first message in a conversation, `AiChatHub` mints a new `Conversation` row and pushes its id to
 the client over a dedicated `ConversationStarted` side-channel (`Clients.Caller.SendAsync`, fired before
-the text stream starts) rather than smuggling it into the `IAsyncEnumerable<string>` stream itself. Every
+`RunAgenticLoopAsync` even starts) rather than folding it into the eventual `Task<string>` return value
+itself. Every
 subsequent turn on that conversation includes the id, and the prior history (one `ConversationMessage`
 row per `User`/`Assistant` message, not per turn) is replayed as Anthropic's alternating `Messages` array —
 in full until compaction first triggers, and only the messages after its boundary once it has (see
@@ -441,8 +475,8 @@ retrieval from scratch.
 ### Conversation Compaction
 
 `ConversationCompactorService.CompactConversationAsync(conversationId, usage, maxTokens)` runs after every
-streamed answer. It checks a trigger threshold against the real `Usage` numbers the streaming call already
-returns (`lastTurnTotalInputTokens + maxTokens >= Sonnet5MaxContextWindow * 0.85`) and no-ops immediately if
+answer, called from `AiChatHub.SendUserMessage` with the real `Usage` the agentic loop's final response
+carried. It checks a trigger threshold against those numbers (`lastTurnTotalInputTokens + maxTokens >= Sonnet5MaxContextWindow * 0.85`) and no-ops immediately if
 it isn't reached — no wasted call on most turns. Once triggered, a dedicated Claude Sonnet 5 call summarizes
 the conversation so far, and the result is persisted on `Conversation.CompactedSummary` /
 `SummaryCoversMessagesUpTo`. Every subsequent turn replays only `ConversationMessage` rows created *after*
@@ -458,45 +492,53 @@ compaction-truncated view.
 ### Conversation Management API
 
 `ConversationController` (`TradingApp.API/Controllers/`) exposes conversation lifecycle over REST, separate
-from the streaming Hub above: `GET /api/conversation` (list), `GET /api/conversation/{id}`,
+from the Hub above: `GET /api/conversation` (list), `GET /api/conversation/{id}`,
 `GET /api/conversation/{id}/messages` (full, uncompacted history — see above), and
 `DELETE /api/conversation/{id}`. Deliberately excludes `ConversationChunks`/`ConversationFullFiles` — nothing
 outside the backend consumes them today; a debug/admin view over retrieved-chunk data would be a separate,
 deliberately-designed feature, not a byproduct of this controller.
 
-### Streaming resilience
+### Streaming (not currently wired to the live path)
 
-Every outbound call in the pipeline (Redis, Voyage embed/rerank, the Anthropic router call, and the
-main Anthropic streaming call) is wrapped in a keyed Polly `IAsyncPolicy`, same retry-plus-circuit-breaker
-shape as the order-processing Lambdas above but with its own vendor-specific transient-exception
-classifier per resource (see [Resilience Policies](#resilience-policies-polly-retry--circuit-breaker)).
+Every outbound call in the pipeline (Redis, Voyage embed/rerank, the Anthropic router call, and every
+Anthropic call the agentic loop makes) is wrapped in a keyed Polly `IAsyncPolicy`, same
+retry-plus-circuit-breaker shape as the order-processing Lambdas above but with its own
+vendor-specific transient-exception classifier per resource (see
+[Resilience Policies](#resilience-policies-polly-retry--circuit-breaker)).
 
-`SendUserMessage()` can't use `await foreach` for the streaming call — C# forbids `yield` inside a `try`
-block that has a `catch` (CS1626), so a plain `await foreach` + `yield return` loop has no way to catch
-anything at all. Fixed by manually driving the stream's `IAsyncEnumerator` instead, at two layers:
-`AnthropicApiService.EstablishStreamAsync` itself drives the Anthropic SDK's own enumerator, with a
-retry-wrapped bootstrap phase (Polly retry, since nothing has reached the client yet) until the first real
-text delta, then an unretried per-chunk loop for the rest of the stream — a bootstrap failure throws a
-`ChatStreamFailureException` carrying both the real Anthropic error message and whether it's retryable
-(deliberately a plain exception, not `HubException` — `TradingApp.Infrastructure` has no SignalR
-dependency). `AiChatHub` then drives *that* method's returned enumerator the same manual way, and its own
-`catch` re-throws as `HubException(ex.Message)` (SignalR suppresses a plain exception's message into a
-generic string by default; `HubException` is the one type documented to send its message to the client
-unmodified) — plus, for a non-retryable failure specifically, first fires a no-payload
-`NonRetryableChatFailure` side-channel so the frontend can hide the Retry button before the terminal
-`HubException` arrives.
+The live `AiChatHub.SendUserMessage` does **not** stream — it's `Task<string>`, returning the complete
+answer in one shot once `AgenticLoopService.RunAgenticLoopAsync` finishes. Every tool-calling round-trip
+the loop needs happens server-side first; the client only ever sees the final response. This is a
+deliberate, temporary step back from the previous behavior: the pre-agentic implementation did stream
+token-by-token, but a streaming version of the *agentic* loop needs real structural work (intercepting a
+`tool_use`-terminated stream leg mid-stream instead of forwarding it, executing server-side, then
+opening a new leg — potentially several times — before real answer text ever reaches the client) and is
+tracked as its own task, not yet built.
+
+The old streaming mechanics (`AiChatHub.SendUserMessage_temp_disable`, currently dead code, disabled
+rather than deleted) manually drove the Anthropic SDK's `IAsyncEnumerator` at two layers — C# forbids
+`yield` inside a `try` block that has a `catch` (CS1626), so a plain `await foreach` + `yield return`
+loop had no way to catch anything, hence the manual enumerator-driving — with a retry-wrapped bootstrap
+phase until the first real text delta, a `ChatStreamFailureException` carrying whether a failure was
+retryable, and two SignalR side-channels (`ResponseTruncated`, `NonRetryableChatFailure`) the frontend
+used to show truncation/non-retryable-failure UI. **None of that currently fires** — the live agentic
+`SendUserMessage` never raises either side-channel, a known, tracked gap (the frontend below still
+listens for both, harmlessly inert). The full original mechanism, with traced scenarios, is preserved in
+`AiChatHubResilientStreaming.html` (see Full write-ups below) even though the live code path no longer
+uses it.
 
 ### Frontend (`TradingApp-Frontend`, `features/ai-chat/`)
 
-Angular chat UI over its own SignalR connection (`AssistantHubService`, separate from the
-order-events push Hub): streamed answers rendered with VS Code Dark+-styled fenced code blocks and
-per-token syntax coloring (a hand-rolled C# tokenizer in `code-highlight.ts` — the same coloring applies
-to inline `` `code` `` spans as fenced blocks), copy-and-ask example prompts grounded in what's actually
-indexed, a truncation notice banner (styled distinct from the error banner, since the answer genuinely
-streamed, just incompletely) when the backend's `ResponseTruncated` side-channel fires, and a Retry button
-on the error banner that's conditionally hidden via a `NonRetryableChatFailure` side-channel for failures
-retrying can't fix (bad API key, insufficient credits) — retrying those would just re-run the identical
-request into the identical wall.
+Angular chat UI over its own SignalR connection (`AssistantHubService`, separate from the order-events
+push Hub). `AssistantHubService.sendUserMessage()` calls the hub via `.invoke()`, not `.stream()` — it
+still returns an `Observable<string>` so the calling component didn't need to change, it just emits one
+`next()` carrying the complete answer instead of many incremental chunks. Answers render with VS Code
+Dark+-styled fenced code blocks and per-token syntax coloring (a hand-rolled C# tokenizer in
+`code-highlight.ts` — the same coloring applies to inline `` `code` `` spans as fenced blocks), plus
+copy-and-ask example prompts grounded in what's actually indexed. The truncation-notice banner and the
+error banner's conditional Retry-button-hiding are still wired to listen for `ResponseTruncated`/
+`NonRetryableChatFailure` (see Streaming above) but currently never fire, since the live agentic
+`SendUserMessage` path doesn't raise either — inert UI, not a bug, just not yet reconnected.
 
 The conversation is fully multi-turn end to end, both backend and frontend. The `conversationId` from
 `ConversationStarted` is kept and resent on every subsequent message, and a `ConversationApiService` calls
@@ -509,9 +551,14 @@ now survives a page refresh.
 
 Detailed, code-quoted design docs live in the sibling `fis learning/TradingApp-AWS/` folder (a personal
 learning-docs project, outside this repo) — `ChunkRetrievalStrategy.html` (every retrieval strategy and
-why it exists), `AiChatHubResilientStreaming.html` (the streaming/error-handling mechanism, with traced
-scenarios), `AskStateMachineLiveTrace.html` (an interactive step-through of `SendUserMessage()`'s real
-code next to its compiled state machine — filename predates the `Ask`→`SendUserMessage` rename).
+why it exists, still accurate for `search_knowledge_base`'s own internal pipeline),
+`AiChatHubResilientStreaming.html` (the pre-agentic streaming/error-handling mechanism, with traced
+scenarios — preserved as a frozen reference even though the live path no longer streams, see Streaming
+above), `AskStateMachineLiveTrace.html` (an interactive step-through of the old `SendUserMessage()`'s
+real code next to its compiled state machine — filename predates the `Ask`→`SendUserMessage` rename),
+`AnthropicToolUseCheatSheet.html` and `AnthropicSdkModelTree.html` (the agentic tool-calling SDK shapes —
+`MessageCreateParams`/`Message`, the `ContentBlockParam`/`ContentBlock` unions, `StopReason` — every
+shape verified against the installed SDK via reflection, not recalled from memory).
 
 ---
 

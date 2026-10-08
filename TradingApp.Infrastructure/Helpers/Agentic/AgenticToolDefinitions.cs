@@ -1,7 +1,5 @@
 ﻿using Anthropic.Models.Messages;
-using Polly;
 using System.Text.Json;
-using TradingApp.Domain.Models.Entities.Conversation;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 

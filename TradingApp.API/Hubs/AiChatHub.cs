@@ -406,11 +406,13 @@ namespace TradingApp.API.Hubs
 
             var cacheIndex = conversationMessages.Count - 2;
 
+            const bool enablePromptCaching = false; //NOTE: disabled for reducing the cost of testing.
+
             return conversationMessages
                 .Select((message, index) => new MessageParam()
                 {
                     Role = message.Role,
-                    Content = (index == cacheIndex) ? MarkLastAssistantMessageAsCacheBreakpoint(message) : message.Content
+                    Content = (enablePromptCaching && index == cacheIndex) ? MarkLastAssistantMessageAsCacheBreakpoint(message) : message.Content
                 }).ToList();
         }
 
