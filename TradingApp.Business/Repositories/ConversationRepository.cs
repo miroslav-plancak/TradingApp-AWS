@@ -52,7 +52,10 @@ namespace TradingApp.Business.Repositories
                 conversation.UpdatedAt = DateTimeOffset.UtcNow;
 
                 _tradingDbContext.Conversations.Add(conversation);
+
                 await _tradingDbContext.SaveChangesAsync();
+
+                _tradingDbContext.Entry(conversation).State = EntityState.Detached;
 
                 return conversation;
             }, $"{nameof(CreateConversationAsync)}:Save:{conversation.Id}");
