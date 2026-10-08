@@ -2,6 +2,7 @@
 {
     public enum AgenticTool
     {
+        unknown_tool,
         decompose_query,
         search_knowledge_base,
         get_full_file,

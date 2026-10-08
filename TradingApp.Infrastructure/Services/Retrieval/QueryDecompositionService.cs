@@ -40,6 +40,8 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             try
             {
+                if (string.IsNullOrWhiteSpace(userMessage)) return []; //TODO: revise if this is good enough of a guard.
+
                 var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage);
                 var extractedJson = LlmJsonExtractor.ExtractJsonArray(result);
 

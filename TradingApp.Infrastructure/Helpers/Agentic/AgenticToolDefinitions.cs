@@ -138,7 +138,7 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                "field to judge relevance - you usually won't know the exact file name in advance, so look for a " +
                "plausible match based on what each file does, not an exact name match. If nothing in the manifest " +
                "looks related, the tool call result returns " +
-               $"\"{SystemPromptBuilder.NoSourceFileNamesFound}\", " +
+               $"\"{SystemPromptBuilder.NoSourceFileNamesFoundSentinel}\", " +
                "treat that as a strong signal the content isn't indexed, and prefer telling the user you don't have this " +
                " information over continuing to retry search_knowledge_base or get_full_file with different wording.",
               

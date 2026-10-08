@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services.Helpers;
+using TradingApp.Business.Services.Helpers;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.ConversationChunk;
 
@@ -12,69 +13,102 @@ namespace TradingApp.Business.Repositories
 {
     public class ConversationChunkRepository : IConversationChunkRepository
     {
-        private readonly TradingDbContext _tradingDbContext;
+        private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IResilienceConversationPolicyGuard _resiliencePolicyGuard;
 
         public ConversationChunkRepository
         (
-            TradingDbContext tradingDbContext,
-            IResilienceConversationPolicyGuard resiliencePolicyGuard
+            IResilienceConversationPolicyGuard resiliencePolicyGuard,
+            IDbContextFactory<TradingDbContext> dbContextFactory
         )
         {
-            _tradingDbContext = tradingDbContext;
             _resiliencePolicyGuard = resiliencePolicyGuard;
+            _dbContextFactory = dbContextFactory;
         }
 
         public async Task<ConversationChunk> CreateConversationChunkAsync(ConversationChunk conversationChunk)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync();
+
+            await using (tradingDbContextFactory)
             {
-                var existingRow = await _tradingDbContext.ConversationChunks
-                        .AsNoTracking()
-                        .SingleOrDefaultAsync(x =>
-                            x.ConversationId == conversationChunk.ConversationId &&
-                            x.Key == conversationChunk.Key
-                        );
-
-                if (existingRow != null)
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
-                    conversationChunk.Id = existingRow.Id;
-                    conversationChunk.CreatedAt = existingRow.CreatedAt;
+                    var existingRow = await tradingDbContextFactory.ConversationChunks
+                            .AsNoTracking()
+                            .SingleOrDefaultAsync(x =>
+                                x.ConversationId == conversationChunk.ConversationId &&
+                                x.Key == conversationChunk.Key
+                            );
 
-                    _tradingDbContext.ConversationChunks.Update(conversationChunk);
-                    await _tradingDbContext.SaveChangesAsync();
+                    if (existingRow != null)
+                    {
+                        conversationChunk.Id = existingRow.Id;
+                        conversationChunk.CreatedAt = existingRow.CreatedAt;
 
-                    return conversationChunk;
-                }
+                        tradingDbContextFactory.ConversationChunks.Update(conversationChunk);
+                        await tradingDbContextFactory.SaveChangesAsync();
 
-                conversationChunk.Id = Guid.NewGuid();
-                conversationChunk.CreatedAt = DateTimeOffset.UtcNow;
+                        return conversationChunk;
+                    }
 
-                _tradingDbContext.ConversationChunks.Add(conversationChunk);
-                await _tradingDbContext.SaveChangesAsync();
+                    conversationChunk.Id = Guid.NewGuid();
+                    conversationChunk.CreatedAt = DateTimeOffset.UtcNow;
 
-                return conversationChunk;
-            }, $"{nameof(CreateConversationChunkAsync)}:Save:{conversationChunk.Id}");
+                    tradingDbContextFactory.ConversationChunks.Add(conversationChunk);
+
+                    try
+                    {
+                        await tradingDbContextFactory.SaveChangesAsync();
+                        return conversationChunk;
+                    }
+                    catch (DbUpdateException ex) when (SqlExceptionClassifier.IsUniqueConstraintOrUniqueIndexViolation(ex))
+                    {
+                        tradingDbContextFactory.Entry(conversationChunk).State = EntityState.Detached;
+
+                        var raceWinnerRow = await tradingDbContextFactory.ConversationChunks
+                            .AsNoTracking()
+                            .SingleOrDefaultAsync(x =>
+                                x.ConversationId == conversationChunk!.ConversationId &&
+                                x.Key == conversationChunk.Key
+                            );
+
+                        conversationChunk.Id = raceWinnerRow.Id;
+                        conversationChunk.CreatedAt = raceWinnerRow.CreatedAt;
+
+                        tradingDbContextFactory.ConversationChunks.Update(conversationChunk);
+                        await tradingDbContextFactory.SaveChangesAsync();
+
+                        return conversationChunk;
+                    }
+
+                }, $"{nameof(CreateConversationChunkAsync)}:Save:{conversationChunk.Id}");
+            }
         }
 
         public async Task<IEnumerable<ConversationChunk>> GetConversationChunksAsync(Guid conversationId)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync();
+
+            await using (tradingDbContextFactory)
             {
-                if (conversationId == Guid.Empty)
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
-                    return [];
-                }
+                    if (conversationId == Guid.Empty)
+                    {
+                        return [];
+                    }
 
-                var allConversationChunks = await _tradingDbContext.ConversationChunks
-                            .AsNoTracking()
-                            .Where(x => x.ConversationId == conversationId)
-                            .OrderBy(x => x.CreatedAt)
-                            .ToListAsync();
+                    var allConversationChunks = await tradingDbContextFactory.ConversationChunks
+                                .AsNoTracking()
+                                .Where(x => x.ConversationId == conversationId)
+                                .OrderBy(x => x.CreatedAt)
+                                .ToListAsync();
 
-                return allConversationChunks;
+                    return allConversationChunks;
 
-            }, $"{nameof(GetConversationChunksAsync)}:FetchAll:{conversationId}");
+                }, $"{nameof(GetConversationChunksAsync)}:FetchAll:{conversationId}");
+            }
         }
     }
 }
