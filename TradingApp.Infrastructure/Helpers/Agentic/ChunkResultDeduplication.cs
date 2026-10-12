@@ -5,60 +5,65 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
 {
     public static class ChunkResultDeduplication
     {
+        //TODO: extrac these params to a payload object
         public static List<string> RemoveNowRedundantChunksForFile
         (
             string fileName,
             List<MessageParam> messages,
+            object chunksByToolUseIdLock,
             Dictionary<string, List<RetrievedChunk>> chunksByToolUseId
         )
         {
             var removalsLog = new List<string>();
 
-            for (var messageIndex = 0; messageIndex < messages.Count; messageIndex++)
+            lock (chunksByToolUseIdLock)
             {
-                if (!messages[messageIndex].Content.TryPickContentBlockParams(out var blocks))
+                for (var messageIndex = 0; messageIndex < messages.Count; messageIndex++)
                 {
-                    continue;
-                }
-
-                var updatedBlocks = new List<ContentBlockParam>();
-                var messageChanged = false;
-
-                foreach (var block in blocks)
-                {
-                    if (block.TryPickToolResult(out var toolResult) && chunksByToolUseId.TryGetValue(toolResult.ToolUseID, out var chunks))
+                    if (!messages[messageIndex].Content.TryPickContentBlockParams(out var blocks))
                     {
-                        var remaining = chunks.Where(c => c.SourceFile != fileName).ToList();
-
-                        if (remaining.Count != chunks.Count)
-                        {
-                            chunksByToolUseId[toolResult.ToolUseID] = remaining;
-
-                            updatedBlocks.Add(new ToolResultBlockParam(toolResult.ToolUseID)
-                            {
-                                Content = FormatChunksForToolResult(remaining)
-                            });
-
-                            messageChanged = true;
-
-                            removalsLog.Add(
-                                $"Removed {chunks.Count - remaining.Count} chunk(s) for {fileName} from tool_use {toolResult.ToolUseID} " +
-                                $"({remaining.Count} chunk(s) remain in that result)");
-
-                            continue;
-                        }
+                        continue;
                     }
 
-                    updatedBlocks.Add(block);
-                }
+                    var updatedBlocks = new List<ContentBlockParam>();
+                    var messageChanged = false;
 
-                if (messageChanged)
-                {
-                    messages[messageIndex] = new MessageParam
+                    foreach (var block in blocks)
                     {
-                        Role = messages[messageIndex].Role,
-                        Content = updatedBlocks
-                    };
+                        if (block.TryPickToolResult(out var toolResult) && chunksByToolUseId.TryGetValue(toolResult.ToolUseID, out var chunks))
+                        {
+                            var remaining = chunks.Where(c => c.SourceFile != fileName).ToList();
+
+                            if (remaining.Count != chunks.Count)
+                            {
+                                chunksByToolUseId[toolResult.ToolUseID] = remaining;
+
+                                updatedBlocks.Add(new ToolResultBlockParam(toolResult.ToolUseID)
+                                {
+                                    Content = FormatChunksForToolResult(remaining)
+                                });
+
+                                messageChanged = true;
+
+                                removalsLog.Add(
+                                    $"Removed {chunks.Count - remaining.Count} chunk(s) for {fileName} from tool_use {toolResult.ToolUseID} " +
+                                    $"({remaining.Count} chunk(s) remain in that result)");
+
+                                continue;
+                            }
+                        }
+
+                        updatedBlocks.Add(block);
+                    }
+
+                    if (messageChanged)
+                    {
+                        messages[messageIndex] = new MessageParam
+                        {
+                            Role = messages[messageIndex].Role,
+                            Content = updatedBlocks
+                        };
+                    }
                 }
             }
 

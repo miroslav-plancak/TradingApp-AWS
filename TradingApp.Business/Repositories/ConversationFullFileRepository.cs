@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services.Helpers;
+using TradingApp.Business.Services.Helpers;
 using TradingApp.Domain;
 using TradingApp.Domain.Models.Entities.ConversationFullFile;
 
@@ -13,63 +14,103 @@ namespace TradingApp.Business.Repositories
 
     public class ConversationFullFileRepository : IConversationFullFileRepository
     {
-        private readonly TradingDbContext _tradingDbContext;
+        private readonly IDbContextFactory<TradingDbContext> _dbContextFactory;
         private readonly IResilienceConversationPolicyGuard _resiliencePolicyGuard;
 
         public ConversationFullFileRepository
         (
-            TradingDbContext tradingDbContext,
+            IDbContextFactory<TradingDbContext> dbContextFactory,
             IResilienceConversationPolicyGuard resiliencePolicyGuard
         )
         {
-            _tradingDbContext = tradingDbContext;
+            _dbContextFactory = dbContextFactory;
             _resiliencePolicyGuard = resiliencePolicyGuard;
         }
 
         public async Task<ConversationFullFile> CreateConversationFullFileAsync(ConversationFullFile conversationFullFile)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync();
+
+            await using (tradingDbContextFactory)
             {
-                var existingRow = await _tradingDbContext.ConversationFullFiles
-                        .AsNoTracking()
-                        .SingleOrDefaultAsync(x =>
-                            x.ConversationId == conversationFullFile.ConversationId &&
-                            x.SourceFile == conversationFullFile.SourceFile
-                        );
 
-                if (existingRow != null)
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
-                    return existingRow;
-                }
+                    var existingRow = await tradingDbContextFactory.ConversationFullFiles
+                            .AsNoTracking()
+                            .SingleOrDefaultAsync(x =>
+                                x.ConversationId == conversationFullFile.ConversationId &&
+                                x.SourceFile == conversationFullFile.SourceFile
+                            );
 
-                conversationFullFile.Id = Guid.NewGuid();
-                conversationFullFile.CreatedAt = DateTimeOffset.UtcNow;
+                    if (existingRow != null)
+                    {
+                        conversationFullFile.Id = existingRow.Id;
+                        conversationFullFile.CreatedAt = existingRow.CreatedAt;
 
-                _tradingDbContext.ConversationFullFiles.Add(conversationFullFile);
-                await _tradingDbContext.SaveChangesAsync();
+                        tradingDbContextFactory.ConversationFullFiles.Update(conversationFullFile);
+                        await tradingDbContextFactory.SaveChangesAsync();
 
-                return conversationFullFile;
-            }, $"{nameof(CreateConversationFullFileAsync)}:Save:{conversationFullFile.Id}");
+                        return conversationFullFile;
+                    }
+
+                    conversationFullFile.Id = Guid.NewGuid();
+                    conversationFullFile.CreatedAt = DateTimeOffset.UtcNow;
+
+                    tradingDbContextFactory.ConversationFullFiles.Add(conversationFullFile);
+
+                    try 
+                    {
+                        await tradingDbContextFactory.SaveChangesAsync();
+                        return conversationFullFile;
+
+                    } 
+                    catch(DbUpdateException ex) when (SqlExceptionClassifier.IsUniqueConstraintOrUniqueIndexViolation(ex))
+                    {
+                        tradingDbContextFactory.Entry(conversationFullFile).State = EntityState.Detached;
+
+                        var raceWinnerRow = await tradingDbContextFactory.ConversationFullFiles
+                         .AsNoTracking()
+                         .SingleOrDefaultAsync(x =>
+                             x.ConversationId == conversationFullFile.ConversationId &&
+                             x.SourceFile == conversationFullFile.SourceFile);
+
+                        conversationFullFile.Id = raceWinnerRow.Id;
+                        conversationFullFile.CreatedAt = raceWinnerRow.CreatedAt;
+
+                        tradingDbContextFactory.ConversationFullFiles.Update(conversationFullFile);
+                        await tradingDbContextFactory.SaveChangesAsync();
+
+                        return conversationFullFile;
+                    }
+               
+                }, $"{nameof(CreateConversationFullFileAsync)}:Save:{conversationFullFile.Id}");
+            }
         }
 
         public async Task<IEnumerable<ConversationFullFile>> GetConversationFullFilesAsync(Guid? conversationId)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync();
+
+            await using (tradingDbContextFactory)
             {
-                if (conversationId == Guid.Empty)
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
                 {
-                    return [];
-                }
+                    if (conversationId == Guid.Empty)
+                    {
+                        return [];
+                    }
 
-                var allConversationFullFiles = await _tradingDbContext.ConversationFullFiles
-                            .AsNoTracking()
-                            .Where(x => x.ConversationId == conversationId)
-                            .OrderBy(x => x.CreatedAt)
-                            .ToListAsync();
+                    var allConversationFullFiles = await tradingDbContextFactory.ConversationFullFiles
+                                .AsNoTracking()
+                                .Where(x => x.ConversationId == conversationId)
+                                .OrderBy(x => x.CreatedAt)
+                                .ToListAsync();
 
-                return allConversationFullFiles;
+                    return allConversationFullFiles;
 
-            }, $"{nameof(GetConversationFullFilesAsync)}:FetchAll:{conversationId}");
+                }, $"{nameof(GetConversationFullFilesAsync)}:FetchAll:{conversationId}");
+            }
         }
     }
 }

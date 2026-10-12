@@ -26,23 +26,27 @@ namespace TradingApp.Infrastructure.Services
         )
         {
             var filePath = Path.Combine(_logDirectory, $"{logName}.txt");
-            var body = content is string s ? s : JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true });
-            var block = BuildBlock(title, body);
-
-            await _writeLogLock.WaitAsync();
 
             try
             {
-                await File.AppendAllTextAsync(filePath, block);
+                var body = content is string s ? s : JsonSerializer.Serialize(content, new JsonSerializerOptions { WriteIndented = true });
+                var block = BuildBlock(title, body);
+
+                await _writeLogLock.WaitAsync();
+
+                try
+                {
+                    await File.AppendAllTextAsync(filePath, block);
+                }
+                finally
+                {
+                    _writeLogLock.Release();
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to write debug log section | LogName: {LogName} | Title: {Title} | FilePath: {FilePath}",
                     logName, title, filePath);
-            }
-            finally
-            {
-                _writeLogLock.Release();
             }
         }
 

@@ -148,6 +148,8 @@ namespace TradingApp.Infrastructure.Services.Retrieval
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(query)) return [];
+
                 var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(query);
 
                 var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(query);

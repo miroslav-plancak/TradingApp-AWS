@@ -4,20 +4,26 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 {
     public static class SystemPromptBuilder
     {
-        public const string SearchCapReachedMessage =
+        public const string ToolTextResultGenerationErrorMessageSentinel = "Error occured while generating tool result for tool ID:";
+
+        public const string SearchCapReachedSentinel =
             "No new results found in the last 3 attempts on this line of inquiry - " +
             "stop retrying this specific angle and either move on or answer with what you already have.";
 
-        public const string NoFullFileContentAvailable = "No full file content available for";
+        public const string NoFullFileContentAvailableSentinel = "No full file content available for";
 
-        public const string NoSourceFileNamesFound = "No source file names found.";
+        public const string NoSourceFileNamesFoundSentinel = "No source file names found.";
 
-        public const string ManifestAbsentFileReminder =
+        public const string DecomposeQueryInvalidInputSentinel = "decompose_query failed, invalid input query supplied.";
+
+        public const string NoReusableContextFoundSentinel = "No re-usable context found.";
+
+        public const string ManifestAbsentFileReminderSentinel =
             "\n\nIf the file you are looking for is not in the list above, it is not indexed in this knowledge base. " +
             "Do not retry search_knowledge_base or get_full_file for that file's content - answer from what you " +
             "already have, or state plainly that it isn't in the knowledge base.";
 
-        public const string MaxTokensContinuationMessage =
+        public const string MaxTokensContinuationMessageSentinel =
             "Your previous response was cut off mid-way because it ran out of tokens. " +
             "Here is exactly what you had generated so far:\n\n\"{0}\"\n\n" +
             "Continue generating from exactly where that text left off. Do not repeat any of it, and do not add any preamble, " +
@@ -137,7 +143,7 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 
         public static string BuildMaxTokensContinuationMessage(string assistantResponse)
         {
-            return string.Format(MaxTokensContinuationMessage, assistantResponse);
+            return string.Format(MaxTokensContinuationMessageSentinel, assistantResponse);
         }
         //TODO: remove this once you clean up AiChatHub from the old implementaion
         public static string BuildChatSystemPrompt(RetrievalResult retrievalResult, string? existingSummary = "")

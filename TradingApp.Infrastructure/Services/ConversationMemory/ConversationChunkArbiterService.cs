@@ -34,7 +34,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             List<CreatedConversationChunkResponseDTO> existingChunks
         )
         {
-            if (existingChunks.Count == 0) return [];
+            if (existingChunks.Count == 0 && string.IsNullOrWhiteSpace(userMessage)) return [];
 
             var conversationChunksContext = SerializeExistingConversationChunks(existingChunks);
 
