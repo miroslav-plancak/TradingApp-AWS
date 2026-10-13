@@ -5,6 +5,7 @@ using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Infrastructure.Helpers.ConversationMemory;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Models.ConversationMemory;
 

@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Logging;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Retrieval;
-using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Retrieval

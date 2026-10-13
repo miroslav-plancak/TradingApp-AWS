@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace TradingApp.Infrastructure.Helpers
+namespace TradingApp.Infrastructure.Helpers.Anthropic
 {
     public static class AnthropicErrorMessageParser
     {

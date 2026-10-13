@@ -5,9 +5,11 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Agentic;
+using TradingApp.Infrastructure.Helpers.Anthropic;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Agentic;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Agentic;
@@ -50,8 +52,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
             _fileExpansionService = fileExpansionService;
             _corpusManifestService = corpusManifestService;
         }
-       
-        public async Task<AgenticLoopResponse> RunAgenticLoopAsync(AgenticLoopRequest request)
+
+        public async IAsyncEnumerable<string> RunAgenticLoopAsync(AgenticLoopRequest request)
         {
             _logger.LogInformation("RunAgenticLoopAsyncStarted | UserMessage:{UserMessage}", request.UserMessage);
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", "Loop started", request.UserMessage);
@@ -60,19 +62,17 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 ? new List<MessageParam> { new MessageParam { Role = Role.User, Content = request.UserMessage } }
                 : new List<MessageParam>(request.ConversationMessagesHistory);
 
-            AgenticLoopResponse agenticLoopResponse = new();
             var seenChunkKeysLock = new object();
             var seenChunkKeys = new HashSet<string>();
-            var searchKnowledgeBaseToolCounter = 0;
             var chunksByToolUseIdLock = new object();
             var chunksByToolUseId = new Dictionary<string, List<RetrievedChunk>>();
             var anthropicCallCounter = 0;
             var maxTokensIterationCounter = 0;
             var maxTokensResponseAccumulator = new StringBuilder();
-          
+
             while (true)
             {
-                var callNumber = ++anthropicCallCounter;
+                var apiCallNumber = ++anthropicCallCounter;
 
                 var parameters = new MessageCreateParams
                 {
@@ -90,281 +90,371 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     Messages = messages
                 };
 
-                var response = await _anthropicApiService.DispatchPromptWithFullResponseAsync(parameters, request.UserMessage);
+                StopReason stopReason = StopReason.EndTurn;
+                MessageDeltaUsage? tokenUsage = null;
 
-                if (response == null)
+                await foreach (var streamedTextChunk in _anthropicApiService.EstablishAgenticLoopStreamAsync
+                (
+                    request.UserMessage,
+                    parameters,
+                    (stopReasonEmitted) =>
+                    {
+                        stopReason = stopReasonEmitted;
+                        return Task.CompletedTask;
+                    },
+                    (usage) =>
+                    {
+                        tokenUsage = usage;
+                        return Task.CompletedTask;
+                    }
+                ))
                 {
-                    _logger.LogWarning("RunAgenticLoopAsyncFailedRetrievingResponse| UserMessage:{UserMessage}", request.UserMessage);
-                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                        "Loop ended — null response", "DispatchPromptWithFullResponseAsync returned null");
-                    return agenticLoopResponse;
+                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{apiCallNumber}] Streamed chunk",
+                        streamedTextChunk);
+                    yield return streamedTextChunk;
                 }
 
-                if (response.StopReason == StopReason.MaxTokens)
+                _logger.LogInformation("RunAgenticLoopStreamAsyncEnded | StopReason: {StopReason}", stopReason);
+                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{apiCallNumber}] Stream ended — StopReason: {stopReason}", "");
+
+                if (stopReason == StopReason.MaxTokens || stopReason == StopReason.ToolUse)
                 {
-                    TextBlock? maxTokensTextBlock = null;
-                    var maxTokensToolUseBlock = false;
+                    var response = await _anthropicApiService.DispatchPromptWithFullResponseAsync(parameters, request.UserMessage);
 
-                    foreach (var block in response.Content)
+                    if (response == null)
                     {
-                        if (maxTokensTextBlock == null && block.TryPickText(out var foundTextBlock))
+                        _logger.LogWarning("RunAgenticLoopAsyncFailedRetrievingResponse| UserMessage:{UserMessage}", request.UserMessage);
+                        await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                            "Loop ended — null response", "DispatchPromptWithFullResponseAsync returned null");
+
+                        if (tokenUsage is not null)
                         {
-                            maxTokensTextBlock = foundTextBlock;
-                        }
-                        else if (block.TryPickToolUse(out _))
-                        {
-                            maxTokensToolUseBlock = true;
-                        }
-                    }
-
-                    // textBlock and toolUseBlock in the same response is narration before toolUse - we retry. (isContinuable = false)
-                    // textBlock exists and toolUseBlock is absent in the response - we continue. (isContinuable = true)
-                    var isContinuable = maxTokensTextBlock != null && !maxTokensToolUseBlock;
-
-                    ++maxTokensIterationCounter;
-
-                    if (maxTokensIterationCounter != 2)
-                    {
-                        if (isContinuable)
-                        {
-                            _logger.LogInformation("RunAgenticLoopAsyncStoppedTextBlockExists | continuing | StopReason:{StopReason} ", response.StopReason);
-
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                $"Loop stopped —  StopReason:{response.StopReason} | continuing", maxTokensTextBlock!.Text);
-
-                            maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
-
-                            messages.Add(new MessageParam
-                            {
-                                Role = Role.User,
-                                Content = SystemPromptBuilder.BuildMaxTokensContinuationMessage(maxTokensResponseAccumulator.ToString())
-                            });
+                            await request.UsageHandler(tokenUsage);
                         }
                         else
                         {
-                            // toolUseBlock or thinkingBlock cut off mid way - retry with same request, no messages saved.
-                            _logger.LogInformation("RunAgenticLoopAsyncStoppedNoUsableText | retrying | StopReason:{StopReason}",
-                                response.StopReason);
-
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", 
-                                $"Loop stopped —  StopReason: {response.StopReason} | retrying",
-                                "no usable textBlock detected - retrying unchanged");
+                            _logger.LogWarning("RunAgenticLoopAsyncMissingTokenUsage | UserMessage:{UserMessage}", request.UserMessage);
                         }
 
-                        continue;
+                        yield break;
                     }
-                    else
+
+                    if (response.StopReason == StopReason.MaxTokens)
                     {
-                        _logger.LogInformation("RunAgenticLoopAsyncMaxTokenBudgetSpent | returning | StopReason:{StopReason}", response.StopReason);
+                        TextBlock? maxTokensTextBlock = null;
+                        var maxTokensToolUseBlock = false;
 
-                        if (isContinuable)
+                        foreach (var block in response.Content)
                         {
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason} | returning response",
-                                maxTokensTextBlock!.Text);
-
-                            maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
-                        }
-                        else
-                        {
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                $"Loop ended — StopReason: {response.StopReason} | returning without response", 
-                                "no usable textBlock detected - returning empty response");
-                        }
-
-                        agenticLoopResponse.MessageResponse = maxTokensResponseAccumulator.ToString();
-                        agenticLoopResponse.TokenUsage = response.Usage;
-                        agenticLoopResponse.MaxTokens = parameters.MaxTokens * 2;
-
-                        return agenticLoopResponse;
-                    }
-                }
-                else if (response.StopReason != StopReason.ToolUse)
-                {
-                    foreach (var block in response.Content)
-                    {
-                        if (block.TryPickText(out var textBlock))
-                        {
-                            _logger.LogInformation("RunAgenticLoopAsyncEnded | StopReason: {StopReason}", response.StopReason);
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason}",
-                                textBlock.Text);
-
-                            maxTokensResponseAccumulator.Append(textBlock.Text);
-
-                            agenticLoopResponse.MessageResponse = maxTokensIterationCounter == 1 ? maxTokensResponseAccumulator.ToString() : textBlock.Text;
-                            agenticLoopResponse.TokenUsage = response.Usage;
-                            agenticLoopResponse.MaxTokens = parameters.MaxTokens;
-
-                            return agenticLoopResponse;
-                        }
-                    }
-                    _logger.LogWarning("RunAgenticLoopAsyncEndedTextBlockNotFound | StopReason:{StopReason}", response.StopReason);
-
-                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                        $"Loop ended — {response.StopReason}, no text block found", "");
-
-                    agenticLoopResponse.MessageResponse = "";
-                    agenticLoopResponse.TokenUsage = response.Usage;
-                    agenticLoopResponse.MaxTokens = parameters.MaxTokens;
-
-                    return agenticLoopResponse;
-                }
-
-                var assistantContentLock = new object();
-                var assistantContent = new List<ContentBlockParam>();
-                var toolResultsContentLock = new object();
-                var toolResultsContent = new List<ContentBlockParam>();
-                var toolCallNumber = 0;
-
-                var tasks = response.Content.Select( async block => 
-                { 
-                    if (block.TryPickText(out var textblock))
-                    {
-                        lock (assistantContentLock)
-                        {
-                            assistantContent.Add(new TextBlockParam(textblock.Text));
-                        }
-                    }
-                    else if (block.TryPickToolUse(out var toolUseBlock))
-                    {
-                        lock (assistantContentLock)
-                        {
-                            assistantContent.Add(new ToolUseBlockParam
+                            if (maxTokensTextBlock == null && block.TryPickText(out var foundTextBlock))
                             {
-                                ID = toolUseBlock.ID,
-                                Name = toolUseBlock.Name,
-                                Input = toolUseBlock.Input
-                            });
-                        }
-                        
-                        var isKnownTool = Enum.TryParse<AgenticTool>(toolUseBlock.Name, out var toolName);
-                        string toolTextResult;
-                        
-                        try
-                        {
-                            if (!isKnownTool)
-                            {
-                                toolTextResult = $"Unknown tool: {toolUseBlock.Name}";
-                                _logger.LogWarning("RunAgenticLoopAsync | UnknownToolCalled:{ToolName}", toolUseBlock.Name);
-                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[Call #{callNumber}] Unknown tool called: {toolUseBlock.Name}", toolUseBlock.Input);
+                                maxTokensTextBlock = foundTextBlock;
                             }
-                            else if (toolName == AgenticTool.search_knowledge_base && Interlocked.Increment(ref searchKnowledgeBaseToolCounter) > 3)
+                            else if (block.TryPickToolUse(out _))
                             {
-                                Interlocked.Decrement(ref searchKnowledgeBaseToolCounter);
+                                maxTokensToolUseBlock = true;
+                            }
+                        }
 
-                                toolTextResult = SystemPromptBuilder.SearchCapReachedSentinel;
+                        // textBlock and toolUseBlock in the same response is narration before toolUse - we retry. (isContinuable = false)
+                        // textBlock exists and toolUseBlock is absent in the response - we continue. (isContinuable = true)
+                        var isContinuable = maxTokensTextBlock != null && !maxTokensToolUseBlock;
+
+                        ++maxTokensIterationCounter;
+
+                        if (maxTokensIterationCounter != 2)
+                        {
+                            if (isContinuable)
+                            {
+                                _logger.LogInformation("RunAgenticLoopAsyncStoppedTextBlockExists | continuing | StopReason:{StopReason} ", response.StopReason);
 
                                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                    $"[Call #{callNumber}] Search capped — consecutive empty limit reached", toolUseBlock.Input);
+                                    $"Loop stopped —  StopReason:{response.StopReason} | continuing", maxTokensTextBlock!.Text);
+
+                                maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
+
+                                messages.Add(new MessageParam
+                                {
+                                    Role = Role.User,
+                                    Content = SystemPromptBuilder.BuildMaxTokensContinuationMessage(maxTokensResponseAccumulator.ToString())
+                                });
                             }
                             else
                             {
-                                var toolExecutionContext = new ToolExecutionContext
-                                {
-                                    ConversationId = request.ConversationId,
-                                    ToolUseId = toolUseBlock.ID,
-                                    ToolCallNumber = Interlocked.Increment(ref toolCallNumber),
-                                    ToolName = toolName,
-                                    Input = toolUseBlock.Input,
-                                    SeenChunkKeysLock = seenChunkKeysLock,
-                                    SeenChunkKeys = seenChunkKeys,
-                                    ChunksByToolUseIdLock = chunksByToolUseIdLock,
-                                    ChunksByToolUseId = chunksByToolUseId,
-                                    CallNumber = callNumber
-                                };
+                                // toolUseBlock or thinkingBlock cut off mid way - retry with same request, no messages saved.
+                                _logger.LogInformation("RunAgenticLoopAsyncStoppedNoUsableText | retrying | StopReason:{StopReason}",
+                                    response.StopReason);
 
-                                bool shouldSkipGetFullFileToolCall = false;
-                                bool manifestSaysNotIndexed = false;
-                                bool chunksAlreadyReconstructFile = false;
-
-                                if (toolName == AgenticTool.get_full_file)
-                                {
-                                    manifestSaysNotIndexed = IsGetFullFileToolCallWasteful(toolExecutionContext, messages);
-                                    chunksAlreadyReconstructFile = IsFullFileAlreadyReconstructedFromChunks(toolExecutionContext);
-
-                                    shouldSkipGetFullFileToolCall = manifestSaysNotIndexed || chunksAlreadyReconstructFile;
-                                }
-
-                                if (shouldSkipGetFullFileToolCall)
-                                {
-                                    toolTextResult = $"{SystemPromptBuilder.NoFullFileContentAvailableSentinel} {toolUseBlock.Input["fileName"].ToString()}.";
-
-                                    var reason = manifestSaysNotIndexed ? "manifest shows not fully indexed" : "chunks already reconstruct the full file";
-
-                                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                        $"[Call #{callNumber}] get_full_file intercepted — reason:", reason);
-                                }
-                                else
-                                {
-                                    toolTextResult = await ExecuteToolAsync(toolExecutionContext);
-                                }
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                    $"Loop stopped —  StopReason: {response.StopReason} | retrying",
+                                    "no usable textBlock detected - retrying unchanged");
                             }
+
+                            continue;
+                        }
+                        else
+                        {
+                            _logger.LogInformation("RunAgenticLoopAsyncMaxTokenBudgetSpent | returning | StopReason:{StopReason}", response.StopReason);
+
+                            if (isContinuable)
+                            {
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason} | returning response",
+                                    maxTokensTextBlock!.Text);
+
+                                maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
+                            }
+                            else
+                            {
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                    $"Loop ended — StopReason: {response.StopReason} | returning without response",
+                                    "no usable textBlock detected - returning empty response");
+                            }
+
+                            await request.UsageHandler(ToMessageDeltaUsage(response.Usage));
+                            await request.MaxTokensHandler(parameters.MaxTokens * 2);
+                            await request.ResponseTruncatedHandler(response.StopReason.ToString());
+
+                            yield return maxTokensResponseAccumulator.ToString();
+
+                            yield break;
+                        }
+                    }
+                    else if (response.StopReason != StopReason.ToolUse)
+                    {
+                        foreach (var block in response.Content)
+                        {
+                            if (block.TryPickText(out var textBlock))
+                            {
+                                _logger.LogInformation("RunAgenticLoopAsyncEnded | StopReason: {StopReason}", response.StopReason);
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason}",
+                                    textBlock.Text);
+
+                                maxTokensResponseAccumulator.Append(textBlock.Text);
+
+                                await request.UsageHandler(ToMessageDeltaUsage(response.Usage));
+                                await request.MaxTokensHandler(parameters.MaxTokens);
+
+                                if (response.StopReason != null && AnthropicStopReasonEvaluator.IsNotCoveredStopReason(response.StopReason))
+                                {
+                                    await request.UnexpectedStopReasonHandler(response.StopReason);
+                                }
+
+                                yield return maxTokensIterationCounter == 1 ? maxTokensResponseAccumulator.ToString() : textBlock.Text;
+
+                                yield break;
+                            }
+                        }
+
+                        _logger.LogWarning("RunAgenticLoopAsyncEndedTextBlockNotFound | StopReason:{StopReason}", response.StopReason);
+
+                        await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                            $"Loop ended — {response.StopReason}, no text block found", "");
+
+                        await request.UsageHandler(ToMessageDeltaUsage(response.Usage));
+                        await request.MaxTokensHandler(parameters.MaxTokens);
+
+                        if (response.StopReason != null && AnthropicStopReasonEvaluator.IsNotCoveredStopReason(response.StopReason))
+                        {
+                            await request.UnexpectedStopReasonHandler(response.StopReason);
+                        }
+
+                        yield return "";
+                        yield break;
+                    }
+
+                    var assistantContent = new List<ContentBlockParam>();
+                    var toolResultsContent = new List<ContentBlockParam>();
+
+                    ToolDispatchContext toolDispatchContext = new ToolDispatchContext
+                    {
+                        Request = request,
+                        Response = response,
+                        AssistantContentLock = new object(),
+                        AssistantContent = assistantContent,
+                        ToolResultsContentLock = new object(),
+                        ToolResultsContent = toolResultsContent,
+                        ToolCallNumber = 0,
+                        SearchKnowledgeBaseToolCounter = 0,
+                        ApiCallNumber = apiCallNumber,
+                        SeenChunkKeysLock = seenChunkKeysLock,
+                        SeenChunkKeys = seenChunkKeys,
+                        ChunksByToolUseIdLock = chunksByToolUseIdLock,
+                        ChunksByToolUseId = chunksByToolUseId,
+                        Messages = messages
+                    };
+
+                    await DispatchToolUseBlocksAsync(toolDispatchContext);
+
+                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"ApiCall #{apiCallNumber} ends", "");
+
+                    messages.Add(new MessageParam { Role = Role.Assistant, Content = assistantContent });
+                    messages.Add(new MessageParam { Role = Role.User, Content = toolResultsContent });
+                }
+                else
+                {
+                    if (tokenUsage is not null)
+                    {
+                        await request.UsageHandler(tokenUsage);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("RunAgenticLoopAsyncMissingTokenUsage | UserMessage:{UserMessage}", request.UserMessage);
+                    }
+
+                    await request.MaxTokensHandler(parameters.MaxTokens);
+                    yield break;
+                }
+            }
+        }
+
+        private async Task DispatchToolUseBlocksAsync(ToolDispatchContext context)
+        {
+            var tasks = context.Response.Content.Select(async block =>
+            {
+                if (block.TryPickText(out var textblock))
+                {
+                    lock (context.AssistantContentLock)
+                    {
+                        context.AssistantContent.Add(new TextBlockParam(textblock.Text));
+                    }
+                }
+                else if (block.TryPickToolUse(out var toolUseBlock))
+                {
+                    lock (context.AssistantContentLock)
+                    {
+                        context.AssistantContent.Add(new ToolUseBlockParam
+                        {
+                            ID = toolUseBlock.ID,
+                            Name = toolUseBlock.Name,
+                            Input = toolUseBlock.Input
+                        });
+                    }
+
+                    await context.Request.ToolCalledHandler(toolUseBlock.Name);
+
+                    var isKnownTool = Enum.TryParse<AgenticTool>(toolUseBlock.Name, out var toolName);
+                    string toolTextResult;
+
+                    try
+                    {
+                        if (!isKnownTool)
+                        {
+                            toolTextResult = $"Unknown tool: {toolUseBlock.Name}";
+                            _logger.LogWarning("RunAgenticLoopAsync | UnknownToolCalled:{ToolName}", toolUseBlock.Name);
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}] Unknown tool called: {toolUseBlock.Name}", toolUseBlock.Input);
+                        }
+                        else if (toolName == AgenticTool.search_knowledge_base && Interlocked.Increment(ref context.SearchKnowledgeBaseToolCounter) > 3)
+                        {
+                            Interlocked.Decrement(ref context.SearchKnowledgeBaseToolCounter);
+
+                            toolTextResult = SystemPromptBuilder.SearchCapReachedSentinel;
+
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                $"[ApiCall #{context.ApiCallNumber}] Search capped — consecutive empty limit reached", toolUseBlock.Input);
+                        }
+                        else
+                        {
+                            var toolExecutionContext = new ToolExecutionContext
+                            {
+                                ConversationId = context.Request.ConversationId,
+                                ToolUseId = toolUseBlock.ID,
+                                ToolCallNumber = Interlocked.Increment(ref context.ToolCallNumber),
+                                ToolName = toolName,
+                                Input = toolUseBlock.Input,
+                                SeenChunkKeysLock = context.SeenChunkKeysLock,
+                                SeenChunkKeys = context.SeenChunkKeys,
+                                ChunksByToolUseIdLock = context.ChunksByToolUseIdLock,
+                                ChunksByToolUseId = context.ChunksByToolUseId,
+                                ApiCallNumber = context.ApiCallNumber
+                            };
+
+                            bool shouldSkipGetFullFileToolCall = false;
+                            bool manifestSaysNotIndexed = false;
+                            bool chunksAlreadyReconstructFile = false;
+
+                            if (toolName == AgenticTool.get_full_file)
+                            {
+                                manifestSaysNotIndexed = IsGetFullFileToolCallWasteful(toolExecutionContext, context.Messages);
+                                chunksAlreadyReconstructFile = IsFullFileAlreadyReconstructedFromChunks(toolExecutionContext);
+
+                                shouldSkipGetFullFileToolCall = manifestSaysNotIndexed || chunksAlreadyReconstructFile;
+                            }
+
+                            if (shouldSkipGetFullFileToolCall)
+                            {
+                                toolTextResult = $"{SystemPromptBuilder.NoFullFileContentAvailableSentinel} {toolUseBlock.Input["fileName"].ToString()}.";
+
+                                var reason = manifestSaysNotIndexed ? "manifest shows not fully indexed" : "chunks already reconstruct the full file";
+
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                    $"[ApiCall #{context.ApiCallNumber}] get_full_file intercepted — reason:", reason);
+                            }
+                            else
+                            {
+                                toolTextResult = await ExecuteToolAsync(toolExecutionContext);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        toolTextResult = $"{SystemPromptBuilder.ToolTextResultGenerationErrorMessageSentinel} {toolUseBlock.ID}";
+
+                        _logger.LogWarning(ex, "get_full_file tool call failed | UnableToGenerateToolResult " +
+                            "| ToolUseID:{ToolUseID}", toolUseBlock.ID);
+
+                        await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}]" +
+                            $" Result from tool #{Volatile.Read(ref context.ToolCallNumber)}: {toolName}", toolTextResult);
+                    }
+
+                    if (toolName == AgenticTool.search_knowledge_base
+                           && !string.IsNullOrEmpty(toolTextResult)
+                           && !toolTextResult.StartsWith(SystemPromptBuilder.SearchCapReachedSentinel))
+                    {
+                        Interlocked.Decrement(ref context.SearchKnowledgeBaseToolCounter);
+                    }
+                    else if (toolName == AgenticTool.get_full_file && !toolTextResult.StartsWith(SystemPromptBuilder.NoFullFileContentAvailableSentinel))
+                    {
+                        try
+                        {
+                            var fileName = toolUseBlock.Input["fileName"].GetString() ?? string.Empty;
+                            var removalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(
+                                fileName, context.Messages, context.ChunksByToolUseIdLock, context.ChunksByToolUseId);
+
+                            _logger.LogInformation("RemoveNowRedundantChunksForFile " +
+                                "| FileName:{FileName} | Removals:{RemovalCount}", fileName, removalsLog.Count);
+
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                                $"Chunk dedup after get_full_file: {fileName}",
+                                removalsLog.Count > 0 ? string.Join("\n", removalsLog) : "No prior chunks found for this file - nothing to dedup.");
                         }
                         catch (Exception ex)
                         {
-                            toolTextResult = $"{SystemPromptBuilder.ToolTextResultGenerationErrorMessageSentinel} {toolUseBlock.ID}";
+                            _logger.LogWarning(ex, "get_full_file tool call failed | UnableToRemoveRedundantChunksForFile ");
 
-                            _logger.LogWarning(ex, "get_full_file tool call failed | UnableToGenerateToolResult " +
-                                "| ToolUseID:{ToolUseID}", toolUseBlock.ID);
-
-                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[Call #{callNumber}]" +
-                                     $" Result from tool #{Volatile.Read(ref toolCallNumber)}: {toolName}", toolTextResult);
-                          
-                        }
-
-                        if (toolName == AgenticTool.search_knowledge_base
-                               && !string.IsNullOrEmpty(toolTextResult)
-                               && !toolTextResult.StartsWith(SystemPromptBuilder.SearchCapReachedSentinel))
-                        {
-                            Interlocked.Decrement(ref searchKnowledgeBaseToolCounter);
-                        }
-                        else if (toolName == AgenticTool.get_full_file && !toolTextResult.StartsWith(SystemPromptBuilder.NoFullFileContentAvailableSentinel))
-                        {
-                            try
-                            {
-                                var fileName = toolUseBlock.Input["fileName"].GetString() ?? string.Empty;
-                                var removalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(fileName, messages, chunksByToolUseIdLock, chunksByToolUseId);
-
-                                _logger.LogInformation("RemoveNowRedundantChunksForFile " +
-                                    "| FileName:{FileName} | Removals:{RemovalCount}", fileName, removalsLog.Count);
-
-                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                    $"Chunk dedup after get_full_file: {fileName}",
-                                    removalsLog.Count > 0 ? string.Join("\n", removalsLog) : "No prior chunks found for this file - nothing to dedup.");
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "get_full_file tool call failed | UnableToRemoveRedundantChunksForFile ");
-
-                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[Call #{callNumber}]" +
-                                     $" Result from tool #{Volatile.Read(ref toolCallNumber)}: {toolName}",
-                                     "Failed removing redundant chunks for the file.");
-                            }
-                        }
-
-                        lock (toolResultsContentLock)
-                        {
-                            toolResultsContent.Add(new ToolResultBlockParam(toolUseBlock.ID)
-                            {
-                                Content = toolTextResult
-                            });
+                            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}]" +
+                                $" Result from tool #{Volatile.Read(ref context.ToolCallNumber)}: {toolName}",
+                                "Failed removing redundant chunks for the file.");
                         }
                     }
-                }).ToList();
 
-                await Task.WhenAll(tasks); 
+                    lock (context.ToolResultsContentLock)
+                    {
+                        context.ToolResultsContent.Add(new ToolResultBlockParam(toolUseBlock.ID)
+                        {
+                            Content = toolTextResult
+                        });
+                    }
+                }
+            }).ToList();
 
-                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",$"Call #{callNumber} ends", "");
-
-                messages.Add(new MessageParam { Role = Role.Assistant, Content = assistantContent });
-                messages.Add(new MessageParam { Role = Role.User, Content = toolResultsContent });
-            }
+            await Task.WhenAll(tasks);
         }
 
         private async Task<string> ExecuteToolAsync(ToolExecutionContext context)
         {
             _logger.LogInformation("RunAgenticLoopAsync | ToolCalled:{ToolName}", context.ToolName);
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                $"[Call #{context.CallNumber}] Tool #{context.ToolCallNumber} called: {context.ToolName}", context.Input);
+                $"[ApiCall #{context.ApiCallNumber}] Tool #{context.ToolCallNumber} called: {context.ToolName}", context.Input);
 
             string result;
 
@@ -400,23 +490,23 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     break;
             }
 
-            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[Call #{context.CallNumber}]" +
+            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}]" +
                 $" Result from tool #{context.ToolCallNumber}: {context.ToolName}", result);
 
             return result;
         }
-        
+
         private async Task<string> HandleDecomposeQueryAsync(IReadOnlyDictionary<string, JsonElement> input)
         {
             string question;
 
-            try 
+            try
             {
-                 question = input["question"].GetString() ?? string.Empty;
+                question = input["question"].GetString() ?? string.Empty;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex,"HandleDecomposeQueryAsyncFailed | Input: {Input}", JsonSerializer.Serialize(input));
+                _logger.LogError(ex, "HandleDecomposeQueryAsyncFailed | Input: {Input}", JsonSerializer.Serialize(input));
                 question = "";
             }
 
@@ -433,14 +523,14 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
             try
             {
-               query = context.Input["query"].GetString() ?? string.Empty;
+                query = context.Input["query"].GetString() ?? string.Empty;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "HandleSearchKnowledgeBaseAsyncFailed | Input: {Input}", JsonSerializer.Serialize(context.Input));
                 query = "";
             }
-            
+
             var retrievedChunks = await _contextRetrievalService.RetrieveRelevantChunksAsync(query);
 
             var newChunks = retrievedChunks.Where(chunk =>
@@ -471,14 +561,14 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
             try
             {
-                 fileName = context.Input["fileName"].GetString() ?? string.Empty;
+                fileName = context.Input["fileName"].GetString() ?? string.Empty;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "HandleGetFullFileAsyncFailed | Input: {Input}", JsonSerializer.Serialize(context.Input));
                 fileName = "";
             }
-          
+
             var fullFileContent = await _contextRetrievalService.GetFullFileContentAsync(fileName);
 
             if (string.IsNullOrEmpty(fullFileContent))
@@ -501,15 +591,14 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
             try
             {
-               query = context.Input["query"].GetString() ?? string.Empty;
+                query = context.Input["query"].GetString() ?? string.Empty;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _logger.LogError(ex, "HandleGetDatabaseContextAsyncFailed | Input: {Input}", JsonSerializer.Serialize(context.Input));
                 query = "";
             }
 
-           
             var reusableContextArtifacts = await _conversationReuseService.TryRetrieveReusableConversationArtifactsAsync(
                 context.ConversationId, query);
 
@@ -522,7 +611,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
             var newChunks = mappedChunks.Where(chunk =>
             {
-                lock (context.SeenChunkKeysLock) 
+                lock (context.SeenChunkKeysLock)
                 {
                     return context.SeenChunkKeys.Add(chunk.Key ?? string.Empty);
                 }
@@ -655,13 +744,26 @@ namespace TradingApp.Infrastructure.Services.Agentic
             return false;
         }
 
+        private static MessageDeltaUsage ToMessageDeltaUsage(Usage usage)
+        {
+            return new MessageDeltaUsage
+            {
+                InputTokens = usage.InputTokens,
+                OutputTokens = usage.OutputTokens,
+                CacheCreationInputTokens = usage.CacheCreationInputTokens,
+                CacheReadInputTokens = usage.CacheReadInputTokens,
+                OutputTokensDetails = usage.OutputTokensDetails,
+                ServerToolUse = usage.ServerToolUse
+            };
+        }
+
         private static bool IsFullFileAlreadyReconstructedFromChunks(ToolExecutionContext context)
         {
             var fileName = context.Input.TryGetValue("fileName", out var value) ? value.ToString() : string.Empty;
-            lock(context.ChunksByToolUseIdLock)
+            lock (context.ChunksByToolUseIdLock)
             {
-               var retrievedChunks = context.ChunksByToolUseId.SelectMany(x => x.Value).ToList();
-               return retrievedChunks.Any(x => x.SourceFile == fileName && x.IsFullFileReconstructable == true);
+                var retrievedChunks = context.ChunksByToolUseId.SelectMany(x => x.Value).ToList();
+                return retrievedChunks.Any(x => x.SourceFile == fileName && x.IsFullFileReconstructable == true);
             }
         }
     }

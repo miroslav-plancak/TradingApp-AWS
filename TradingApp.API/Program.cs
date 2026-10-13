@@ -23,6 +23,7 @@ var secretResponse = await secretsManagerClient.GetSecretValueAsync(new GetSecre
 Environment.SetEnvironmentVariable("SQL_CONNECTION_STRING", secretResponse.SecretString);
 
 builder.Services.AddTradingDbContext();
+builder.Services.AddTradingDbContextFactory();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

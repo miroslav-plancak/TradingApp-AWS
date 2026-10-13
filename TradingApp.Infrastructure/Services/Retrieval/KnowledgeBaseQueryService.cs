@@ -48,7 +48,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                      "PARAMS", "2", "BLOB", queryBytes,
                      "SORTBY", "score",
                      "DIALECT", "2",
-                     "RETURN", "5", "chunkIndex","totalChunkCount", "sourceFile", "content", "score");
+                     "RETURN", "5", "chunkIndex", "totalChunkCount", "sourceFile", "content", "score");
                 });
 
                 var retrievedKNNChunks = RedisResultParser.MapKnnSearchResultToRetrievedChunkList(searchResult);

@@ -59,13 +59,13 @@ namespace TradingApp.Business.Repositories
 
                     tradingDbContextFactory.ConversationFullFiles.Add(conversationFullFile);
 
-                    try 
+                    try
                     {
                         await tradingDbContextFactory.SaveChangesAsync();
                         return conversationFullFile;
 
-                    } 
-                    catch(DbUpdateException ex) when (SqlExceptionClassifier.IsUniqueConstraintOrUniqueIndexViolation(ex))
+                    }
+                    catch (DbUpdateException ex) when (SqlExceptionClassifier.IsUniqueConstraintOrUniqueIndexViolation(ex))
                     {
                         tradingDbContextFactory.Entry(conversationFullFile).State = EntityState.Detached;
 
@@ -83,7 +83,7 @@ namespace TradingApp.Business.Repositories
 
                         return conversationFullFile;
                     }
-               
+
                 }, $"{nameof(CreateConversationFullFileAsync)}:Save:{conversationFullFile.Id}");
             }
         }

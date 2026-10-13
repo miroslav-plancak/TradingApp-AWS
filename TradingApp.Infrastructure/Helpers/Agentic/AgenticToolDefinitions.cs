@@ -141,7 +141,7 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                $"\"{SystemPromptBuilder.NoSourceFileNamesFoundSentinel}\", " +
                "treat that as a strong signal the content isn't indexed, and prefer telling the user you don't have this " +
                " information over continuing to retry search_knowledge_base or get_full_file with different wording.",
-              
+
             InputSchema = new InputSchema
             {
                 Type = JsonSerializer.SerializeToElement("object")

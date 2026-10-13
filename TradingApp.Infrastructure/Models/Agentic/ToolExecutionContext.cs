@@ -11,10 +11,10 @@ namespace TradingApp.Infrastructure.Models.Agentic
         public int ToolCallNumber { get; set; }
         public AgenticTool ToolName { get; set; }
         public required IReadOnlyDictionary<string, JsonElement> Input { get; set; }
-        public required object SeenChunkKeysLock { get; set; } 
+        public required object SeenChunkKeysLock { get; set; }
         public required HashSet<string> SeenChunkKeys { get; set; } = [];
-        public required object ChunksByToolUseIdLock { get; set; } 
+        public required object ChunksByToolUseIdLock { get; set; }
         public required Dictionary<string, List<RetrievedChunk>> ChunksByToolUseId { get; set; } = [];
-        public int CallNumber { get; set; }
+        public int ApiCallNumber { get; set; }
     }
 }

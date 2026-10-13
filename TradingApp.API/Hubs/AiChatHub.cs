@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.Conversation;
 using TradingApp.Business.DTOs.ConversationMessage;
@@ -14,17 +16,13 @@ using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Agentic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
-using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Agentic;
-using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.API.Hubs
 {
     public class AiChatHub : BaseHub<AiChatHub>
     {
         private readonly IFileDebugLogger _fileDebugLogger;
-        private readonly IAnthropicApiService _anthropicApiService;
-        private readonly IContextRetrievalService _chunkRetrievalService;
         private readonly IConversationService _conversationService;
         private readonly IConversationMessageService _conversationMessageService;
         private readonly IConversationSummaryService _conversationSummaryService;
@@ -35,8 +33,6 @@ namespace TradingApp.API.Hubs
         (
             ILogger<AiChatHub> logger,
             IFileDebugLogger fileDebugLogger,
-            IAnthropicApiService anthropicApiService,
-            IContextRetrievalService chunkRetrievalService,
             IConversationService conversationService,
             IConversationSummaryService conversationSummaryService,
             IConversationMessageService conversationMessageService,
@@ -45,8 +41,6 @@ namespace TradingApp.API.Hubs
         ) : base(logger)
         {
             _fileDebugLogger = fileDebugLogger;
-            _anthropicApiService = anthropicApiService;
-            _chunkRetrievalService = chunkRetrievalService;
             _conversationService = conversationService;
             _conversationMessageService = conversationMessageService;
             _conversationSummaryService = conversationSummaryService;
@@ -54,14 +48,13 @@ namespace TradingApp.API.Hubs
             _agenticLoopService = agenticLoopService;
         }
 
-        public async Task<string> SendUserMessage
+        public async IAsyncEnumerable<string> SendUserMessageAsync
         (
              string userMessage,
              Guid? conversationId,
              Guid? clientRequestId
         )
         {
-
             if (string.IsNullOrWhiteSpace(userMessage)) throw new HubException("Message cannot be empty.");
 
             var (isNewConversation, existingConversation) = await ResolveConversationAsync(conversationId, clientRequestId, userMessage);
@@ -75,30 +68,68 @@ namespace TradingApp.API.Hubs
 
             var conversationHistory = ToAnthropicMessageParams(conversationMessagesHistory);
 
-            AgenticLoopResponse agenticLoopResponse;
+            long maxTokens = 0;
+            MessageDeltaUsage usage = null;
+            var responseAccumulator = new StringBuilder();
+            int toolUseCounter = 0;
 
-            try
+            var enumerator = _agenticLoopService.RunAgenticLoopAsync(new AgenticLoopRequest
             {
-                agenticLoopResponse = await _agenticLoopService.RunAgenticLoopAsync( new AgenticLoopRequest 
+                UserMessage = userMessage,
+                ConversationId = existingConversation.ConversationId,
+                ConversationMessagesHistory = conversationHistory,
+                CompactedSummary = existingConversation.CompactedSummary,
+                ToolCalledHandler = async (result) =>
                 {
-                    UserMessage = userMessage,
-                    ConversationId= existingConversation.ConversationId, 
-                    ConversationMessagesHistory = conversationHistory,
-                    CompactedSummary = existingConversation.CompactedSummary
-                });
-            }
-            catch (Exception ex)
+                    await Clients.Caller.SendAsync("ToolCalled", $"# {Interlocked.Increment(ref toolUseCounter)} - {result}");
+                },
+                MaxTokensHandler = (result) => { maxTokens = result; return Task.CompletedTask; },
+                UsageHandler = (result) => { usage = result; return Task.CompletedTask; },
+                ResponseTruncatedHandler = async (result) => { await Clients.Caller.SendAsync("ResponseTruncated", result); },
+                UnexpectedStopReasonHandler = async (result) => { await NotifyStopReasonAsync(result.ToString()); }
+            }).GetAsyncEnumerator();
+
+            await using (enumerator)
             {
-                if (isNewConversation)
+                while (true)
                 {
-                    await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                    var hasNext = false;
+
+                    try
+                    {
+                        hasNext = await enumerator.MoveNextAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        if (ex is ChatStreamFailureException { IsRetryable: false })
+                        {
+                            await NotifyChatStreamFailureAsync(ex.Message);
+                        }
+
+                        if (isNewConversation)
+                        {
+                            await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                            await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId);
+                        }
+
+                        _logger.LogError(ex, "General error occured while itterating through anthropic streaming response.");
+
+                        throw new HubException(ex.Message);
+                    }
+
+                    if (hasNext)
+                    {
+                        responseAccumulator.Append(enumerator.Current);
+                        yield return enumerator.Current;
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
-
-                _logger.LogError(ex, "General error occured while receiving assistant message response.");
-                throw new HubException(ex.Message);
             }
 
-            if (string.IsNullOrWhiteSpace(agenticLoopResponse.MessageResponse))
+            if (string.IsNullOrWhiteSpace(responseAccumulator.ToString()))
             {
                 if (isNewConversation)
                 {
@@ -124,7 +155,7 @@ namespace TradingApp.API.Hubs
                     ConversationId = existingConversation.ConversationId,
                     ClientRequestId = null,
                     Role = ConversationMessageRole.Assistant,
-                    Body = agenticLoopResponse.MessageResponse
+                    Body = responseAccumulator.ToString()
                 });
             }
             catch (Exception ex)
@@ -133,108 +164,14 @@ namespace TradingApp.API.Hubs
                     "Failed to persist conversation messages for conversation {ConversationId} - the answer was generated successfully but may be missing from history.",
                     existingConversation.ConversationId);
             }
-            
-            await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, agenticLoopResponse.TokenUsage, agenticLoopResponse.MaxTokens);
 
-            return agenticLoopResponse.MessageResponse;
-        }
-
-        public async IAsyncEnumerable<string> SendUserMessage_temp_disable
-        (
-            string userMessage,
-            Guid? conversationId,
-            Guid? clientRequestId
-        )
-        {
-            if (string.IsNullOrWhiteSpace(userMessage)) throw new HubException("Message cannot be empty.");
-
-            var (isNewConversation, existingConversation) = await ResolveConversationAsync(conversationId, clientRequestId, userMessage);
-
-            var retrievalResult = await RetrieveAdditionalContextAsync(userMessage, existingConversation.ConversationId);
-
-            var conversationMessagesHistory = await RetrieveConversationHistoryAsync(existingConversation, userMessage);
-
-            AppendUserMessageToHistory(conversationMessagesHistory, userMessage);
-
-            await _fileDebugLogger.LogSectionAsync("0-conversation-history", $"Current user/assistant correspodence:",
-                            RetrievalResultLogFormatter.FormatCurrentConversationMessagesIntoFileLog(conversationMessagesHistory));
-
-            var parameters = ConfigureMessageParams(retrievalResult, conversationMessagesHistory, existingConversation.CompactedSummary);
-
-            IAsyncEnumerator<string> enumerator = null;
-
-            enumerator = _anthropicApiService.EstablishStreamAsync
-            (
-                userMessage,
-                existingConversation.ConversationId,
-                isNewConversation,
-                parameters,
-                async (convId) =>
-                {
-                    return await _conversationService.DeleteConversationByIdAsync(convId);
-                },
-                async (msgBody) =>
-                {
-                    await _conversationMessageService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
-                    {
-                        ConversationId = existingConversation.ConversationId,
-                        ClientRequestId = clientRequestId,
-                        Role = ConversationMessageRole.User,
-                        Body = msgBody
-                    });
-                },
-                async (msgBody) =>
-                {
-                    await _conversationMessageService.CreateConversationMessageAsync(new CreateConversationMessageRequestDTO
-                    {
-                        ConversationId = existingConversation.ConversationId,
-                        ClientRequestId = null,
-                        Role = ConversationMessageRole.Assistant,
-                        Body = msgBody
-                    });
-                },
-                async (stopReasonResponse) =>
-                {
-                    await NotifyStopReasonAsync(stopReasonResponse.ToString());
-                },
-                async (tokenUsage) =>
-                {
-                    Usage tempTokenUsage = null;
-                    await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, tempTokenUsage, parameters.MaxTokens);
-                }
-            ).GetAsyncEnumerator();
-
-            await using (enumerator)
+            if (usage != null)
             {
-                while (true)
-                {
-                    var hasNext = false;
-
-                    try
-                    {
-                        hasNext = await enumerator.MoveNextAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        if (ex is ChatStreamFailureException { IsRetryable: false })
-                        {
-                            await NotifyChatStreamFailureAsync(ex.Message);
-                        }
-
-                        _logger.LogError(ex, "General error occured while itterating through anthropic streaming response.");
-
-                        throw new HubException(ex.Message);
-                    }
-
-                    if (hasNext)
-                    {
-                        yield return enumerator.Current;
-                    }
-                    else
-                    {
-                        yield break;
-                    }
-                }
+                await _conversationCompactorService.CompactConversationAsync(existingConversation.ConversationId, usage, maxTokens);
+            }
+            else
+            {
+                _logger.LogWarning("SendUserMessageAsyncMissingTokenUsage | ConversationId:{ConversationId}", existingConversation.ConversationId);
             }
         }
 
@@ -329,26 +266,6 @@ namespace TradingApp.API.Hubs
             }
         }
 
-        private async Task<RetrievalResult> RetrieveAdditionalContextAsync
-        (
-            string userMessage,
-            Guid existingConversationId
-        )
-        {
-            var retrievalResult = new RetrievalResult { ChunkFallbacks = [], FullFileContents = [] };
-
-            try
-            {
-                retrievalResult = await _chunkRetrievalService.RetrieveRelevantContextAsync(userMessage, existingConversationId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected failure retrieving context for message: {UserMessage}", userMessage);
-            }
-
-            return retrievalResult;
-        }
-
         private async Task<List<ConversationHistoryMessageDTO>> RetrieveConversationHistoryAsync
         (
             ConversationCompactionStateDTO existingConversation,
@@ -382,22 +299,6 @@ namespace TradingApp.API.Hubs
                     Content = userMessage
                 }
             );
-        }
-
-        private static MessageCreateParams ConfigureMessageParams
-        (
-            RetrievalResult retrievalResult,
-            List<ConversationHistoryMessageDTO> conversationMessagesHistory,
-            string compactedSummary
-        )
-        {
-            return new MessageCreateParams
-            {
-                Model = "claude-sonnet-5",
-                MaxTokens = 4096,
-                System = SystemPromptBuilder.BuildChatSystemPrompt(retrievalResult, compactedSummary),
-                Messages = ToAnthropicMessageParams(conversationMessagesHistory)
-            };
         }
 
         private static IReadOnlyList<MessageParam> ToAnthropicMessageParams(List<ConversationHistoryMessageDTO> conversationMessages)

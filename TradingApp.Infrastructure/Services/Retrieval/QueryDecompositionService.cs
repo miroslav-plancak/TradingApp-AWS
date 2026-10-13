@@ -4,6 +4,7 @@ using System.Text.Json;
 using TradingApp.Infrastructure.Helpers.ConversationMemory;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Retrieval
