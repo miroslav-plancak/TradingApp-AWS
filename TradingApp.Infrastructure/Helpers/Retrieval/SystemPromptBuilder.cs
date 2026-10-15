@@ -36,11 +36,6 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "You may be given an existing summary in addition to new messages - merge them into one " +
             "updated summary rather than treating them separately. Only include information actually " +
             "present in the provided content; do not infer or invent details.";
-        //TODO: remove this once you clean up AiChatHub from the old implementaion
-        private const string ChatSystemInstruction =
-                "Answer the user's question using the following code context (if it's relevant) " +
-                "and additional summary (if it is provided). If the context doesn't contain the " +
-                "answer, say so instead of guessing.\n\n";
 
         public const string QueryRouteSystemInstruction =
            "Classify the following question about a codebase as either BROAD " +
@@ -144,17 +139,6 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
         public static string BuildMaxTokensContinuationMessage(string assistantResponse)
         {
             return string.Format(MaxTokensContinuationMessageSentinel, assistantResponse);
-        }
-        //TODO: remove this once you clean up AiChatHub from the old implementaion
-        public static string BuildChatSystemPrompt(RetrievalResult retrievalResult, string? existingSummary = "")
-        {
-            var summary = FormatExistingSummary(existingSummary);
-
-            var chunks = string.Join("\n\n", retrievalResult.ChunkFallbacks.Select(c => $"Source: {c.SourceFile}\n{c.Content}"));
-            var fullFiles = string.Join("\n\n", retrievalResult.FullFileContents.Select(c => $"FullFiles - FileName: {c.Key}\n{c.Value}"));
-            var fullContext = string.Join("\n\n", new string?[] { chunks, fullFiles, summary }.Where(section => !string.IsNullOrWhiteSpace(section)));
-
-            return $"{ChatSystemInstruction}{fullContext}";
         }
 
         private static string? FormatExistingSummary(string? existingSummary)

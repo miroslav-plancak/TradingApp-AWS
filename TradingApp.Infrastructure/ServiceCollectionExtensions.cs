@@ -25,6 +25,8 @@ using TradingApp.Infrastructure.Services.Ingestion;
 using TradingApp.Infrastructure.Services.Retrieval;
 using TradingApp.Infrastructure.Services.Agentic;
 using TradingApp.Business.Interfaces.Services.Regular;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
+using TradingApp.Infrastructure.Services.Anthropic;
 
 namespace TradingApp.Infrastructure
 {
@@ -48,9 +50,8 @@ namespace TradingApp.Infrastructure
 
         public static IServiceCollection AddTradingDbContext(this IServiceCollection services)
         {
-            services.AddDbContext<TradingDbContext>(options =>
-                options.UseSqlServer(GetSqlConnectionString(),
-                options => options.CommandTimeout(SqlCommandTimeoutSeconds)));
+            services.AddScoped<TradingDbContext>(sp =>
+                sp.GetRequiredService<IDbContextFactory<TradingDbContext>>().CreateDbContext());
 
             return services;
         }

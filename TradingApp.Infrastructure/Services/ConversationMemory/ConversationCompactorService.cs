@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using TradingApp.Business.DTOs.ConversationMessage;
 using TradingApp.Business.Interfaces.Services.Regular.Conversation;
 using TradingApp.Infrastructure.Helpers.Retrieval;
-using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 
 namespace TradingApp.Infrastructure.Services.ConversationMemory
@@ -36,8 +36,14 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             _conversationCompactionBoundaryService = conversationCompactionBoundaryService;
         }
 
-        public async Task CompactConversationAsync(Guid conversationId, Usage usage, long maxTokens)
+        public async Task CompactConversationAsync(Guid conversationId, MessageDeltaUsage usage, long maxTokens)
         {
+
+            if (usage.InputTokens == null)
+            {
+                _logger.LogWarning("ConversationCompactionAsyncInputTokensNullValue | ConversationId: {ConversationId}", conversationId);
+            }
+
             if (!IsCompactionThresholdReached(usage, maxTokens)) return;
 
             try
@@ -60,14 +66,14 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                     Messages = ToAnthropicMessageParams(messagesForCompaction),
                 };
 
-           
-                    var response = await _anthropicApiService.DispatchPromptAsync(parameters);
 
-                    if (!string.IsNullOrWhiteSpace(response))
-                    {
-                        var lastCompactedMessageTimeStamp = messagesForCompaction.Last().CreatedAt;
-                        await _conversationSummaryService.UpdateCompactedConversationSummaryAsync(conversationId, response, lastCompactedMessageTimeStamp);
-                    }
+                var response = await _anthropicApiService.DispatchPromptAsync(parameters);
+
+                if (!string.IsNullOrWhiteSpace(response))
+                {
+                    var lastCompactedMessageTimeStamp = messagesForCompaction.Last().CreatedAt;
+                    await _conversationSummaryService.UpdateCompactedConversationSummaryAsync(conversationId, response, lastCompactedMessageTimeStamp);
+                }
             }
             catch (Exception ex)
             {
@@ -75,9 +81,9 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             }
         }
 
-        private static bool IsCompactionThresholdReached(Usage usage, long maxTokens)
+        private static bool IsCompactionThresholdReached(MessageDeltaUsage usage, long maxTokens)
         {
-            var lastTurnTotalInputTokens = usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens;
+            var lastTurnTotalInputTokens = (usage.InputTokens ?? 0) + (usage.CacheCreationInputTokens ?? 0) + (usage.CacheReadInputTokens ?? 0);
             return (lastTurnTotalInputTokens + maxTokens) >= Sonnet5MaxContextWindow * CompactThreshold;
         }
 

@@ -4,12 +4,12 @@ using Anthropic.Models.Messages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
-using System.Text;
 using TradingApp.Infrastructure.Exceptions;
 using TradingApp.Infrastructure.Helpers;
-using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Helpers.Anthropic;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
 
-namespace TradingApp.Infrastructure.Services
+namespace TradingApp.Infrastructure.Services.Anthropic
 {
     public class AnthropicApiService : IAnthropicApiService
     {
@@ -74,40 +74,45 @@ namespace TradingApp.Infrastructure.Services
             return null;
         }
 
-        public async IAsyncEnumerable<string> EstablishStreamAsync
+        public async IAsyncEnumerable<string> EstablishAgenticLoopStreamAsync
         (
-                 string userMessage,
-                 Guid conversationId,
-                 bool isNewConversation,
-                 MessageCreateParams messageCreateParams,
-                 Func<Guid, Task<bool>> deleteConversationHandler,
-                 Func<string, Task> persistUserMessageHandler,
-                 Func<string, Task> persistAssistantMessageHandler,
-                 Func<StopReason, Task> stopReasonHandler,
-                 Func<MessageDeltaUsage, Task> usageHandler
+            string userMessage,
+            MessageCreateParams messageCreateParams,
+            Func<StopReason, Task> stopReasonHandler,
+            Func<MessageDeltaUsage, Task> usageHandler
         )
         {
             IAsyncEnumerator<RawMessageStreamEvent>? enumerator = null;
             string? firstText = null;
+            StopReason? bootstrapStopReason = null;
+            MessageDeltaUsage? bootstrapUsage = null;
             var bootstrapFailed = false;
             string? failureMessage = null;
             var isRetryable = false;
 
             try
             {
-                (enumerator, firstText) = await _resiliencePolicy.ExecuteAsync(async () =>
+                (enumerator, firstText, bootstrapStopReason, bootstrapUsage) = await _resiliencePolicy.ExecuteAsync(async () =>
                 {
                     var e = _anthropicClient.Messages.CreateStreaming(messageCreateParams).GetAsyncEnumerator();
+                    StopReason? capturedStopReason = null;
+                    MessageDeltaUsage? capturedUsage = null;
 
                     while (await e.MoveNextAsync())
                     {
                         if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
                         {
-                            return (e, text.Text);
+                            return (e, text.Text, capturedStopReason, capturedUsage);
+                        }
+
+                        if (e.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
+                        {
+                            capturedUsage = messageDelta.Usage;
+                            capturedStopReason = messageDelta.Delta.StopReason.Value();
                         }
                     }
 
-                    return (e, (string?)null);
+                    return (e, (string?)null, capturedStopReason, capturedUsage);
                 });
             }
             catch (Exception ex)
@@ -118,51 +123,44 @@ namespace TradingApp.Infrastructure.Services
                 isRetryable = ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex);
             }
 
+
             if (bootstrapFailed || enumerator is null)
             {
-                if (isNewConversation)
-                {
-                    try
-                    {
-                        await deleteConversationHandler(conversationId);
-                    }
-                    catch (Exception deleteEx)
-                    {
-                        _logger.LogError(deleteEx, "Failed to clean up orphaned conversation {ConversationId} after bootstrap failure", conversationId);
-                    }
-                }
-
                 throw new ChatStreamFailureException(failureMessage ?? "There was an error processing your request. Please try again.", isRetryable);
             }
 
             await using (enumerator)
             {
-                try
-                {
-                    await persistUserMessageHandler(userMessage);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to add the conversation message for conversation: {ConversationId}", conversationId);
-                    throw new InvalidOperationException("There was an error processing your request. Please try again.");
-                }
-
                 var hasYieldedAnyContent = false;
-                var stringBuilder = new StringBuilder();
-                var assistantMessageAccumulated = "";
                 StopReason stopReason = StopReason.EndTurn;
 
                 if (firstText is not null)
                 {
-                    assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, firstText);
                     hasYieldedAnyContent = true;
                     yield return firstText;
+                }
+                else if (bootstrapStopReason is not null)
+                {
+                    if (bootstrapUsage is not null)
+                    {
+                        await usageHandler(bootstrapUsage);
+                    }
+
+                    stopReason = bootstrapStopReason.Value;
+
+                    if (AnthropicStopReasonEvaluator.IsNotCoveredStopReason(stopReason) || AnthropicStopReasonEvaluator.IsCoveredStopReason(stopReason))
+                    {
+                        await stopReasonHandler(stopReason);
+                    }
+
+                    yield break;
                 }
 
                 while (true)
                 {
                     var hasNext = false;
                     var streamFailed = false;
+                    var midStreamIsRetryable = false;
 
                     try
                     {
@@ -171,18 +169,17 @@ namespace TradingApp.Infrastructure.Services
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Streaming failure while answering message: {UserMessage} | AnyContentYielded: {HasYieldedAnyContent}",
-                            userMessage, hasYieldedAnyContent);
+                        userMessage, hasYieldedAnyContent);
                         streamFailed = true;
+                        midStreamIsRetryable = ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex);
                     }
 
                     if (streamFailed)
-                        throw new InvalidOperationException("The response was interrupted partway through. Please try again.");
+                        throw new ChatStreamFailureException("The response was interrupted partway through. Please try again.", midStreamIsRetryable);
 
                     if (!hasNext)
                     {
-                        await persistAssistantMessageHandler(assistantMessageAccumulated);
-
-                        if (IsNotableStopReason(stopReason))
+                        if (AnthropicStopReasonEvaluator.IsNotCoveredStopReason(stopReason))
                         {
                             await stopReasonHandler(stopReason);
                         }
@@ -193,52 +190,22 @@ namespace TradingApp.Infrastructure.Services
                     if (enumerator.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
                     {
                         hasYieldedAnyContent = true;
-                        assistantMessageAccumulated = BuildAssistantConversationMessage(stringBuilder, text.Text);
                         yield return text.Text;
                     }
 
                     if (enumerator.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
                     {
-                        //_logger.LogInformation("Usage:{Usage}", messageDelta.Usage);
                         await usageHandler(messageDelta.Usage);
 
                         stopReason = messageDelta.Delta.StopReason.Value();
+
+                        if (AnthropicStopReasonEvaluator.IsCoveredStopReason(stopReason))
+                        {
+                            await stopReasonHandler(stopReason);
+                        }
                     }
                 }
             }
-        }
-
-        private static bool IsNotableStopReason(StopReason stopReason)
-        {
-            switch (stopReason)
-            {
-                case StopReason.EndTurn:
-                    return false;
-                case StopReason.PauseTurn:
-                    return false;
-                case StopReason.StopSequence:
-                    return false;
-                case StopReason.ToolUse:
-                    return false;
-                case StopReason.Refusal:
-                    return true;
-                case StopReason.ModelContextWindowExceeded:
-                    return true;
-                case StopReason.MaxTokens:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        private static string BuildAssistantConversationMessage
-        (
-           StringBuilder stringBuilder,
-           string assistantMessage
-        )
-        {
-            stringBuilder.Append(assistantMessage);
-            return stringBuilder.ToString();
         }
 
         private static string BuildFailureMessage(Exception ex)

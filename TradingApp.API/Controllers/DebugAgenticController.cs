@@ -1,7 +1,11 @@
+using Anthropic.Models.Messages;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Text;
 using System.Threading.Tasks;
 using TradingApp.Infrastructure.Interfaces.Agentic;
+using TradingApp.Infrastructure.Models.Agentic;
 
 namespace TradingApp.API.Controllers
 {

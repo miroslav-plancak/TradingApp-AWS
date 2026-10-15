@@ -5,7 +5,7 @@ namespace TradingApp.Infrastructure.Interfaces.Agentic
 {
     public interface IAgenticLoopService
     {
-        Task<AgenticLoopResponse> RunAgenticLoopAsync(AgenticLoopRequest request);
+        IAsyncEnumerable<string> RunAgenticLoopAsync(AgenticLoopRequest request);
         Task<string> HandleGetAllIndexedFileNames();
     }
 }

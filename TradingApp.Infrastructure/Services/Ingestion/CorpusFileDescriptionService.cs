@@ -4,6 +4,7 @@ using System.Text.Json;
 using TradingApp.Infrastructure.Helpers.ConversationMemory;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
+using TradingApp.Infrastructure.Interfaces.Anthropic;
 using TradingApp.Infrastructure.Interfaces.Ingestion;
 using TradingApp.Infrastructure.Models.Ingestion;
 
@@ -35,7 +36,7 @@ namespace TradingApp.Infrastructure.Services.Ingestion
                 Model = "claude-haiku-4-5",
                 MaxTokens = 4096,
                 System = SystemPromptBuilder.CorpusFileDescriptionSystemInstruction,
-                Messages = [new() { Role = Role.User, Content = BuildSourceFilesPayload(rawSourceFiles)}]
+                Messages = [new() { Role = Role.User, Content = BuildSourceFilesPayload(rawSourceFiles) }]
             };
 
             try
