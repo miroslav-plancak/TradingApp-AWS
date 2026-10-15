@@ -302,5 +302,11 @@ namespace TradingApp.Infrastructure
             services.AddScoped<IAgenticLoopService, AgenticLoopService>();
             return services;
         }
+
+        public static IServiceCollection AddToolDispatcherService(this IServiceCollection services)
+        {
+            services.AddScoped<IToolDispatcherService, ToolDispatcherService>();
+            return services;
+        }
     }
 }

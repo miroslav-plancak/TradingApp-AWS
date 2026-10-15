@@ -11,8 +11,7 @@ namespace TradingApp.Infrastructure.Models.Agentic
         public required List<ContentBlockParam> AssistantContent { get; set; }
         public required object ToolResultsContentLock { get; set; }
         public required List<ContentBlockParam> ToolResultsContent { get; set; }
-        public required int ToolCallNumber;
-        public required int SearchKnowledgeBaseToolCounter;
+        public required ToolCallCounters Counters { get; set; }
         public required int ApiCallNumber { get; set; }
         public required object SeenChunkKeysLock { get; set; }
         public required HashSet<string> SeenChunkKeys { get; set; }

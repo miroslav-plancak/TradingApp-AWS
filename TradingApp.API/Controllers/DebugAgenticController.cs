@@ -25,10 +25,8 @@ namespace TradingApp.API.Controllers
         [HttpGet]
         public async Task<ActionResult<string>> RunAsync([FromQuery] string question)
         {
-            var answer = await _agenticLoopService.HandleGetAllIndexedFileNames();
-            return Ok(answer);
-            //await Task.CompletedTask;
-            //return Ok("Temporary placeholder response");
+            await Task.CompletedTask;
+            return Ok("Temporary placeholder response");
         }
     }
 }

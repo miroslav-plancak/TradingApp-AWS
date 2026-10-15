@@ -162,6 +162,8 @@ namespace TradingApp.Infrastructure.Services.Anthropic
                     var streamFailed = false;
                     var midStreamIsRetryable = false;
 
+                    string? midStreamFailureMessage = null;
+
                     try
                     {
                         hasNext = await enumerator.MoveNextAsync();
@@ -172,10 +174,11 @@ namespace TradingApp.Infrastructure.Services.Anthropic
                         userMessage, hasYieldedAnyContent);
                         streamFailed = true;
                         midStreamIsRetryable = ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex);
+                        midStreamFailureMessage = BuildFailureMessage(ex);
                     }
 
                     if (streamFailed)
-                        throw new ChatStreamFailureException("The response was interrupted partway through. Please try again.", midStreamIsRetryable);
+                        throw new ChatStreamFailureException(midStreamFailureMessage ?? "The response was interrupted partway through. Please try again.", midStreamIsRetryable);
 
                     if (!hasNext)
                     {
