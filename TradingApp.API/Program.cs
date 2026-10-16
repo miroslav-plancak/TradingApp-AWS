@@ -63,6 +63,7 @@ builder.Services.AddFileExpansionService();
 builder.Services.AddQueryDecompositionService();
 builder.Services.AddCorpusManifestService();
 builder.Services.AddAgenticLoopService();
+builder.Services.AddToolDispatcherService();
 builder.Services.AddChunkingRetrievalService();
 builder.Services.AddConversationChunkArbiterServices();
 builder.Services.AddConversationFullFileArbiterServices();
