@@ -45,7 +45,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             _corpusManifestService = corpusManifestService;
         }
 
-        public async Task<string> DispatchToolCallAsync(ToolDispatchRequest request)
+        public async Task<(string Text, bool IsError)> DispatchToolCallAsync(ToolDispatchRequest request)
         {
             var context = request.Context;
             var toolUseBlock = request.ToolUseBlock;
@@ -53,12 +53,14 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var toolName = request.ToolName;
 
             string toolTextResult;
+            var isError = false;
 
             try
             {
                 if (!isKnownTool)
                 {
                     toolTextResult = $"Unknown tool: {toolUseBlock.Name}";
+                    isError = true;
                     _logger.LogWarning("RunAgenticLoopAsync | UnknownToolCalled:{ToolName}", toolUseBlock.Name);
                     await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}] Unknown tool called: {toolUseBlock.Name}", toolUseBlock.Input);
                 }
@@ -114,11 +116,12 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     }
                 }
 
-                return toolTextResult;
+                return (toolTextResult, isError);
             }
             catch (Exception ex)
             {
                 toolTextResult = $"{SystemPromptBuilder.ToolTextResultGenerationErrorMessageSentinel} {toolUseBlock.ID}";
+                isError = true;
 
                 _logger.LogWarning(ex, "get_full_file tool call failed | UnableToGenerateToolResult " +
                     "| ToolUseID:{ToolUseID}", toolUseBlock.ID);
@@ -126,7 +129,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}]" +
                     $" Result from tool #{Volatile.Read(ref context.Counters.ToolCallNumber)}: {toolName}", toolTextResult);
 
-                return toolTextResult;
+                return (toolTextResult, isError);
             }
         }
 

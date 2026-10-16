@@ -23,11 +23,13 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "Do not retry search_knowledge_base or get_full_file for that file's content - answer from what you " +
             "already have, or state plainly that it isn't in the knowledge base.";
 
-        public const string MaxTokensContinuationMessageSentinel =
-            "Your previous response was cut off mid-way because it ran out of tokens. " +
-            "Here is exactly what you had generated so far:\n\n\"{0}\"\n\n" +
-            "Continue generating from exactly where that text left off. Do not repeat any of it, and do not add any preamble, " +
-            "acknowledgement, or commentary before continuing - just resume the answer directly.";
+        // The partial text itself is no longer embedded here - it's recorded as its own
+        // real Assistant turn right before this message, so the model already has it in
+        // context and doesn't need it re-quoted back to it.
+        public const string MaxTokensContinuationPrompt =
+            "Your previous response was cut off because it ran out of tokens. Continue generating " +
+            "from exactly where you left off. Do not repeat any of what you already said, and do not " +
+            "add any preamble, acknowledgement, or commentary before continuing - just resume the answer directly.";
 
         private const string CompactionSystemInstruction =
             "Compact the given conversation messages into a single summary that preserves:\n\n" +
@@ -134,11 +136,6 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             var summary = FormatExistingSummary(existingSummary);
 
             return string.Join("\n\n", new string?[] { CompactionSystemInstruction, summary }.Where(section => !string.IsNullOrWhiteSpace(section)));
-        }
-
-        public static string BuildMaxTokensContinuationMessage(string assistantResponse)
-        {
-            return string.Format(MaxTokensContinuationMessageSentinel, assistantResponse);
         }
 
         private static string? FormatExistingSummary(string? existingSummary)

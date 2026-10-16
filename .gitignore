@@ -425,3 +425,6 @@ AzuriteConfig
 /.github
 /CLAUDE.md
 /.claude
+
+# Scratch/throwaway code-testing console app - deliberately not part of the solution or git history
+/Playground

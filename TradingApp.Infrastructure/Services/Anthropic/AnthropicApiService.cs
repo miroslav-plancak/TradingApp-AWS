@@ -97,22 +97,30 @@ namespace TradingApp.Infrastructure.Services.Anthropic
                     var e = _anthropicClient.Messages.CreateStreaming(messageCreateParams).GetAsyncEnumerator();
                     StopReason? capturedStopReason = null;
                     MessageDeltaUsage? capturedUsage = null;
-
-                    while (await e.MoveNextAsync())
+                    try
                     {
-                        if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                        while (await e.MoveNextAsync())
                         {
-                            return (e, text.Text, capturedStopReason, capturedUsage);
-                        }
+                            if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
+                            {
+                                return (e, text.Text, capturedStopReason, capturedUsage);
+                            }
 
-                        if (e.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
-                        {
-                            capturedUsage = messageDelta.Usage;
-                            capturedStopReason = messageDelta.Delta.StopReason.Value();
+                            if (e.Current.TryPickDelta(out var messageDelta) && messageDelta?.Delta?.StopReason?.Value() != null)
+                            {
+                                capturedUsage = messageDelta.Usage;
+                                capturedStopReason = messageDelta.Delta.StopReason.Value();
+                            }
                         }
+                    
+                        return (e, (string?)null, capturedStopReason, capturedUsage);
                     }
-
-                    return (e, (string?)null, capturedStopReason, capturedUsage);
+                    catch (Exception ex)
+                    {
+                        await e.DisposeAsync();
+                        _logger.LogError(ex, "Streaming bootstrap attempt failed before reaching first content/stop-reason: {UserMessage}", userMessage);
+                        throw;
+                    }
                 });
             }
             catch (Exception ex)

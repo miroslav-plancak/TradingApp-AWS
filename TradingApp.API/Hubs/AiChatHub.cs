@@ -79,14 +79,11 @@ namespace TradingApp.API.Hubs
                 ConversationId = existingConversation.ConversationId,
                 ConversationMessagesHistory = conversationHistory,
                 CompactedSummary = existingConversation.CompactedSummary,
-                ToolCalledHandler = async (result) =>
-                {
-                    await Clients.Caller.SendAsync("ToolCalled", $"# {Interlocked.Increment(ref toolUseCounter)} - {result}");
-                },
+                ToolCalledHandler = async (toolName) =>{ await TryNotifyToolCalledAsync(toolUseCounter, toolName); },
                 MaxTokensHandler = (result) => { maxTokens = result; return Task.CompletedTask; },
                 UsageHandler = (result) => { usage = result; return Task.CompletedTask; },
-                ResponseTruncatedHandler = async (result) => { await Clients.Caller.SendAsync("ResponseTruncated", result); },
-                UnexpectedStopReasonHandler = async (result) => { await NotifyStopReasonAsync(result.ToString()); }
+                ResponseTruncatedHandler = async (result) => { await TryNotifyResponseTruncationAsync(result); },
+                UnexpectedStopReasonHandler = async (result) => { await TryNotifyUnexpectedStopReasonAsync(result.ToString()); }
             }).GetAsyncEnumerator();
 
             await using (enumerator)
@@ -103,7 +100,7 @@ namespace TradingApp.API.Hubs
                     {
                         if (ex is ChatStreamFailureException { IsRetryable: false })
                         {
-                            await NotifyChatStreamFailureAsync(ex.Message);
+                            await TryNotifyChatStreamFailureAsync(ex.Message);
                         }
 
                         if (isNewConversation)
@@ -134,6 +131,7 @@ namespace TradingApp.API.Hubs
                 if (isNewConversation)
                 {
                     await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                    await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId);
                 }
 
                 _logger.LogError("Assistant message response is empty.");
@@ -190,7 +188,7 @@ namespace TradingApp.API.Hubs
                 {
                     existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
 
-                    await NotifyConversationStartedAsync(existingConversation.ConversationId);
+                    await TryNotifyConversationStartedAsync(existingConversation.ConversationId);
 
                     return (true, new ConversationCompactionStateDTO { ConversationId = existingConversation.ConversationId });
                 }
@@ -206,7 +204,7 @@ namespace TradingApp.API.Hubs
                     {
                         existingConversation = await _conversationService.CreateConversationAsync(userMessage, clientRequestId);
 
-                        await NotifyConversationStartedAsync(existingConversation.ConversationId);
+                        await TryNotifyConversationStartedAsync(existingConversation.ConversationId);
 
                         return (true, new ConversationCompactionStateDTO { ConversationId = existingConversation.ConversationId });
                     }
@@ -219,7 +217,7 @@ namespace TradingApp.API.Hubs
             }
         }
 
-        private async Task NotifyConversationStartedAsync(Guid newConversationId)
+        private async Task TryNotifyConversationStartedAsync(Guid newConversationId)
         {
             try
             {
@@ -242,7 +240,19 @@ namespace TradingApp.API.Hubs
             }
         }
 
-        private async Task NotifyStopReasonAsync(string stopReason)
+        private async Task TryNotifyToolCalledAsync(int toolUseCounter, string toolName)
+        {
+            try
+            {
+                await Clients.Caller.SendAsync("ToolCalled", $"# {Interlocked.Increment(ref toolUseCounter)} - {toolName}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to notify client of tool called: {ToolName}", toolName);
+            }
+        }
+
+        private async Task TryNotifyResponseTruncationAsync(string stopReason)
         {
             try
             {
@@ -250,11 +260,23 @@ namespace TradingApp.API.Hubs
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to notify client of stop reason {StopReason}", stopReason);
+                _logger.LogWarning(ex, "Failed to notify client of response truncation {StopReason}", stopReason);
             }
         }
 
-        private async Task NotifyChatStreamFailureAsync(string message)
+        private async Task TryNotifyUnexpectedStopReasonAsync(string stopReason) 
+        {
+            try
+            {
+                await Clients.Caller.SendAsync("UnexpectedStopReason", stopReason);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to notify client of unexpected stop reason {StopReason}", stopReason);
+            }
+        }
+
+        private async Task TryNotifyChatStreamFailureAsync(string message)
         {
             try
             {
