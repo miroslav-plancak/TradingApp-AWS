@@ -135,12 +135,15 @@ namespace TradingApp.Infrastructure.Helpers.Agentic
                "fetch its complete content; false means don't call get_full_file for it, it will return no content). " +
                "Call this when search_knowledge_base returns nothing relevant for a topic and you're unsure whether " +
                "the content is indexed at all, before retrying with different search phrasing. Use the Description " +
-               "field to judge relevance - you usually won't know the exact file name in advance, so look for a " +
-               "plausible match based on what each file does, not an exact name match. If nothing in the manifest " +
-               "looks related, the tool call result returns " +
+               "field to judge relevance yourself - you usually won't know the exact file name in advance, so look " +
+               "for a plausible match based on what each file does, not an exact name match. There is no separate " +
+               "signal for 'nothing in the manifest matched your query' - you have to judge that from the returned " +
+               "list. The only dedicated sentinel is " +
                $"\"{SystemPromptBuilder.NoSourceFileNamesFoundSentinel}\", " +
-               "treat that as a strong signal the content isn't indexed, and prefer telling the user you don't have this " +
-               " information over continuing to retry search_knowledge_base or get_full_file with different wording.",
+               "which fires only if the knowledge base has nothing indexed at all (rare). In the normal case, if you " +
+               "don't see a plausible match in the returned list, treat that as a strong signal the content isn't " +
+               "indexed, and prefer telling the user you don't have this information over continuing to retry " +
+               "search_knowledge_base or get_full_file with different wording.",
 
             InputSchema = new InputSchema
             {

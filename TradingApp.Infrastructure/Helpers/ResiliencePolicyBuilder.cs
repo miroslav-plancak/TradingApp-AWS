@@ -134,6 +134,9 @@ namespace TradingApp.Infrastructure.Helpers
             if (exception is AnthropicIOException)
                 return true;
 
+            if (exception is AnthropicSseException || exception is AnthropicInvalidDataException)
+                return true;
+
             return AreThereAnyTransientHttpExceptions(exception);
         }
 

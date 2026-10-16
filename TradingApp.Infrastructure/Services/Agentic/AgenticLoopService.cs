@@ -1,6 +1,5 @@
 ﻿using Anthropic.Models.Messages;
 using Microsoft.Extensions.Logging;
-using System.Text;
 using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Agentic;
 using TradingApp.Infrastructure.Helpers.Anthropic;
@@ -60,7 +59,6 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var anthropicCallCounter = 0;
             var maxTokensIterationCounter = 0;
             var toolCallCounters = new ToolCallCounters();
-            var maxTokensResponseAccumulator = new StringBuilder();
 
             while (true)
             {
@@ -163,12 +161,16 @@ namespace TradingApp.Infrastructure.Services.Agentic
                                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
                                     $"Loop stopped —  StopReason:{response.StopReason} | continuing", maxTokensTextBlock!.Text);
 
-                                maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
+                                messages.Add(new MessageParam
+                                {
+                                    Role = Role.Assistant,
+                                    Content = new List<ContentBlockParam> { new TextBlockParam(maxTokensTextBlock.Text) }
+                                });
 
                                 messages.Add(new MessageParam
                                 {
                                     Role = Role.User,
-                                    Content = SystemPromptBuilder.BuildMaxTokensContinuationMessage(maxTokensResponseAccumulator.ToString())
+                                    Content = SystemPromptBuilder.MaxTokensContinuationPrompt
                                 });
                             }
                             else
@@ -192,8 +194,6 @@ namespace TradingApp.Infrastructure.Services.Agentic
                             {
                                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason} | returning response",
                                     maxTokensTextBlock!.Text);
-
-                                maxTokensResponseAccumulator.Append(maxTokensTextBlock.Text);
                             }
                             else
                             {
@@ -205,8 +205,6 @@ namespace TradingApp.Infrastructure.Services.Agentic
                             await usageHandler(ToMessageDeltaUsage(response.Usage));
                             await maxTokensHandler(parameters.MaxTokens * 2);
                             await responseTruncatedHandler(response.StopReason.ToString());
-
-                            yield return maxTokensResponseAccumulator.ToString();
 
                             yield break;
                         }
@@ -221,8 +219,6 @@ namespace TradingApp.Infrastructure.Services.Agentic
                                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason}",
                                     textBlock.Text);
 
-                                maxTokensResponseAccumulator.Append(textBlock.Text);
-
                                 await usageHandler(ToMessageDeltaUsage(response.Usage));
                                 await maxTokensHandler(parameters.MaxTokens);
 
@@ -230,8 +226,6 @@ namespace TradingApp.Infrastructure.Services.Agentic
                                 {
                                     await unexpectedStopReasonHandler(response.StopReason);
                                 }
-
-                                yield return maxTokensIterationCounter == 1 ? maxTokensResponseAccumulator.ToString() : textBlock.Text;
 
                                 yield break;
                             }
@@ -256,6 +250,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
                     var assistantContent = new List<ContentBlockParam>();
                     var toolResultsContent = new List<ContentBlockParam>();
+                    var fetchedFullFileNames = new List<string>();
 
                     ToolDispatchContext toolDispatchContext = new ToolDispatchContext
                     {
@@ -271,12 +266,17 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         SeenChunkKeys = seenChunkKeys,
                         ChunksByToolUseIdLock = chunksByToolUseIdLock,
                         ChunksByToolUseId = chunksByToolUseId,
-                        Messages = messages
+                        Messages = messages,
+                        FetchedFullFileNamesLock = new object(),
+                        FetchedFullFileNames = fetchedFullFileNames
                     };
 
                     await DispatchToolUseBlocksAsync(toolDispatchContext);
 
                     await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"ApiCall #{apiCallNumber} ends", "");
+
+                    toolResultsContent = await ApplySameRoundChunkDedupAsync(
+                        fetchedFullFileNames, toolResultsContent, chunksByToolUseIdLock, chunksByToolUseId);
 
                     messages.Add(new MessageParam { Role = Role.Assistant, Content = assistantContent });
                     messages.Add(new MessageParam { Role = Role.User, Content = toolResultsContent });
@@ -298,6 +298,37 @@ namespace TradingApp.Infrastructure.Services.Agentic
             }
         }
 
+        private async Task<List<ContentBlockParam>> ApplySameRoundChunkDedupAsync
+        (
+            List<string> fetchedFullFileNames,
+            List<ContentBlockParam> toolResultsContent,
+            object chunksByToolUseIdLock,
+            Dictionary<string, List<RetrievedChunk>> chunksByToolUseId
+        )
+        {
+            foreach (var fetchedFileName in fetchedFullFileNames)
+            {
+                var toolResultsWrapper = new List<MessageParam> { new MessageParam { Role = Role.User, Content = toolResultsContent } };
+
+                var sameRoundRemovalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(
+                    fetchedFileName, toolResultsWrapper, chunksByToolUseIdLock, chunksByToolUseId);
+
+                if (toolResultsWrapper[0].Content.TryPickContentBlockParams(out var prunedToolResultsContent))
+                {
+                    toolResultsContent = prunedToolResultsContent.ToList();
+                }
+
+                _logger.LogInformation("RemoveNowRedundantChunksForFile (same-round) | FileName:{FileName} | Removals:{RemovalCount}",
+                    fetchedFileName, sameRoundRemovalsLog.Count);
+
+                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
+                    $"Same-round chunk dedup after get_full_file: {fetchedFileName}",
+                    sameRoundRemovalsLog.Count > 0 ? string.Join("\n", sameRoundRemovalsLog) : "No same-round chunks found for this file - nothing to dedup.");
+            }
+
+            return toolResultsContent;
+        }
+
         private async Task DispatchToolUseBlocksAsync(ToolDispatchContext context)
         {
             var request = context.Request;
@@ -311,6 +342,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var messages = context.Messages;
             var apiCallNumber = context.ApiCallNumber;
             var counters = context.Counters;
+            var fetchedFullFileNamesLock = context.FetchedFullFileNamesLock;
+            var fetchedFullFileNames = context.FetchedFullFileNames;
 
             var tasks = response.Content.Select(async block =>
             {
@@ -336,9 +369,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     await request.ToolCalledHandler(toolUseBlock.Name);
 
                     var isKnownTool = Enum.TryParse<AgenticTool>(toolUseBlock.Name, out var toolName);
-                    string toolTextResult;
 
-                    toolTextResult = await _toolDispatcherService.DispatchToolCallAsync(new ToolDispatchRequest
+                    var (toolTextResult, toolResultIsError) = await _toolDispatcherService.DispatchToolCallAsync(new ToolDispatchRequest
                     {
                         Context = context,
                         ToolUseBlock = toolUseBlock,
@@ -366,6 +398,12 @@ namespace TradingApp.Infrastructure.Services.Agentic
                             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
                                 $"Chunk dedup after get_full_file: {fileName}",
                                 removalsLog.Count > 0 ? string.Join("\n", removalsLog) : "No prior chunks found for this file - nothing to dedup.");
+
+                           
+                            lock (fetchedFullFileNamesLock)
+                            {
+                                fetchedFullFileNames.Add(fileName);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -381,7 +419,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     {
                         toolResultsContent.Add(new ToolResultBlockParam(toolUseBlock.ID)
                         {
-                            Content = toolTextResult
+                            Content = toolTextResult,
+                            IsError = toolResultIsError
                         });
                     }
                 }

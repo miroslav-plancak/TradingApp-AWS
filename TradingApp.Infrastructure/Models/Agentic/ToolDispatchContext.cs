@@ -18,5 +18,7 @@ namespace TradingApp.Infrastructure.Models.Agentic
         public required object ChunksByToolUseIdLock { get; set; }
         public required Dictionary<string, List<RetrievedChunk>> ChunksByToolUseId { get; set; }
         public required List<MessageParam> Messages { get; set; }
+        public required object FetchedFullFileNamesLock { get; set; }
+        public required List<string> FetchedFullFileNames { get; set; }
     }
 }
