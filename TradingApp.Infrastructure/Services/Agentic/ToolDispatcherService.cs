@@ -45,22 +45,23 @@ namespace TradingApp.Infrastructure.Services.Agentic
             _corpusManifestService = corpusManifestService;
         }
 
-        public async Task<(string Text, bool IsError)> DispatchToolCallAsync(ToolDispatchRequest request)
+        public async Task<ToolDispatchResponse> DispatchToolCallAsync(ToolDispatchRequest request)
         {
             var context = request.Context;
             var toolUseBlock = request.ToolUseBlock;
             var isKnownTool = request.IsKnownTool;
             var toolName = request.ToolName;
-
             string toolTextResult;
-            var isError = false;
+            var toolDispatchResponse = new ToolDispatchResponse();
 
             try
             {
                 if (!isKnownTool)
                 {
                     toolTextResult = $"Unknown tool: {toolUseBlock.Name}";
-                    isError = true;
+
+                    toolDispatchResponse.IsError = true;
+
                     _logger.LogWarning("RunAgenticLoopAsync | UnknownToolCalled:{ToolName}", toolUseBlock.Name);
                     await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}] Unknown tool called: {toolUseBlock.Name}", toolUseBlock.Input);
                 }
@@ -89,6 +90,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         ApiCallNumber = context.ApiCallNumber
                     };
 
+                    toolDispatchResponse.CurrentToolCallNumber = toolExecutionContext.ToolCallNumber;
+
                     bool shouldSkipGetFullFileToolCall = false;
                     bool manifestSaysNotIndexed = false;
                     bool chunksAlreadyReconstructFile = false;
@@ -103,7 +106,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
                     if (shouldSkipGetFullFileToolCall)
                     {
-                        toolTextResult = $"{SystemPromptBuilder.NoFullFileContentAvailableSentinel} {toolUseBlock.Input["fileName"].ToString()}.";
+                        var fileName = toolUseBlock.Input.TryGetValue("fileName", out var fileNameValue) ? fileNameValue.ToString() : string.Empty;
+                        toolTextResult = $"{SystemPromptBuilder.NoFullFileContentAvailableSentinel} {fileName}.";
 
                         var reason = manifestSaysNotIndexed ? "manifest shows not fully indexed" : "chunks already reconstruct the full file";
 
@@ -116,20 +120,23 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     }
                 }
 
-                return (toolTextResult, isError);
+                toolDispatchResponse.Text = toolTextResult;
+                return toolDispatchResponse;
             }
             catch (Exception ex)
             {
                 toolTextResult = $"{SystemPromptBuilder.ToolTextResultGenerationErrorMessageSentinel} {toolUseBlock.ID}";
-                isError = true;
 
-                _logger.LogWarning(ex, "get_full_file tool call failed | UnableToGenerateToolResult " +
+                toolDispatchResponse.IsError = true;
+
+                _logger.LogWarning(ex, "get_full_file tool call skipped | UnableToResolveFileName " +
                     "| ToolUseID:{ToolUseID}", toolUseBlock.ID);
 
                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}]" +
-                    $" Result from tool #{Volatile.Read(ref context.Counters.ToolCallNumber)}: {toolName}", toolTextResult);
+                    $" Result from tool #{toolDispatchResponse.CurrentToolCallNumber}: {toolName}", toolTextResult);
 
-                return (toolTextResult, isError);
+                toolDispatchResponse.Text = toolTextResult;
+                return toolDispatchResponse;
             }
         }
 

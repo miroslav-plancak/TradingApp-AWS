@@ -1,8 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
-using TradingApp.Infrastructure.Enums;
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
-using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.ConversationMemory;
 using TradingApp.Infrastructure.Models.Retrieval;
@@ -17,9 +15,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
         private readonly IChunkRerankingService _chunkRerankingService;
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IFileExpansionService _fileExpansionService;
-        private readonly IConversationReuseService _conversationReuseService;
-        private readonly IQueryDecompositionService _queryDecompositionService;
-
+       
         private const double RelevanceFloor = 0.53;
 
         public ContextRetrievalService
@@ -29,9 +25,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             IKnowledgeBaseQueryService knowledgeBaseQueryService,
             IChunkRerankingService chunkRerankingService,
             IFileDebugLogger fileDebugLogger,
-            IFileExpansionService fileExpansionService,
-            IConversationReuseService conversationReuseService,
-            IQueryDecompositionService queryDecompositionService
+            IFileExpansionService fileExpansionService
         )
         {
             _logger = logger;
@@ -40,8 +34,6 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _chunkRerankingService = chunkRerankingService;
             _fileDebugLogger = fileDebugLogger;
             _fileExpansionService = fileExpansionService;
-            _conversationReuseService = conversationReuseService;
-            _queryDecompositionService = queryDecompositionService;
         }
 
         public async Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query)
@@ -104,7 +96,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 .First())
                 .ToList();
         }
-
+        //TODO: check if we need these
         private static RetrievalResult BuildReorderedReusableRetrievalResult(ReusableConversationArtifacts reusableConversationContent)
         {
             var reusableChunks = RetrievalResultMapping.ToRetrievedChunks(reusableConversationContent.ConversationChunks);

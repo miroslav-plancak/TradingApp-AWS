@@ -23,9 +23,6 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
             "Do not retry search_knowledge_base or get_full_file for that file's content - answer from what you " +
             "already have, or state plainly that it isn't in the knowledge base.";
 
-        // The partial text itself is no longer embedded here - it's recorded as its own
-        // real Assistant turn right before this message, so the model already has it in
-        // context and doesn't need it re-quoted back to it.
         public const string MaxTokensContinuationPrompt =
             "Your previous response was cut off because it ran out of tokens. Continue generating " +
             "from exactly where you left off. Do not repeat any of what you already said, and do not " +

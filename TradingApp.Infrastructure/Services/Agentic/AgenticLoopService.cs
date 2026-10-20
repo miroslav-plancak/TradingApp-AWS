@@ -370,13 +370,17 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
                     var isKnownTool = Enum.TryParse<AgenticTool>(toolUseBlock.Name, out var toolName);
 
-                    var (toolTextResult, toolResultIsError) = await _toolDispatcherService.DispatchToolCallAsync(new ToolDispatchRequest
+                    var toolDispatchResponse = await _toolDispatcherService.DispatchToolCallAsync(new ToolDispatchRequest
                     {
                         Context = context,
                         ToolUseBlock = toolUseBlock,
                         IsKnownTool = isKnownTool,
                         ToolName = toolName
                     });
+
+                    var toolTextResult = toolDispatchResponse.Text;
+                    var toolResultIsError = toolDispatchResponse.IsError;
+                    var currentToolCallNumber = toolDispatchResponse.CurrentToolCallNumber;
 
                     if (toolName == AgenticTool.search_knowledge_base
                            && !string.IsNullOrEmpty(toolTextResult)
@@ -407,10 +411,10 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "get_full_file tool call failed | UnableToRemoveRedundantChunksForFile ");
+                            _logger.LogWarning(ex, "get_full_file tool call succeeded | UnableToRemoveRedundantChunksForFile ");
 
                             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{apiCallNumber}]" +
-                                $" Result from tool #{Volatile.Read(ref counters.ToolCallNumber)}: {toolName}",
+                                $" Result from tool #{currentToolCallNumber}: {toolName}",
                                 "Failed removing redundant chunks for the file.");
                         }
                     }

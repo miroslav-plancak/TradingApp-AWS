@@ -4,6 +4,6 @@ namespace TradingApp.Infrastructure.Interfaces.Agentic
 {
     public interface IToolDispatcherService
     {
-        Task<(string Text, bool IsError)> DispatchToolCallAsync(ToolDispatchRequest request);
+        Task<ToolDispatchResponse> DispatchToolCallAsync(ToolDispatchRequest request);
     }
 }
