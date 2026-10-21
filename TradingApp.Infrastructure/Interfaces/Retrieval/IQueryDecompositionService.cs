@@ -2,6 +2,6 @@
 {
     public interface IQueryDecompositionService
     {
-        Task<List<string>> DecomposeQueryAsync(string userMessage);
+        Task<List<string>> DecomposeQueryAsync(string userMessage, CancellationToken ct = default);
     }
 }

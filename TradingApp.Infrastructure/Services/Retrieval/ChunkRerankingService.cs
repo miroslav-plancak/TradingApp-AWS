@@ -27,7 +27,8 @@ namespace TradingApp.Infrastructure.Services.Retrieval
         public async Task<List<RetrievedChunk>> RerankRetrievedChunksAsync
         (
             string userMessage,
-            List<RetrievedChunk> retrievedChunks
+            List<RetrievedChunk> retrievedChunks,
+            CancellationToken ct
         )
         {
             await _fileDebugLogger.LogSectionAsync("1-rag-candidates-pre-rerank", $"Query: {userMessage}",
@@ -35,8 +36,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             try
             {
-
-                var rerankResults = await _voyageRerankService.RerankAsync(userMessage, retrievedChunks.Select(x => x.Content ?? string.Empty).ToList());
+                var rerankResults = await _voyageRerankService.RerankAsync(userMessage, retrievedChunks.Select(x => x.Content ?? string.Empty).ToList(), ct);
                 var rerankedChunks = rerankResults
                     .OrderByDescending(r => r.RelevanceScore)
                     .Select(x =>
@@ -62,6 +62,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                   RetrievalResultLogFormatter.FormatRerankResultIntoFileLog(rerankResults.ToList()));
 
                 return rerankedChunks;
+            }
+            catch(OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "ChunkRerankingCancelled | UserMessage: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex)
             {

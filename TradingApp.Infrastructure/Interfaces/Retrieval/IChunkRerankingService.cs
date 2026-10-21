@@ -7,7 +7,8 @@ namespace TradingApp.Infrastructure.Interfaces.Retrieval
         Task<List<RetrievedChunk>> RerankRetrievedChunksAsync
         (
             string userMessage,
-            List<RetrievedChunk> retrievedChunks
+            List<RetrievedChunk> retrievedChunks,
+            CancellationToken ct = default
         );
     }
 }

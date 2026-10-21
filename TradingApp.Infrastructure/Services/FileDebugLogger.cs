@@ -50,22 +50,65 @@ namespace TradingApp.Infrastructure.Services
             }
         }
 
+        private const int DividerWidth = 100;
+
         private static string BuildBlock
         (
             string title,
             string content
         )
         {
-            var divider = new string('=', 80);
+            var divider = new string('=', DividerWidth);
             var stringBuilder = new StringBuilder();
 
             stringBuilder.AppendLine(divider);
-            stringBuilder.AppendLine($"[{DateTime.Now:dd-MM-yyyy HH:mm:ss}] {title}");
+            stringBuilder.AppendLine(WrapText($"[{DateTime.Now:dd-MM-yyyy HH:mm:ss}] {title}", DividerWidth));
             stringBuilder.AppendLine(divider);
-            stringBuilder.AppendLine(content);
+            stringBuilder.AppendLine(WrapText(content, DividerWidth));
             stringBuilder.AppendLine();
 
             return stringBuilder.ToString();
+        }
+
+        private static string WrapText(string text, int width)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+
+            var wrapped = new StringBuilder();
+
+            foreach (var line in text.Split('\n'))
+            {
+                if (line.Length <= width)
+                {
+                    wrapped.AppendLine(line.TrimEnd('\r'));
+                    continue;
+                }
+
+                var currentLine = new StringBuilder();
+
+                foreach (var word in line.Split(' '))
+                {
+                    if (currentLine.Length > 0 && currentLine.Length + 1 + word.Length > width)
+                    {
+                        wrapped.AppendLine(currentLine.ToString());
+                        currentLine.Clear();
+                    }
+
+                    if (currentLine.Length > 0)
+                    {
+                        currentLine.Append(' ');
+                    }
+
+                    currentLine.Append(word);
+                }
+
+                if (currentLine.Length > 0)
+                {
+                    wrapped.AppendLine(currentLine.ToString());
+                }
+            }
+
+            return wrapped.ToString().TrimEnd('\r', '\n');
         }
     }
 }

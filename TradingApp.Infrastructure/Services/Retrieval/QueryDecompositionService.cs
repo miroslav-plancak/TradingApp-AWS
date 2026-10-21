@@ -28,7 +28,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _anthropicApiService = anthropicApiService;
         }
 
-        public async Task<List<string>> DecomposeQueryAsync(string userMessage)
+        public async Task<List<string>> DecomposeQueryAsync(string userMessage, CancellationToken ct)
         {
 
             var parameters = new MessageCreateParams
@@ -43,7 +43,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             {
                 if (string.IsNullOrWhiteSpace(userMessage)) return []; //TODO: revise if this is good enough of a guard.
 
-                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage);
+                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage, ct);
                 var extractedJson = LlmJsonExtractor.ExtractJsonArray(result);
 
                 try
@@ -67,6 +67,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 }
 
                 return [userMessage];
+            }
+            catch (OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "QueryDecompositionCancelled | Question: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex)
             {

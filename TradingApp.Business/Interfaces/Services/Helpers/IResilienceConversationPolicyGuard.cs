@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TradingApp.Business.Interfaces.Services.Helpers
@@ -7,13 +8,15 @@ namespace TradingApp.Business.Interfaces.Services.Helpers
     {
         Task GuardViaResiliencePolicyAsync
         (
-            Func<Task> sqlOperation,
-            string operationName
+            Func<CancellationToken, Task> sqlOperation,
+            string operationName,
+            CancellationToken ct = default
         );
         Task<TResult> GuardViaResiliencePolicyAsync<TResult>
         (
-            Func<Task<TResult>> sqlOperation,
-            string operationName
+            Func<CancellationToken, Task<TResult>> sqlOperation,
+            string operationName,
+            CancellationToken ct = default
         );
     }
 }

@@ -53,6 +53,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var toolName = request.ToolName;
             string toolTextResult;
             var toolDispatchResponse = new ToolDispatchResponse();
+            CancellationToken cancellationToken = request.Context.Request.CancellationToken;
 
             try
             {
@@ -63,7 +64,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     toolDispatchResponse.IsError = true;
 
                     _logger.LogWarning("RunAgenticLoopAsync | UnknownToolCalled:{ToolName}", toolUseBlock.Name);
-                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}] Unknown tool called: {toolUseBlock.Name}", toolUseBlock.Input);
+                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", 
+                        $"[full-response][ApiCall #{context.ApiCallNumber}] Unknown tool called: {toolUseBlock.Name}", toolUseBlock.Input);
                 }
                 else if (toolName == AgenticTool.search_knowledge_base && Interlocked.Increment(ref context.Counters.SearchKnowledgeBaseToolCounter) > 3)
                 {
@@ -72,7 +74,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     toolTextResult = SystemPromptBuilder.SearchCapReachedSentinel;
 
                     await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                        $"[ApiCall #{context.ApiCallNumber}] Search capped — consecutive empty limit reached", toolUseBlock.Input);
+                        $"[full-response][ApiCall #{context.ApiCallNumber}] Search capped — consecutive empty limit reached", toolUseBlock.Input);
                 }
                 else
                 {
@@ -112,16 +114,22 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         var reason = manifestSaysNotIndexed ? "manifest shows not fully indexed" : "chunks already reconstruct the full file";
 
                         await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                            $"[ApiCall #{context.ApiCallNumber}] get_full_file intercepted — reason:", reason);
+                            $"[full-response][ApiCall #{context.ApiCallNumber}] get_full_file intercepted — reason:", reason);
                     }
                     else
                     {
-                        toolTextResult = await ExecuteToolAsync(toolExecutionContext);
+                        toolTextResult = await ExecuteToolAsync(toolExecutionContext, cancellationToken);
                     }
                 }
 
                 toolDispatchResponse.Text = toolTextResult;
                 return toolDispatchResponse;
+            }
+            catch(OperationCanceledException ocEx) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "ToolCallCancelled | ToolId: {ToolId} | ToolName: {ToolName} | ApiCallNumber: {ApiCallNumber}",
+                    toolUseBlock.ID, toolName, context.ApiCallNumber);
+                throw;
             }
             catch (Exception ex)
             {
@@ -132,7 +140,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 _logger.LogWarning(ex, "get_full_file tool call skipped | UnableToResolveFileName " +
                     "| ToolUseID:{ToolUseID}", toolUseBlock.ID);
 
-                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}]" +
+                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[full-response][ApiCall #{context.ApiCallNumber}]" +
                     $" Result from tool #{toolDispatchResponse.CurrentToolCallNumber}: {toolName}", toolTextResult);
 
                 toolDispatchResponse.Text = toolTextResult;
@@ -140,11 +148,11 @@ namespace TradingApp.Infrastructure.Services.Agentic
             }
         }
 
-        private async Task<string> ExecuteToolAsync(ToolExecutionContext context)
+        private async Task<string> ExecuteToolAsync(ToolExecutionContext context, CancellationToken ct)
         {
             _logger.LogInformation("RunAgenticLoopAsync | ToolCalled:{ToolName}", context.ToolName);
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                $"[ApiCall #{context.ApiCallNumber}] Tool #{context.ToolCallNumber} called: {context.ToolName}", context.Input);
+                $"[full-response][ApiCall #{context.ApiCallNumber}] Tool #{context.ToolCallNumber} called: {context.ToolName}", context.Input);
 
             string result;
 
@@ -152,27 +160,27 @@ namespace TradingApp.Infrastructure.Services.Agentic
             {
                 case AgenticTool.decompose_query:
                     {
-                        result = await HandleDecomposeQueryAsync(context.Input);
+                        result = await HandleDecomposeQueryAsync(context.Input, ct);
                         break;
                     }
                 case AgenticTool.search_knowledge_base:
                     {
-                        result = await HandleSearchKnowledgeBaseAsync(context);
+                        result = await HandleSearchKnowledgeBaseAsync(context, ct);
                         break;
                     }
                 case AgenticTool.get_full_file:
                     {
-                        result = await HandleGetFullFileAsync(context);
+                        result = await HandleGetFullFileAsync(context, ct);
                         break;
                     }
                 case AgenticTool.get_database_context:
                     {
-                        result = await HandleGetDatabaseContextAsync(context);
+                        result = await HandleGetDatabaseContextAsync(context, ct);
                         break;
                     }
                 case AgenticTool.get_all_indexed_files:
                     {
-                        result = await HandleGetAllIndexedFileNames();
+                        result = await HandleGetAllIndexedFileNames(ct);
                         break;
                     }
                 default:
@@ -180,13 +188,13 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     break;
             }
 
-            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{context.ApiCallNumber}]" +
+            await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[full-response][ApiCall #{context.ApiCallNumber}]" +
                 $" Result from tool #{context.ToolCallNumber}: {context.ToolName}", result);
 
             return result;
         }
 
-        private async Task<string> HandleDecomposeQueryAsync(IReadOnlyDictionary<string, JsonElement> input)
+        private async Task<string> HandleDecomposeQueryAsync(IReadOnlyDictionary<string, JsonElement> input, CancellationToken ct)
         {
             string question;
 
@@ -200,14 +208,14 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 question = "";
             }
 
-            var subQueries = await _queryDecompositionService.DecomposeQueryAsync(question);
+            var subQueries = await _queryDecompositionService.DecomposeQueryAsync(question, ct);
 
             if (subQueries.Count == 0) return SystemPromptBuilder.DecomposeQueryInvalidInputSentinel;
 
             return string.Join("\n", subQueries.Select((subQuery, i) => $"{i + 1}.{subQuery}"));
         }
 
-        private async Task<string> HandleSearchKnowledgeBaseAsync(ToolExecutionContext context)
+        private async Task<string> HandleSearchKnowledgeBaseAsync(ToolExecutionContext context, CancellationToken ct)
         {
             string query;
 
@@ -221,7 +229,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 query = "";
             }
 
-            var retrievedChunks = await _contextRetrievalService.RetrieveRelevantChunksAsync(query);
+            var retrievedChunks = await _contextRetrievalService.RetrieveRelevantChunksAsync(query, ct);
 
             var newChunks = retrievedChunks.Where(chunk =>
             {
@@ -245,7 +253,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             return ChunkResultDeduplication.FormatChunksForToolResult(uShapeSortedChunks);
         }
 
-        private async Task<string> HandleGetFullFileAsync(ToolExecutionContext context)
+        private async Task<string> HandleGetFullFileAsync(ToolExecutionContext context, CancellationToken ct)
         {
             string fileName;
 
@@ -259,7 +267,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 fileName = "";
             }
 
-            var fullFileContent = await _contextRetrievalService.GetFullFileContentAsync(fileName);
+            var fullFileContent = await _contextRetrievalService.GetFullFileContentAsync(fileName, ct);
 
             if (string.IsNullOrEmpty(fullFileContent))
             {
@@ -275,7 +283,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             }
         }
 
-        private async Task<string> HandleGetDatabaseContextAsync(ToolExecutionContext context)
+        private async Task<string> HandleGetDatabaseContextAsync(ToolExecutionContext context, CancellationToken ct)
         {
             string query;
 
@@ -290,7 +298,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             }
 
             var reusableContextArtifacts = await _conversationReuseService.TryRetrieveReusableConversationArtifactsAsync(
-                context.ConversationId, query);
+                context.ConversationId, query, ct);
 
             if (reusableContextArtifacts.ConversationChunks.Count == 0 && reusableContextArtifacts.ConversationFullFiles.Count == 0)
             {
@@ -312,7 +320,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var uShapeSortedChunks = ChunkReordering.ReorderChunksToUShape(
                 newChunks.Where(chunk => !fullFileDedupKeys.Contains(chunk.SourceFile ?? string.Empty)).ToList());
 
-            var fullFilesMap = await _fileExpansionService.GetExistingFullFileContentsMapAsync(uShapeSortedChunks.Select(x => x.SourceFile));
+            var fullFilesMap = await _fileExpansionService.GetExistingFullFileContentsMapAsync(uShapeSortedChunks.Select(x => x.SourceFile), ct);
 
             foreach (var chunk in uShapeSortedChunks)
             {
@@ -341,9 +349,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
             return string.IsNullOrEmpty(combinedResult) ? SystemPromptBuilder.NoReusableContextFoundSentinel : combinedResult;
         }
 
-        public async Task<string> HandleGetAllIndexedFileNames()
+        public async Task<string> HandleGetAllIndexedFileNames(CancellationToken ct)
         {
-            var corpusManifest = await _corpusManifestService.GetEntireCorpusManifestAsync();
+            var corpusManifest = await _corpusManifestService.GetEntireCorpusManifestAsync(ct);
 
             if (corpusManifest.Count == 0)
             {

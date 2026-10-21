@@ -2,7 +2,6 @@
 using TradingApp.Infrastructure.Helpers.Retrieval;
 using TradingApp.Infrastructure.Interfaces;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
-using TradingApp.Infrastructure.Models.ConversationMemory;
 using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Retrieval
@@ -36,17 +35,17 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _fileExpansionService = fileExpansionService;
         }
 
-        public async Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query)
+        public async Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query, CancellationToken ct)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(query)) return [];
 
-                var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(query);
+                var routedLlmQueryResponse = await _queryRoutingService.LlmQueryRouteAsync(query, ct);
 
-                var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(query);
+                var retrievedKNNChunks = await _knowledgeBaseQueryService.SearchKnnChunksAsync(query, ct);
 
-                var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(query);
+                var retrievedLexicalChunks = await _knowledgeBaseQueryService.SearchLexicalChunksAsync(query, ct);
 
                 var unifiedChunks = ChunkFusion.UnifyChunksFromBothSearchQueries(retrievedKNNChunks, retrievedLexicalChunks);
 
@@ -54,7 +53,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 var unifiedChunksSortedByRrfScore = ChunkFusion.SortUnifiedChunksByRrfScore(unifiedChunks, knnChunksRankMap, lexicalChunksRankMap);
 
-                var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(query, unifiedChunksSortedByRrfScore);
+                var rerankedChunks = await _chunkRerankingService.RerankRetrievedChunksAsync(query, unifiedChunksSortedByRrfScore, ct);
 
                 rerankedChunks.RemoveAll(chunk => chunk.RelevanceScore < RelevanceFloor);
 
@@ -62,7 +61,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 var distinctCappedChunks = DedupCombinedCappedChunks(cappedChunks);
 
-                var fullFilesMap = await _fileExpansionService.GetExistingFullFileContentsMapAsync(distinctCappedChunks.Select(x => x.SourceFile));
+                var fullFilesMap = await _fileExpansionService.GetExistingFullFileContentsMapAsync(distinctCappedChunks.Select(x => x.SourceFile), ct);
 
                 foreach (var chunk in distinctCappedChunks)
                 {
@@ -74,6 +73,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
                 return distinctCappedChunks;
             }
+            catch(OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "ChunkRetrievalCancelled | Query: {Query}", query);
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected failure occurred while retrieving chunks for query: {Query}", query);
@@ -81,9 +85,9 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             }
         }
 
-        public async Task<string> GetFullFileContentAsync(string fileName)
+        public async Task<string> GetFullFileContentAsync(string fileName, CancellationToken ct)
         {
-            var fileContents = await _knowledgeBaseQueryService.GetSourceFileContentsAsync(new[] { fileName });
+            var fileContents = await _knowledgeBaseQueryService.GetSourceFileContentsAsync(new[] { fileName },ct);
             var content = fileContents.TryGetValue(fileName, out var value) ? value : string.Empty;
             return content;
         }
@@ -95,40 +99,6 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 .Select(group => group.OrderByDescending(x => x.RelevanceScore)
                 .First())
                 .ToList();
-        }
-        //TODO: check if we need these
-        private static RetrievalResult BuildReorderedReusableRetrievalResult(ReusableConversationArtifacts reusableConversationContent)
-        {
-            var reusableChunks = RetrievalResultMapping.ToRetrievedChunks(reusableConversationContent.ConversationChunks);
-            var fullFileContents = RetrievalResultMapping.ToFullFileContents(reusableConversationContent.ConversationFullFiles);
-
-            return new RetrievalResult
-            {
-                ChunkFallbacks = ChunkReordering.ReorderChunksToUShape(
-                    reusableChunks.Where(x => !fullFileContents.ContainsKey(x.SourceFile ?? string.Empty)).ToList()),
-                FullFileContents = ChunkReordering.ReorderFullFilesToUShape(fullFileContents, reusableChunks)
-            };
-        }
-
-        private void LogRedisSearchResults
-        (
-            List<RetrievedChunk> filteredRetrievedChunks,
-            Dictionary<string, string> filesEligibleForExpansion,
-            string userMessage
-        )
-        {
-            _logger.LogInformation("Query: {userMessage}", userMessage);
-
-            foreach (var chunk in filteredRetrievedChunks)
-            {
-                _logger.LogInformation("SourceFile: {SourceFile} | knnScore={knnScore} | lexicalScore={lexicalScore} | relevanceScore={relevanceScore}",
-                    chunk.SourceFile?.ToString(), chunk.KnnScore?.ToString(), chunk.LexicalScore?.ToString(), chunk.RelevanceScore.ToString());
-            }
-
-            foreach (var expandedFile in filesEligibleForExpansion.Keys)
-            {
-                _logger.LogInformation("Expanded full file: {SourceFile}", expandedFile);
-            }
         }
     }
 }

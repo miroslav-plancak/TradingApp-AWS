@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -52,7 +53,8 @@ namespace TradingApp.API.Hubs
         (
              string userMessage,
              Guid? conversationId,
-             Guid? clientRequestId
+             Guid? clientRequestId,
+             [EnumeratorCancellation] CancellationToken cancellationToken
         )
         {
             if (string.IsNullOrWhiteSpace(userMessage)) throw new HubException("Message cannot be empty.");
@@ -79,22 +81,36 @@ namespace TradingApp.API.Hubs
                 ConversationId = existingConversation.ConversationId,
                 ConversationMessagesHistory = conversationHistory,
                 CompactedSummary = existingConversation.CompactedSummary,
-                ToolCalledHandler = async (toolName) =>{ await TryNotifyToolCalledAsync(toolUseCounter, toolName); },
+                ToolCalledHandler = async (toolName) =>
+                {
+                  await TryNotifyToolCalledAsync(Interlocked.Increment(ref toolUseCounter), toolName);
+                },
                 MaxTokensHandler = (result) => { maxTokens = result; return Task.CompletedTask; },
                 UsageHandler = (result) => { usage = result; return Task.CompletedTask; },
                 ResponseTruncatedHandler = async (result) => { await TryNotifyResponseTruncationAsync(result); },
-                UnexpectedStopReasonHandler = async (result) => { await TryNotifyUnexpectedStopReasonAsync(result.ToString()); }
-            }).GetAsyncEnumerator();
+                UnexpectedStopReasonHandler = async (result) => { await TryNotifyUnexpectedStopReasonAsync(result.ToString()); },
+                CancellationToken = cancellationToken
+            }).GetAsyncEnumerator(CancellationToken.None);
+
+            var isCancellationRequested = false;
 
             await using (enumerator)
             {
+                
                 while (true)
                 {
                     var hasNext = false;
-
+                    
                     try
                     {
                         hasNext = await enumerator.MoveNextAsync();
+                    }
+                    catch (OperationCanceledException ocEx) when (cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogInformation(ocEx, "SendUserMessageAsyncCancelled | ConversationId: {ConversationId} | UserMessage: {UserMessage}",
+                            existingConversation.ConversationId, userMessage);
+
+                        isCancellationRequested = true;
                     }
                     catch (Exception ex)
                     {
@@ -105,8 +121,9 @@ namespace TradingApp.API.Hubs
 
                         if (isNewConversation)
                         {
-                            await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
-                            await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId);
+                            await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId); 
+                            //TODO: if we do not succeed writing the chunks that are orphaned into the DB, we can clean them up here for new conversation.
+                            await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId, CancellationToken.None);
                         }
 
                         _logger.LogError(ex, "General error occured while itterating through anthropic streaming response.");
@@ -131,11 +148,19 @@ namespace TradingApp.API.Hubs
                 if (isNewConversation)
                 {
                     await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
-                    await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId);
+                    if (!isCancellationRequested)
+                    {
+                        await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId, CancellationToken.None);
+                    }
                 }
 
-                _logger.LogError("Assistant message response is empty.");
-                throw new HubException("Assistant message response failed, try again.");
+                if (!isCancellationRequested)
+                {
+                    _logger.LogError("Assistant message response is empty.");
+                    throw new HubException("Assistant message response failed, try again.");
+                }
+
+                yield break;
             }
 
             try
@@ -244,7 +269,7 @@ namespace TradingApp.API.Hubs
         {
             try
             {
-                await Clients.Caller.SendAsync("ToolCalled", $"# {Interlocked.Increment(ref toolUseCounter)} - {toolName}");
+                await Clients.Caller.SendAsync("ToolCalled", $"# {toolUseCounter} - {toolName}");
             }
             catch (Exception ex)
             {

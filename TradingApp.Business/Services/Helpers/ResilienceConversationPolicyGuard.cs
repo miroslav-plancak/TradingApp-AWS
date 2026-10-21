@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.Business.Interfaces.Services.Helpers;
 using TradingApp.Infrastructure;
@@ -26,13 +27,19 @@ namespace TradingApp.Business.Services.Helpers
 
         public async Task GuardViaResiliencePolicyAsync
         (
-            Func<Task> sqlOperation,
-            string operationName
+            Func<CancellationToken, Task> sqlOperation,
+            string operationName,
+            CancellationToken ct = default
         )
         {
             try
             {
-                await _resiliencePolicy.ExecuteAsync(sqlOperation);
+                await _resiliencePolicy.ExecuteAsync(sqlOperation, ct);
+            }
+            catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "OperationCancelled | Stopping write | Operation: {Operation}", operationName);
+                throw;
             }
             catch (BrokenCircuitException)
             {
@@ -48,13 +55,19 @@ namespace TradingApp.Business.Services.Helpers
 
         public async Task<TResult> GuardViaResiliencePolicyAsync<TResult>
         (
-            Func<Task<TResult>> sqlOperation,
-            string operationName
+            Func<CancellationToken, Task<TResult>> sqlOperation,
+            string operationName,
+            CancellationToken ct = default
         )
         {
             try
             {
-                return await _resiliencePolicy.ExecuteAsync(sqlOperation);
+                return await _resiliencePolicy.ExecuteAsync(sqlOperation, ct);
+            }
+            catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "OperationCancelled | Stopping query | Operation: {Operation}", operationName);
+                throw;
             }
             catch (BrokenCircuitException)
             {

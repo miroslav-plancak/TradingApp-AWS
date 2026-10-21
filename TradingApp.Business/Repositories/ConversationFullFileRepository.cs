@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services.Helpers;
@@ -34,7 +35,7 @@ namespace TradingApp.Business.Repositories
             await using (tradingDbContextFactory)
             {
 
-                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
                 {
                     var existingRow = await tradingDbContextFactory.ConversationFullFiles
                             .AsNoTracking()
@@ -88,13 +89,15 @@ namespace TradingApp.Business.Repositories
             }
         }
 
-        public async Task<IEnumerable<ConversationFullFile>> GetConversationFullFilesAsync(Guid? conversationId)
+        public async Task<IEnumerable<ConversationFullFile>> GetConversationFullFilesAsync(Guid? conversationId, CancellationToken ct)
         {
-            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync();
+            ct.ThrowIfCancellationRequested();
+
+            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync(ct);
 
             await using (tradingDbContextFactory)
             {
-                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
                 {
                     if (conversationId == Guid.Empty)
                     {
@@ -105,11 +108,11 @@ namespace TradingApp.Business.Repositories
                                 .AsNoTracking()
                                 .Where(x => x.ConversationId == conversationId)
                                 .OrderBy(x => x.CreatedAt)
-                                .ToListAsync();
+                                .ToListAsync(policyCancellationToken);
 
                     return allConversationFullFiles;
 
-                }, $"{nameof(GetConversationFullFilesAsync)}:FetchAll:{conversationId}");
+                }, $"{nameof(GetConversationFullFilesAsync)}:FetchAll:{conversationId}", ct);
             }
         }
     }

@@ -4,7 +4,11 @@ namespace TradingApp.Infrastructure.Interfaces.ConversationMemory
 {
     public interface IConversationFullFileArbiterService
     {
-        Task<List<CreatedConversationFullFileResponseDTO>> DetermineSufficientFullFilesAsync(string userMessage,
-            List<CreatedConversationFullFileResponseDTO> existingFullFiles);
+        Task<List<CreatedConversationFullFileResponseDTO>> DetermineSufficientFullFilesAsync
+        (   
+            string userMessage,
+            List<CreatedConversationFullFileResponseDTO> existingFullFiles,
+            CancellationToken ct = default
+        );
     }
 }

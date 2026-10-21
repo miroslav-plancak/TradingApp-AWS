@@ -32,10 +32,11 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         public async Task<List<CreatedConversationChunkResponseDTO>> DetermineSufficientChunksAsync
         (
             string userMessage,
-            List<CreatedConversationChunkResponseDTO> existingChunks
+            List<CreatedConversationChunkResponseDTO> existingChunks,
+            CancellationToken ct
         )
         {
-            if (existingChunks.Count == 0 && string.IsNullOrWhiteSpace(userMessage)) return [];
+            if (existingChunks.Count == 0 || string.IsNullOrWhiteSpace(userMessage)) return [];
 
             var conversationChunksContext = SerializeExistingConversationChunks(existingChunks);
 
@@ -49,7 +50,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
             try
             {
-                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage);
+                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage, ct);
                 var extractedJson = LlmJsonExtractor.ExtractJsonObject(result);
 
                 try
@@ -71,6 +72,11 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                 }
 
                 return [];
+            }
+            catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "ChunkArbitrationCancelled | Question: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex)
             {
