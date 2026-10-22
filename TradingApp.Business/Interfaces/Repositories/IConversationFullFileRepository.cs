@@ -10,5 +10,6 @@ namespace TradingApp.Business.Interfaces.Repositories
     {
         Task<ConversationFullFile> CreateConversationFullFileAsync(ConversationFullFile conversationFullFile);
         Task<IEnumerable<ConversationFullFile>> GetConversationFullFilesAsync(Guid? conversationId, CancellationToken ct = default);
+        Task<int> DeleteConversationFullFilesByConversationIdAsync(Guid conversationId);
     }
 }

@@ -38,7 +38,6 @@ namespace TradingApp.Business.Services.Regular.Conversation
                 _logger.LogInformation("GetConversationsSuccessful | Conversations fetched count: {Count}", createdConversationResponseDTOs.Count());
 
                 return createdConversationResponseDTOs.ToList();
-
             }
             catch (Exception ex)
             {
@@ -130,19 +129,19 @@ namespace TradingApp.Business.Services.Regular.Conversation
 
             try
             {
-                var orderEntity = await _conversationRepository.GetConversationById(conversationId);
+                var conversationEntity = await _conversationRepository.GetConversationById(conversationId);
 
-                if (orderEntity == null)
+                if (conversationEntity == null)
                 {
                     _logger.LogWarning("ConversationNotFoundForDeletion | ConversationId: {ConversationId}", conversationId);
                     throw new KeyNotFoundException($"Conversation {conversationId} not found.");
                 }
 
-                var deleted = await _conversationRepository.DeleteConversationByIdAsync(conversationId);
+                var isConversationDeleted = await _conversationRepository.DeleteConversationByIdAsync(conversationId);
 
                 _logger.LogInformation("ConversationDeleted | ConversationId: {ConversationId}", conversationId);
 
-                return deleted;
+                return isConversationDeleted;
             }
             catch (KeyNotFoundException)
             {
@@ -154,7 +153,5 @@ namespace TradingApp.Business.Services.Regular.Conversation
                 throw new Exception($"Failed to delete conversation {conversationId}", ex);
             }
         }
-
-
     }
 }

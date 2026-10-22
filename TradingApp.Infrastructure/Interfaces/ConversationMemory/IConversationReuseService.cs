@@ -7,8 +7,7 @@ namespace TradingApp.Infrastructure.Interfaces.ConversationMemory
     {
         Task<ReusableConversationArtifacts> TryRetrieveReusableConversationArtifactsAsync
         (
-            Guid conversationId,
-            string userMessage,
+            ReusableConversationArtifactsRequest request,
             CancellationToken ct = default
         );
         Task TryPersistReusableConversationArtifactsAsync

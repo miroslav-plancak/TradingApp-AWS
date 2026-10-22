@@ -328,8 +328,13 @@ namespace TradingApp.Infrastructure.Services.Agentic
             {
                 var toolResultsWrapper = new List<MessageParam> { new MessageParam { Role = Role.User, Content = toolResultsContent } };
 
-                var sameRoundRemovalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(
-                    fetchedFileName, toolResultsWrapper, chunksByToolUseIdLock, chunksByToolUseId);
+                var sameRoundRemovalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(new RedundantChunkRemovalRequest
+                {
+                    FileName = fetchedFileName,
+                    Messages = toolResultsWrapper,
+                    ChunksByToolUseIdLock = chunksByToolUseIdLock,
+                    ChunksByToolUseId = chunksByToolUseId
+                });
 
                 if (toolResultsWrapper[0].Content.TryPickContentBlockParams(out var prunedToolResultsContent))
                 {
@@ -411,8 +416,13 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         try
                         {
                             var fileName = toolUseBlock.Input["fileName"].GetString() ?? string.Empty;
-                            var removalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(
-                                fileName, messages, chunksByToolUseIdLock, chunksByToolUseId);
+                            var removalsLog = ChunkResultDeduplication.RemoveNowRedundantChunksForFile(new RedundantChunkRemovalRequest
+                            {
+                                FileName = fileName,
+                                Messages = messages,
+                                ChunksByToolUseIdLock = chunksByToolUseIdLock,
+                                ChunksByToolUseId = chunksByToolUseId
+                            });
 
                             _logger.LogInformation("RemoveNowRedundantChunksForFile " +
                                 "| FileName:{FileName} | Removals:{RemovalCount}", fileName, removalsLog.Count);

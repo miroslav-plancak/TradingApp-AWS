@@ -7,6 +7,7 @@ namespace TradingApp.Infrastructure.Models.Agentic
     public class ToolExecutionContext
     {
         public Guid ConversationId { get; set; }
+        public bool IsNewConversation { get; set; }
         public string ToolUseId { get; set; } = string.Empty;
         public int ToolCallNumber { get; set; }
         public AgenticTool ToolName { get; set; }

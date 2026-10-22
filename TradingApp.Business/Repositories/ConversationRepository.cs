@@ -33,13 +33,13 @@ namespace TradingApp.Business.Repositories
             Guid? clientRequestId
         )
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
             {
                 if (clientRequestId != null)
                 {
                     var existingRow = await _tradingDbContext.Conversations
                         .AsNoTracking()
-                        .SingleOrDefaultAsync(x => x.ClientRequestId == clientRequestId);
+                        .SingleOrDefaultAsync(x => x.ClientRequestId == clientRequestId, policyCancellationToken);
                     if (existingRow != null)
                     {
                         return existingRow;
@@ -53,7 +53,7 @@ namespace TradingApp.Business.Repositories
 
                 _tradingDbContext.Conversations.Add(conversation);
 
-                await _tradingDbContext.SaveChangesAsync();
+                await _tradingDbContext.SaveChangesAsync(policyCancellationToken);
 
                 _tradingDbContext.Entry(conversation).State = EntityState.Detached;
 
@@ -63,38 +63,38 @@ namespace TradingApp.Business.Repositories
 
         public async Task<IEnumerable<Conversation>> GetConversationsAsync()
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
                 await _tradingDbContext.Conversations
                       .AsNoTracking()
                       .OrderByDescending(x => x.CreatedAt)
-                      .ToListAsync(),
+                      .ToListAsync(policyCancellationToken),
                       $"{nameof(GetConversationsAsync)}:Fetch");
         }
 
         public async Task<Conversation> GetConversationById(Guid conversationId)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
                 await _tradingDbContext.Conversations
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == conversationId),
+                    .SingleOrDefaultAsync(x => x.Id == conversationId, policyCancellationToken),
                 $"{nameof(GetConversationById)}:Fetch:{conversationId}");
         }
 
         public async Task<bool> DeleteConversationByIdAsync(Guid conversationId)
         {
-            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
 
                 await _tradingDbContext.Conversations
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.Id == conversationId),
+                    .SingleOrDefaultAsync(x => x.Id == conversationId, policyCancellationToken),
                     $"{nameof(DeleteConversationByIdAsync)}:Fetch:{conversationId}");
 
             if (conversation == null) return false;
 
-            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
             {
                 _tradingDbContext.Conversations.Remove(conversation);
-                await _tradingDbContext.SaveChangesAsync();
+                await _tradingDbContext.SaveChangesAsync(policyCancellationToken);
             },
             $"{nameof(DeleteConversationByIdAsync)}:Delete:{conversationId}");
 
@@ -103,13 +103,14 @@ namespace TradingApp.Business.Repositories
 
         public async Task<ConversationMessage> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
             {
                 if (request.ClientRequestId != null)
                 {
                     var existingConversationMessage = await _tradingDbContext.ConversationMessages
                     .AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.ConversationId == request.ConversationId && x.ClientRequestId == request.ClientRequestId);
+                    .SingleOrDefaultAsync(x => x.ConversationId == request.ConversationId 
+                                            && x.ClientRequestId == request.ClientRequestId, policyCancellationToken);
 
                     if (existingConversationMessage != null)
                     {
@@ -128,7 +129,7 @@ namespace TradingApp.Business.Repositories
                 };
 
                 _tradingDbContext.ConversationMessages.Add(newConversationMessage);
-                await _tradingDbContext.SaveChangesAsync();
+                await _tradingDbContext.SaveChangesAsync(policyCancellationToken);
 
                 return newConversationMessage;
             }, $"{nameof(CreateConversationMessageAsync)}:Create:{request.ConversationId}");
@@ -136,18 +137,27 @@ namespace TradingApp.Business.Repositories
 
         public async Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
             {
                 var allConversationMessages = await _tradingDbContext.ConversationMessages
                             .AsNoTracking()
                             .Where(x => x.ConversationId == conversationId
                                         && (createdAfter == null || x.CreatedAt > createdAfter))
                             .OrderBy(x => x.CreatedAt)
-                            .ToListAsync();
+                            .ToListAsync(policyCancellationToken);
 
                 return allConversationMessages;
 
             }, $"{nameof(GetConversationMessagesAsync)}:FetchAll:{conversationId}");
+        }
+
+        public async Task<int> DeleteConversationMessagesByConversationIdAsync(Guid conversationId)
+        {
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
+                await _tradingDbContext.ConversationMessages
+                    .Where(x => x.ConversationId == conversationId)
+                    .ExecuteDeleteAsync(policyCancellationToken),
+                $"{nameof(DeleteConversationMessagesByConversationIdAsync)}:Delete:{conversationId}");
         }
 
         public async Task UpdateConversationByConversationId
@@ -157,18 +167,18 @@ namespace TradingApp.Business.Repositories
             DateTimeOffset lastMessageCoveredBySummary
         )
         {
-            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
                  await _tradingDbContext.Conversations
-                     .FirstOrDefaultAsync(x => x.Id == conversationId),
+                     .FirstOrDefaultAsync(x => x.Id == conversationId, policyCancellationToken),
                  $"{nameof(UpdateConversationByConversationId)}:Fetch:{conversationId}");
 
             if (conversation != null)
             {
-                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
+                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
                 {
                     conversation.CompactedSummary = compactedSummary;
                     conversation.SummaryCoversMessagesUpTo = lastMessageCoveredBySummary;
-                    await _tradingDbContext.SaveChangesAsync();
+                    await _tradingDbContext.SaveChangesAsync(policyCancellationToken);
                 },
                 $"{nameof(UpdateConversationByConversationId)}:Save:{conversationId}");
             }

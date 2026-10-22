@@ -9,5 +9,6 @@ namespace TradingApp.Business.Interfaces.Services.Regular.Conversation
     {
         Task<CreatedConversationMessageResponseDTO> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request);
         Task<List<ConversationHistoryMessageDTO>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter);
+        Task DeleteConversationMessagesByConversationIdAsync(Guid conversationId);
     }
 }

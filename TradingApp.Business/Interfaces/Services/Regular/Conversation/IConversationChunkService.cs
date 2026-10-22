@@ -10,5 +10,6 @@ namespace TradingApp.Business.Interfaces.Services.Regular.Conversation
     {
         Task CreateConversationChunksAsync(List<CreateConversationChunkRequestDTO> request);
         Task<List<CreatedConversationChunkResponseDTO>> GetConversationChunksAsync(Guid conversationId, CancellationToken ct);
+        Task DeleteConversationChunksByConversationIdAsync(Guid conversationId);
     }
 }

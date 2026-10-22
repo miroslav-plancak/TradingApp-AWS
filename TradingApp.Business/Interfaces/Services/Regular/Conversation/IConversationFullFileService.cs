@@ -10,5 +10,6 @@ namespace TradingApp.Business.Interfaces.Services.Regular.Conversation
     {
         Task CreateConversationFullFilesAsync(List<CreateConversationFullFileRequestDTO> requests);
         Task<List<CreatedConversationFullFileResponseDTO>> GetConversationFullFilesAsync(Guid? conversationId, CancellationToken ct = default);
+        Task DeleteConversationFullFilesByConversationIdAsync(Guid conversationId);
     }
 }

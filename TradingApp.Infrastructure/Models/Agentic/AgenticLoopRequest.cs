@@ -6,6 +6,7 @@ namespace TradingApp.Infrastructure.Models.Agentic
     {
         public string UserMessage { get; set; } = string.Empty;
         public Guid ConversationId { get; set; }
+        public bool IsNewConversation { get; set; }
         public required IReadOnlyList<MessageParam> ConversationMessagesHistory { get; set; }
         public string? CompactedSummary { get; set; }
         public required Func<long, Task> MaxTokensHandler { get; set; }

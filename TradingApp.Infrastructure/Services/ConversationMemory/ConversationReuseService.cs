@@ -33,14 +33,17 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
         public async Task<ReusableConversationArtifacts> TryRetrieveReusableConversationArtifactsAsync
         (
-            Guid conversationId,
-            string userMessage,
+            ReusableConversationArtifactsRequest request,
             CancellationToken ct
         )
         {
+            var conversationId = request.ConversationId;
+            var userMessage = request.UserMessage;
+
             try
             {
-                //TODO: short circuit this for new conversation so that we do not waste time on these calls, because for new conversation there is no pre-existing context.
+                if (request.IsNewConversation) return new ReusableConversationArtifacts();
+
                 var allExistingConversationChunks = await _conversationChunkService.GetConversationChunksAsync(conversationId, ct);
 
                 var reusableConversationChunks = await _conversationChunkArbiterService.DetermineSufficientChunksAsync(userMessage, allExistingConversationChunks, ct);
