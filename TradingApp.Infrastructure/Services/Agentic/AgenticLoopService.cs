@@ -44,6 +44,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var maxTokensHandler = request.MaxTokensHandler;
             var responseTruncatedHandler = request.ResponseTruncatedHandler;
             var unexpectedStopReasonHandler = request.UnexpectedStopReasonHandler;
+            var cancellationToken = request.CancellationToken;
 
             _logger.LogInformation("RunAgenticLoopAsyncStarted | UserMessage:{UserMessage}", userMessage);
             await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", "Loop started", userMessage);
@@ -62,6 +63,13 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
             while (true)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("RunAgenticLoopAsyncCancelled | UserMessage: {UserMessage} | RoundsCompleted: {RoundsCompleted}",
+                        userMessage, anthropicCallCounter);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
                 var apiCallNumber = ++anthropicCallCounter;
 
                 var parameters = new MessageCreateParams
@@ -83,6 +91,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 StopReason stopReason = StopReason.EndTurn;
                 MessageDeltaUsage? tokenUsage = null;
 
+                _logger.LogInformation("RunAgenticLoopStreamAsyncStarted | ApiCall #{ApiCallNumber}", apiCallNumber);
+                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[streamed][ApiCall #{apiCallNumber}] Stream started", userMessage);
+
                 await foreach (var streamedTextChunk in _anthropicApiService.EstablishAgenticLoopStreamAsync
                 (
                     userMessage,
@@ -96,26 +107,30 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     {
                         tokenUsage = usage;
                         return Task.CompletedTask;
-                    }
+                    },
+                    cancellationToken
                 ))
                 {
-                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{apiCallNumber}] Streamed chunk",
+                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[streamed][ApiCall #{apiCallNumber}] Streamed chunk",
                         streamedTextChunk);
                     yield return streamedTextChunk;
                 }
 
-                _logger.LogInformation("RunAgenticLoopStreamAsyncEnded | StopReason: {StopReason}", stopReason);
-                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[ApiCall #{apiCallNumber}] Stream ended — StopReason: {stopReason}", "");
+                _logger.LogInformation("RunAgenticLoopStreamAsyncEnded | ApiCall #{ApiCallNumber} | StopReason: {StopReason}", apiCallNumber, stopReason);
+                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[streamed][ApiCall #{apiCallNumber}] Stream ended — StopReason: {stopReason}", "");
 
                 if (stopReason == StopReason.MaxTokens || stopReason == StopReason.ToolUse)
                 {
-                    var response = await _anthropicApiService.DispatchPromptWithFullResponseAsync(parameters, userMessage);
+                    _logger.LogInformation("RunAgenticLoopFullResponseAsyncStarted | ApiCall #{ApiCallNumber}", apiCallNumber);
+                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[full-response][ApiCall #{apiCallNumber}] Full-response call started", "");
+
+                    var response = await _anthropicApiService.DispatchPromptWithFullResponseAsync(parameters, userMessage, cancellationToken);
 
                     if (response == null)
                     {
                         _logger.LogWarning("RunAgenticLoopAsyncFailedRetrievingResponse| UserMessage:{UserMessage}", userMessage);
                         await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                            "Loop ended — null response", "DispatchPromptWithFullResponseAsync returned null");
+                            $"[full-response][ApiCall #{apiCallNumber}] Loop ended — null response", "DispatchPromptWithFullResponseAsync returned null");
 
                         if (tokenUsage is not null)
                         {
@@ -128,6 +143,9 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
                         yield break;
                     }
+
+                    _logger.LogInformation("RunAgenticLoopFullResponseAsyncEnded | ApiCall #{ApiCallNumber} | StopReason: {StopReason}", apiCallNumber, response.StopReason);
+                    await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[full-response][ApiCall #{apiCallNumber}] Full-response call ended — StopReason: {response.StopReason}", "");
 
                     if (response.StopReason == StopReason.MaxTokens)
                     {
@@ -159,7 +177,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                                 _logger.LogInformation("RunAgenticLoopAsyncStoppedTextBlockExists | continuing | StopReason:{StopReason} ", response.StopReason);
 
                                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                    $"Loop stopped —  StopReason:{response.StopReason} | continuing", maxTokensTextBlock!.Text);
+                                    $"[full-response][ApiCall #{apiCallNumber}] Loop stopped —  StopReason:{response.StopReason} | continuing", maxTokensTextBlock!.Text);
 
                                 messages.Add(new MessageParam
                                 {
@@ -180,7 +198,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                                     response.StopReason);
 
                                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                    $"Loop stopped —  StopReason: {response.StopReason} | retrying",
+                                    $"[full-response][ApiCall #{apiCallNumber}] Loop stopped —  StopReason: {response.StopReason} | retrying",
                                     "no usable textBlock detected - retrying unchanged");
                             }
 
@@ -192,13 +210,13 @@ namespace TradingApp.Infrastructure.Services.Agentic
 
                             if (isContinuable)
                             {
-                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason} | returning response",
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[full-response][ApiCall #{apiCallNumber}] Loop ended — StopReason: {response.StopReason} | returning response",
                                     maxTokensTextBlock!.Text);
                             }
                             else
                             {
                                 await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                                    $"Loop ended — StopReason: {response.StopReason} | returning without response",
+                                    $"[full-response][ApiCall #{apiCallNumber}] Loop ended — StopReason: {response.StopReason} | returning without response",
                                     "no usable textBlock detected - returning empty response");
                             }
 
@@ -216,7 +234,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                             if (block.TryPickText(out var textBlock))
                             {
                                 _logger.LogInformation("RunAgenticLoopAsyncEnded | StopReason: {StopReason}", response.StopReason);
-                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"Loop ended — StopReason: {response.StopReason}",
+                                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[full-response][ApiCall #{apiCallNumber}] Loop ended — StopReason: {response.StopReason}",
                                     textBlock.Text);
 
                                 await usageHandler(ToMessageDeltaUsage(response.Usage));
@@ -234,7 +252,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         _logger.LogWarning("RunAgenticLoopAsyncEndedTextBlockNotFound | StopReason:{StopReason}", response.StopReason);
 
                         await _fileDebugLogger.LogSectionAsync("agentic-loop-trace",
-                            $"Loop ended — {response.StopReason}, no text block found", "");
+                            $"[full-response][ApiCall #{apiCallNumber}] Loop ended — {response.StopReason}, no text block found", "");
 
                         await usageHandler(ToMessageDeltaUsage(response.Usage));
                         await maxTokensHandler(parameters.MaxTokens);

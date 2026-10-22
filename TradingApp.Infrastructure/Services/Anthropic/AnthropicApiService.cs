@@ -4,6 +4,7 @@ using Anthropic.Models.Messages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
+using System.Runtime.CompilerServices;
 using TradingApp.Infrastructure.Exceptions;
 using TradingApp.Infrastructure.Helpers;
 using TradingApp.Infrastructure.Helpers.Anthropic;
@@ -29,14 +30,14 @@ namespace TradingApp.Infrastructure.Services.Anthropic
             _resiliencePolicy = resiliencePolicy;
         }
 
-        public async Task<Message?> DispatchPromptWithFullResponseAsync(MessageCreateParams msgParams, string? userMessage)
+        public async Task<Message?> DispatchPromptWithFullResponseAsync(MessageCreateParams msgParams, string? userMessage, CancellationToken ct)
         {
             try
             {
-                var anthropicMessageResponse = await _resiliencePolicy.ExecuteAsync(async () =>
+                var anthropicMessageResponse = await _resiliencePolicy.ExecuteAsync(async (policyCancellationToken) =>
                 {
-                    return await _anthropicClient.Messages.Create(msgParams);
-                });
+                    return await _anthropicClient.Messages.Create(msgParams, policyCancellationToken);
+                },ct);
 
                 if (anthropicMessageResponse.Content.Count == 0)
                 {
@@ -44,6 +45,11 @@ namespace TradingApp.Infrastructure.Services.Anthropic
                 }
 
                 return anthropicMessageResponse;
+            }
+            catch (OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "AnthropicPromptCancelled | UserMessage: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientAnthropicApiException(ex))
             {
@@ -57,9 +63,9 @@ namespace TradingApp.Infrastructure.Services.Anthropic
             }
         }
 
-        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string? userMessage)
+        public async Task<string?> DispatchPromptAsync(MessageCreateParams msgParams, string? userMessage, CancellationToken ct)
         {
-            var anthropicMessageResponse = await DispatchPromptWithFullResponseAsync(msgParams, userMessage);
+            var anthropicMessageResponse = await DispatchPromptWithFullResponseAsync(msgParams, userMessage, ct); 
 
             if (anthropicMessageResponse == null) return null;
 
@@ -79,7 +85,8 @@ namespace TradingApp.Infrastructure.Services.Anthropic
             string userMessage,
             MessageCreateParams messageCreateParams,
             Func<StopReason, Task> stopReasonHandler,
-            Func<MessageDeltaUsage, Task> usageHandler
+            Func<MessageDeltaUsage, Task> usageHandler,
+            [EnumeratorCancellation] CancellationToken cancellationToken
         )
         {
             IAsyncEnumerator<RawMessageStreamEvent>? enumerator = null;
@@ -92,15 +99,23 @@ namespace TradingApp.Infrastructure.Services.Anthropic
 
             try
             {
-                (enumerator, firstText, bootstrapStopReason, bootstrapUsage) = await _resiliencePolicy.ExecuteAsync(async () =>
+                (enumerator, firstText, bootstrapStopReason, bootstrapUsage) = await _resiliencePolicy.ExecuteAsync(async (policyCancellationToken) =>
                 {
-                    var e = _anthropicClient.Messages.CreateStreaming(messageCreateParams).GetAsyncEnumerator();
+                    var e = _anthropicClient.Messages.CreateStreaming(messageCreateParams, policyCancellationToken)
+                                    .GetAsyncEnumerator(policyCancellationToken);
                     StopReason? capturedStopReason = null;
                     MessageDeltaUsage? capturedUsage = null;
+
                     try
                     {
                         while (await e.MoveNextAsync())
                         {
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                _logger.LogInformation("CreateStreamingCancelled | UserMessage: {UserMessage}", userMessage);
+                                cancellationToken.ThrowIfCancellationRequested();
+                            }
+
                             if (e.Current.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var text))
                             {
                                 return (e, text.Text, capturedStopReason, capturedUsage);
@@ -112,8 +127,14 @@ namespace TradingApp.Infrastructure.Services.Anthropic
                                 capturedStopReason = messageDelta.Delta.StopReason.Value();
                             }
                         }
-                    
+
                         return (e, (string?)null, capturedStopReason, capturedUsage);
+                    }
+                    catch (OperationCanceledException ocEx) when (cancellationToken.IsCancellationRequested)
+                    {
+                        await e.DisposeAsync();
+                        _logger.LogInformation(ocEx, "CreateStreamingBootstrapAttemptCancelled | UserMessage: {UserMessage}", userMessage);
+                        throw;
                     }
                     catch (Exception ex)
                     {
@@ -121,7 +142,12 @@ namespace TradingApp.Infrastructure.Services.Anthropic
                         _logger.LogError(ex, "Streaming bootstrap attempt failed before reaching first content/stop-reason: {UserMessage}", userMessage);
                         throw;
                     }
-                });
+                }, cancellationToken);
+            }
+            catch (OperationCanceledException ocEx) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "CreateStreamingBootstrapCancelled | UserMessage: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex)
             {
@@ -174,7 +200,13 @@ namespace TradingApp.Infrastructure.Services.Anthropic
 
                     try
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         hasNext = await enumerator.MoveNextAsync();
+                    }
+                    catch (OperationCanceledException ocEx) when (cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogInformation(ocEx, "CreateStreamingEnumeratorCancelled | UserMessage: {UserMessage}", userMessage);
+                        throw;
                     }
                     catch (Exception ex)
                     {

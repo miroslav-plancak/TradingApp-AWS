@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services.Helpers;
@@ -32,7 +33,7 @@ namespace TradingApp.Business.Repositories
 
             await using (tradingDbContextFactory)
             {
-                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
                 {
                     var existingRow = await tradingDbContextFactory.ConversationChunks
                             .AsNoTracking()
@@ -86,13 +87,15 @@ namespace TradingApp.Business.Repositories
             }
         }
 
-        public async Task<IEnumerable<ConversationChunk>> GetConversationChunksAsync(Guid conversationId)
+        public async Task<IEnumerable<ConversationChunk>> GetConversationChunksAsync(Guid conversationId, CancellationToken ct)
         {
-            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync();
+            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync(ct);
+
+            ct.ThrowIfCancellationRequested();
 
             await using (tradingDbContextFactory)
             {
-                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
                 {
                     if (conversationId == Guid.Empty)
                     {
@@ -103,11 +106,11 @@ namespace TradingApp.Business.Repositories
                                 .AsNoTracking()
                                 .Where(x => x.ConversationId == conversationId)
                                 .OrderBy(x => x.CreatedAt)
-                                .ToListAsync();
+                                .ToListAsync(policyCancellationToken);
 
                     return allConversationChunks;
 
-                }, $"{nameof(GetConversationChunksAsync)}:FetchAll:{conversationId}");
+                }, $"{nameof(GetConversationChunksAsync)}:FetchAll:{conversationId}", ct);
             }
         }
     }

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Business.Interfaces.Repositories;
@@ -33,7 +34,7 @@ namespace TradingApp.Business.Services.Regular.Conversation
             {
                 if (requests.Count == 0) return;
 
-                var existingConversationChunks = await _conversationChunkRepository.GetConversationChunksAsync(requests.FirstOrDefault().ConversationId);
+                var existingConversationChunks = await _conversationChunkRepository.GetConversationChunksAsync(requests.FirstOrDefault().ConversationId, CancellationToken.None);
 
                 var existingConvChunkKeys = existingConversationChunks.Select(x => x.Key).ToHashSet();
 
@@ -60,19 +61,24 @@ namespace TradingApp.Business.Services.Regular.Conversation
             }
         }
 
-        public async Task<List<CreatedConversationChunkResponseDTO>> GetConversationChunksAsync(Guid conversationId)
+        public async Task<List<CreatedConversationChunkResponseDTO>> GetConversationChunksAsync(Guid conversationId, CancellationToken ct)
         {
             _logger.LogInformation("ConversationChunksFetchingStarted | ConversationId: {ConversationId}", conversationId);
 
             try
             {
-                var conversationChunks = await _conversationChunkRepository.GetConversationChunksAsync(conversationId);
+                var conversationChunks = await _conversationChunkRepository.GetConversationChunksAsync(conversationId, ct);
 
                 var conversationChunkDTOs = ConversationChunkMapper.ToCreatedConversationChunkResultDTOs(conversationChunks);
 
                 _logger.LogInformation("ConversationChunksFetchingSuccessful | ConversationId: {ConversationId}", conversationId);
 
                 return conversationChunkDTOs;
+            }
+            catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "ConversationChunksFetchingCancelled | ConversationId: {ConversationId}", conversationId);
+                throw;
             }
             catch (Exception ex)
             {

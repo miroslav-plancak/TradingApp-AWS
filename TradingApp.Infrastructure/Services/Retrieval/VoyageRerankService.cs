@@ -43,6 +43,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                     .Select(x => new RerankResult { Index = x.Index, RelevanceScore = x.RelevanceScore })
                     .ToList();
             }
+            catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "VoyageRerankCancelled | DocumentCount: {DocumentCount}", documents.Count);
+                throw;
+            }
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "Voyage rerank request failed | DocumentCount: {DocumentCount}", documents.Count);

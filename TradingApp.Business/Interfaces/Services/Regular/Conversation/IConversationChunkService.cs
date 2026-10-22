@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using TradingApp.Business.DTOs.ConversationChunk;
 
@@ -8,6 +9,6 @@ namespace TradingApp.Business.Interfaces.Services.Regular.Conversation
     public interface IConversationChunkService
     {
         Task CreateConversationChunksAsync(List<CreateConversationChunkRequestDTO> request);
-        Task<List<CreatedConversationChunkResponseDTO>> GetConversationChunksAsync(Guid conversationId);
+        Task<List<CreatedConversationChunkResponseDTO>> GetConversationChunksAsync(Guid conversationId, CancellationToken ct);
     }
 }

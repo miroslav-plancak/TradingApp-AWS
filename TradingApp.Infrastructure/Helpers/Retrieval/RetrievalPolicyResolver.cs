@@ -4,13 +4,13 @@ namespace TradingApp.Infrastructure.Helpers.Retrieval
 {
     public static class RetrievalPolicyResolver
     {
-        public record RetrievalPolicy(int MaxChunksPerFile, int MinimumOccurrenceThreshold);
+        public record RetrievalPolicy(int MaxChunksPerFile);
 
         private readonly static Dictionary<LlmQueryClassification, RetrievalPolicy> PoliciesMap = new()
         {
-            { LlmQueryClassification.NARROW, new RetrievalPolicy(3,2) },
-            { LlmQueryClassification.BROAD, new RetrievalPolicy(5,1) },
-            { LlmQueryClassification.INCONCLUSIVE, new RetrievalPolicy(3, 2) }
+            { LlmQueryClassification.NARROW, new RetrievalPolicy(3) },
+            { LlmQueryClassification.BROAD, new RetrievalPolicy(5) },
+            { LlmQueryClassification.INCONCLUSIVE, new RetrievalPolicy(3) }
         };
 
         public static int ResolvePolicyValue(LlmQueryClassification routedLlmQueryResponse, Func<RetrievalPolicy, int> propertySelector)

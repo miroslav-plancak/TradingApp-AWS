@@ -33,7 +33,7 @@ namespace TradingApp.Business.Repositories
             Guid? clientRequestId
         )
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
             {
                 if (clientRequestId != null)
                 {
@@ -63,7 +63,7 @@ namespace TradingApp.Business.Repositories
 
         public async Task<IEnumerable<Conversation>> GetConversationsAsync()
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
                 await _tradingDbContext.Conversations
                       .AsNoTracking()
                       .OrderByDescending(x => x.CreatedAt)
@@ -73,7 +73,7 @@ namespace TradingApp.Business.Repositories
 
         public async Task<Conversation> GetConversationById(Guid conversationId)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
                 await _tradingDbContext.Conversations
                     .AsNoTracking()
                     .SingleOrDefaultAsync(x => x.Id == conversationId),
@@ -82,7 +82,7 @@ namespace TradingApp.Business.Repositories
 
         public async Task<bool> DeleteConversationByIdAsync(Guid conversationId)
         {
-            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
 
                 await _tradingDbContext.Conversations
                     .AsNoTracking()
@@ -91,7 +91,7 @@ namespace TradingApp.Business.Repositories
 
             if (conversation == null) return false;
 
-            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
             {
                 _tradingDbContext.Conversations.Remove(conversation);
                 await _tradingDbContext.SaveChangesAsync();
@@ -103,7 +103,7 @@ namespace TradingApp.Business.Repositories
 
         public async Task<ConversationMessage> CreateConversationMessageAsync(CreateConversationMessageRequestDTO request)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
             {
                 if (request.ClientRequestId != null)
                 {
@@ -136,7 +136,7 @@ namespace TradingApp.Business.Repositories
 
         public async Task<IEnumerable<ConversationMessage>> GetConversationMessagesAsync(Guid conversationId, DateTimeOffset? createdAfter)
         {
-            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
             {
                 var allConversationMessages = await _tradingDbContext.ConversationMessages
                             .AsNoTracking()
@@ -157,14 +157,14 @@ namespace TradingApp.Business.Repositories
             DateTimeOffset lastMessageCoveredBySummary
         )
         {
-            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+            var conversation = await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
                  await _tradingDbContext.Conversations
                      .FirstOrDefaultAsync(x => x.Id == conversationId),
                  $"{nameof(UpdateConversationByConversationId)}:Fetch:{conversationId}");
 
             if (conversation != null)
             {
-                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async () =>
+                await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (_) =>
                 {
                     conversation.CompactedSummary = compactedSummary;
                     conversation.SummaryCoversMessagesUpTo = lastMessageCoveredBySummary;

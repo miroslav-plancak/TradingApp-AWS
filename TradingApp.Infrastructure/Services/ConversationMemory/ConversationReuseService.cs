@@ -34,18 +34,20 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
         public async Task<ReusableConversationArtifacts> TryRetrieveReusableConversationArtifactsAsync
         (
             Guid conversationId,
-            string userMessage
+            string userMessage,
+            CancellationToken ct
         )
         {
             try
             {
-                var allExistingConversationChunks = await _conversationChunkService.GetConversationChunksAsync(conversationId);
+                //TODO: short circuit this for new conversation so that we do not waste time on these calls, because for new conversation there is no pre-existing context.
+                var allExistingConversationChunks = await _conversationChunkService.GetConversationChunksAsync(conversationId, ct);
 
-                var reusableConversationChunks = await _conversationChunkArbiterService.DetermineSufficientChunksAsync(userMessage, allExistingConversationChunks);
+                var reusableConversationChunks = await _conversationChunkArbiterService.DetermineSufficientChunksAsync(userMessage, allExistingConversationChunks, ct);
 
-                var allExistingFullFiles = await _conversationFullFileService.GetConversationFullFilesAsync(conversationId);
+                var allExistingFullFiles = await _conversationFullFileService.GetConversationFullFilesAsync(conversationId, ct);
 
-                var reusableFullFiles = await _conversationFullFileArbiterService.DetermineSufficientFullFilesAsync(userMessage, allExistingFullFiles);
+                var reusableFullFiles = await _conversationFullFileArbiterService.DetermineSufficientFullFilesAsync(userMessage, allExistingFullFiles, ct);
 
                 return new ReusableConversationArtifacts()
                 {
@@ -53,6 +55,12 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                     ConversationFullFiles = reusableFullFiles
                 };
 
+            }
+            catch(OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "ReusableConversationArtifactsRetrievalCancelled | ConversationId: {ConversationId} | UserMessage: {UserMessage}",
+                    conversationId, userMessage);
+                throw;
             }
             catch (Exception ex)
             {

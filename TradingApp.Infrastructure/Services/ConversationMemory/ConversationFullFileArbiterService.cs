@@ -29,11 +29,11 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
             _anthropicApiService = anthropicApiService;
         }
 
-
         public async Task<List<CreatedConversationFullFileResponseDTO>> DetermineSufficientFullFilesAsync
         (
             string userMessage,
-            List<CreatedConversationFullFileResponseDTO> existingFullFiles
+            List<CreatedConversationFullFileResponseDTO> existingFullFiles,
+            CancellationToken ct
         )
         {
             if (existingFullFiles.Count == 0) return [];
@@ -50,7 +50,7 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
 
             try
             {
-                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage);
+                var result = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage, ct);
                 var extractedJson = LlmJsonExtractor.ExtractJsonObject(result);
 
                 try
@@ -72,6 +72,11 @@ namespace TradingApp.Infrastructure.Services.ConversationMemory
                 }
 
                 return [];
+            }
+            catch(OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "FullFileArbitrationCancelled | Question: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex)
             {

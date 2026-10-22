@@ -22,7 +22,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _anthropicApiService = anthropicApiService;
         }
 
-        public async Task<LlmQueryClassification> LlmQueryRouteAsync(string userMessage)
+        public async Task<LlmQueryClassification> LlmQueryRouteAsync(string userMessage, CancellationToken ct)
         {
             var parameters = new MessageCreateParams
             {
@@ -34,7 +34,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
             try
             {
-                var response = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage);
+                var response = await _anthropicApiService.DispatchPromptAsync(parameters, userMessage, ct);
 
                 if (!string.IsNullOrWhiteSpace(response))
                 {
@@ -43,6 +43,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                 }
 
                 return LlmQueryClassification.INCONCLUSIVE;
+            }
+            catch(OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "QueryClassificationCancelled | Question: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex)
             {

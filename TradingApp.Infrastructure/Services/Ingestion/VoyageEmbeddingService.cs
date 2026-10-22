@@ -53,6 +53,11 @@ namespace TradingApp.Infrastructure.Services.Ingestion
                     .Select(pd => pd.Embedding)
                     .ToList();
             }
+            catch (OperationCanceledException ocEx) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "VoyageEmbeddingsCancelled | ChunkCount: {ChunkCount}", texts.Count);
+                throw;
+            }
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "Voyage embeddings request failed | ChunkCount: {ChunkCount}", texts.Count);

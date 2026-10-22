@@ -34,13 +34,15 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _resiliencePolicy = resiliencePolicy;
         }
 
-        public async Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userMessage)
+        public async Task<List<RetrievedChunk>> SearchKnnChunksAsync(string userMessage, CancellationToken ct)
         {
             try
             {
-                var queryBytes = await EmbedQuestionAsync(userMessage);
+                var queryBytes = await EmbedQuestionAsync(userMessage, ct);
 
-                var searchResult = await _resiliencePolicy.ExecuteAsync(async () =>
+                ct.ThrowIfCancellationRequested();
+
+                var searchResult = await _resiliencePolicy.ExecuteAsync(async (policyCancellationToken) =>
                 {
                     return await _database.ExecuteAsync(
                      "FT.SEARCH", "idx:chunks",
@@ -49,11 +51,16 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                      "SORTBY", "score",
                      "DIALECT", "2",
                      "RETURN", "5", "chunkIndex", "totalChunkCount", "sourceFile", "content", "score");
-                });
+                }, ct);
 
                 var retrievedKNNChunks = RedisResultParser.MapKnnSearchResultToRetrievedChunkList(searchResult);
 
                 return retrievedKNNChunks;
+            }
+            catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "SearchKnnChunksCancelled | UserMessage: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
             {
@@ -68,18 +75,20 @@ namespace TradingApp.Infrastructure.Services.Retrieval
 
         }
 
-        private async Task<byte[]> EmbedQuestionAsync(string userMessage)
+        private async Task<byte[]> EmbedQuestionAsync(string userMessage, CancellationToken ct)
         {
-            var queryEmbedding = await _voyageEmbeddingService.EmbedAsync(userMessage);
+            var queryEmbedding = await _voyageEmbeddingService.EmbedAsync(userMessage, ct);
             var queryBytes = EmbeddingPacker.RePackEmbeddingFromFloatToByte(queryEmbedding);
 
             return queryBytes;
         }
 
-        public async Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userMessage)
+        public async Task<List<RetrievedChunk>> SearchLexicalChunksAsync(string userMessage, CancellationToken ct)
         {
             try
             {
+                ct.ThrowIfCancellationRequested();
+
                 var parsedUserMessage = RedisResultParser.ParseUserMessage(userMessage);
 
                 if (parsedUserMessage.Length == 0)
@@ -88,7 +97,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                     return new List<RetrievedChunk>();
                 }
 
-                var lexicalSearchResult = await _resiliencePolicy.ExecuteAsync(async () =>
+                var lexicalSearchResult = await _resiliencePolicy.ExecuteAsync(async (policyCancellationToken) =>
                 {
                     return await _database.ExecuteAsync(
                                            "FT.SEARCH", "idx:chunks",
@@ -98,11 +107,16 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                                            "RETURN", "4", "chunkIndex", "totalChunkCount", "sourceFile", "content",
                                            "LIMIT", "0", "10",
                                            "DIALECT", "2");
-                });
+                },ct);
 
                 var retrievedLexicalChunks = RedisResultParser.MapLexicalSearchResultToRetrievedChunkList(lexicalSearchResult);
 
                 return retrievedLexicalChunks;
+            }
+            catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(ocEx, "SearchLexicalChunksCancelled | UserMessage: {UserMessage}", userMessage);
+                throw;
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
             {
@@ -116,7 +130,7 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             }
         }
 
-        public async Task<Dictionary<string, string>> GetSourceFileContentsAsync(IEnumerable<string> sourceFiles)
+        public async Task<Dictionary<string, string>> GetSourceFileContentsAsync(IEnumerable<string> sourceFiles, CancellationToken ct)
         {
             var distinctFiles = sourceFiles.Distinct().ToList();
 
@@ -124,12 +138,19 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             {
                 try
                 {
-                    var content = await _resiliencePolicy.ExecuteAsync(async () =>
+                    ct.ThrowIfCancellationRequested();
+
+                    var content = await _resiliencePolicy.ExecuteAsync(async (policyCancellationToken) =>
                     {
                         return await _database.HashGetAsync($"file:{sourceFile}", "content");
-                    });
+                    }, ct);
 
                     return (sourceFile, content: (string?)content ?? string.Empty);
+                }
+                catch (OperationCanceledException ocEx) when (ct.IsCancellationRequested)
+                {
+                    _logger.LogInformation(ocEx, "GetSourceFileContentsCancelled | SourceFile: {SourceFile}", sourceFile);
+                    throw;
                 }
                 catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
                 {

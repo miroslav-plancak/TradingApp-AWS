@@ -28,11 +28,11 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _resiliencePolicy = resiliencePolicy;
         }
 
-        public async Task<List<ProcessedCorpusSourceFile>> GetEntireCorpusManifestAsync()
+        public async Task<List<ProcessedCorpusSourceFile>> GetEntireCorpusManifestAsync(CancellationToken ct)
         {
             try
             {
-                var manifest = await _resiliencePolicy.ExecuteAsync(async () =>
+                var manifest = await _resiliencePolicy.ExecuteAsync(async (_) =>
                 {
                     var sourceFileNames = await _database.SetMembersAsync("corpus:sourcefiles");
                     var entries = new List<ProcessedCorpusSourceFile>();
@@ -56,9 +56,14 @@ namespace TradingApp.Infrastructure.Services.Retrieval
                     }
 
                     return entries;
-                });
+                },ct);
 
                 return manifest;
+            }
+            catch(OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "CorpusManifestFetchingCancelled");
+                throw;
             }
             catch (Exception ex) when (ResiliencePolicyBuilder.IsTransientRedisApiException(ex) || ex is BrokenCircuitException)
             {

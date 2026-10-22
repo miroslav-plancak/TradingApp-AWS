@@ -24,17 +24,17 @@ namespace TradingApp.Infrastructure.Services
         (
            string endPoint,
            TRequest request,
-           CancellationToken cancellationToken = default
+           CancellationToken ct = default
         )
         {
-            var response = await _resiliencePolicy.ExecuteAsync(async () =>
+            var response = await _resiliencePolicy.ExecuteAsync(async (policyCancellationToken) =>
             {
-                var httpResponse = await _httpClient.PostAsJsonAsync(endPoint, request, cancellationToken);
+                var httpResponse = await _httpClient.PostAsJsonAsync(endPoint, request, policyCancellationToken);
                 httpResponse.EnsureSuccessStatusCode();
                 return httpResponse;
-            });
+            }, ct);
 
-            var payload = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken)
+            var payload = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: ct)
                 ?? throw new InvalidOperationException("Voyage API returned an empty response.");
 
             return payload;

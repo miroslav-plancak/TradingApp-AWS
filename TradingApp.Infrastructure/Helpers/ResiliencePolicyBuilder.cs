@@ -6,6 +6,7 @@ using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
 using StackExchange.Redis;
+using System;
 using System.Net;
 
 namespace TradingApp.Infrastructure.Helpers
@@ -36,7 +37,7 @@ namespace TradingApp.Infrastructure.Helpers
         )
         {
             return Policy
-                .Handle<Exception>()
+                .Handle<Exception>(ex => !IsUserInitiatedCancellation(ex))
                 .CircuitBreakerAsync(
                     exceptionsAllowedBeforeBreaking: 3,
                     durationOfBreak: TimeSpan.FromMinutes(2),
@@ -60,7 +61,7 @@ namespace TradingApp.Infrastructure.Helpers
         )
         {
             return Policy
-                .Handle<Exception>(exception => IsTransientException(exception, policyKey))
+                .Handle<Exception>(ex => IsTransientException(ex, policyKey) && !IsUserInitiatedCancellation(ex))
                 .WaitAndRetryAsync(
                     retryCount: retryCount,
                     sleepDurationProvider: sleepDurationProvider ?? CalculateSleepDuration,
@@ -68,6 +69,11 @@ namespace TradingApp.Infrastructure.Helpers
                         logger.LogWarning(
                             "RetryAttempt {Attempt} | {Resource} | Waiting {Delay}ms | Error: {Error}",
                             attempt, protectedResourceName, delay.TotalMilliseconds, exception.Message));
+        }
+
+        private static bool IsUserInitiatedCancellation(Exception exception)
+        {
+            return exception is OperationCanceledException && exception.InnerException is not TimeoutException;
         }
 
         private static TimeSpan CalculateSleepDuration(int attempt)

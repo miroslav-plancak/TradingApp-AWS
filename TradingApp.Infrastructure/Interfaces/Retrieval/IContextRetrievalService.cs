@@ -4,7 +4,7 @@ namespace TradingApp.Infrastructure.Interfaces.Retrieval
 {
     public interface IContextRetrievalService
     {
-        Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query);
-        Task<string> GetFullFileContentAsync(string fileName);
+        Task<List<RetrievedChunk>> RetrieveRelevantChunksAsync(string query, CancellationToken ct = default);
+        Task<string> GetFullFileContentAsync(string fileName, CancellationToken ct = default);
     }
 }

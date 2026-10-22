@@ -1,7 +1,4 @@
-﻿using TradingApp.Infrastructure.Enums;
-using TradingApp.Infrastructure.Helpers.Retrieval;
-using TradingApp.Infrastructure.Interfaces.Retrieval;
-using TradingApp.Infrastructure.Models.Retrieval;
+﻿using TradingApp.Infrastructure.Interfaces.Retrieval;
 
 namespace TradingApp.Infrastructure.Services.Retrieval
 {
@@ -14,35 +11,9 @@ namespace TradingApp.Infrastructure.Services.Retrieval
             _knowledgeBaseQueryService = knowledgeBaseQueryService;
         }
 
-        public async Task<Dictionary<string, string>> DetermineFilesEligibleForExpansionAsync
-        (
-           List<RetrievedChunk> rerankedChunks,
-           LlmQueryClassification routedLlmQueryResponse,
-           int decomposedQueriesQuantity = 1
-        )
+        public async Task<Dictionary<string, string>> GetExistingFullFileContentsMapAsync(IEnumerable<string?> distinctFileNames, CancellationToken ct)
         {
-            var fileOccurrenceMap = rerankedChunks.GroupBy(x => x.SourceFile ?? string.Empty).ToDictionary(g => g.Key, g => g.Count());
-
-            var distinctFileNames = rerankedChunks.DistinctBy(x => x.SourceFile).Select(x => x.SourceFile);
-            var filesWithFullContent = await GetExistingFullFileContentsMapAsync(distinctFileNames);
-
-
-            var filesEligibleForExpansion = filesWithFullContent
-                        .Where(kvp => fileOccurrenceMap.TryGetValue(kvp.Key, out var occurrences)
-                            && occurrences >= MinimumOccurrenceThreshold(routedLlmQueryResponse) * decomposedQueriesQuantity)
-                        .ToDictionary(x => x.Key, x => x.Value);
-
-            return filesEligibleForExpansion;
-        }
-
-        private static int MinimumOccurrenceThreshold(LlmQueryClassification routedLlmQueryResponse)
-        {
-            return RetrievalPolicyResolver.ResolvePolicyValue(routedLlmQueryResponse, x => x.MinimumOccurrenceThreshold);
-        }
-
-        public async Task<Dictionary<string, string>> GetExistingFullFileContentsMapAsync(IEnumerable<string?> distinctFileNames)
-        {
-            var allFetchedFileContents = await _knowledgeBaseQueryService.GetSourceFileContentsAsync(distinctFileNames.OfType<string>());
+            var allFetchedFileContents = await _knowledgeBaseQueryService.GetSourceFileContentsAsync(distinctFileNames.OfType<string>(), ct);
             var filesWithContent = allFetchedFileContents.Where(x => x.Value != string.Empty).ToDictionary(x => x.Key, x => x.Value);
             return filesWithContent;
         }

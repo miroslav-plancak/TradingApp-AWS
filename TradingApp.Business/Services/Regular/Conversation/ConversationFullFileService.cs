@@ -2,8 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
-using TradingApp.Business.DTOs.ConversationChunk;
 using TradingApp.Business.DTOs.ConversationFullFile;
 using TradingApp.Business.Interfaces.Repositories;
 using TradingApp.Business.Interfaces.Services.Regular.Conversation;
@@ -63,13 +63,13 @@ namespace TradingApp.Business.Services.Regular.Conversation
             }
         }
 
-        public async Task<List<CreatedConversationFullFileResponseDTO>> GetConversationFullFilesAsync(Guid? conversationId)
+        public async Task<List<CreatedConversationFullFileResponseDTO>> GetConversationFullFilesAsync(Guid? conversationId, CancellationToken ct)
         {
             _logger.LogInformation("ConversationFullFilesFetchingStarted | ConversationId: {ConversationId}", conversationId);
 
             try
             {
-                var conversationFullFiles = await _conversationFullFileRepository.GetConversationFullFilesAsync(conversationId);
+                var conversationFullFiles = await _conversationFullFileRepository.GetConversationFullFilesAsync(conversationId, ct);
 
                 var conversationFullFileDTOs = ConversationFullFileMapper.ToCreatedConversationFullFileResponseDTOs(conversationFullFiles);
 
@@ -77,40 +77,14 @@ namespace TradingApp.Business.Services.Regular.Conversation
 
                 return conversationFullFileDTOs;
             }
+            catch(OperationCanceledException osEx) when (ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(osEx, "ConversationFullFilesFetchingCancelled | ConversationId: {ConversationId}", conversationId);
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ConversationFullFilesFetchingFailed | returningEmptyResults  | Error: {Message}", ex.Message);
-
-                return new List<CreatedConversationFullFileResponseDTO>();
-            }
-        }
-
-        public async Task<List<CreatedConversationFullFileResponseDTO>> ResolveFullFilesForChunksAsync(List<CreatedConversationChunkResponseDTO> reusableChunks)
-        {
-            if (reusableChunks.Count == 0) return [];
-
-            var conversationId = reusableChunks?.FirstOrDefault().ConversationId;
-
-            _logger.LogInformation("ConversationFullFilesResolveForSuppliedChunksStarted | ConversationId: {ConversationId}", conversationId);
-
-            try
-            {
-                var requestedSourceFileNames = reusableChunks.GroupBy(x => x.SourceFile).Select(kvp => kvp.Key).ToList();
-
-                var allExistingConversationFullFiles = await GetConversationFullFilesAsync(conversationId);
-
-                var matchedFullFileDtos = allExistingConversationFullFiles
-                    .Where(x => requestedSourceFileNames.Contains(x.SourceFile))
-                    .ToList();
-
-                _logger.LogInformation("ConversationFullFilesResolveForSuppliedChunksSuccessful | ConversationId: {ConversationId}", conversationId);
-
-                return matchedFullFileDtos;
-
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "ConversationFullFilesResolveForSuppliedChunksFailed | returningEmptyResults  | Error: {Message}", ex.Message);
 
                 return new List<CreatedConversationFullFileResponseDTO>();
             }
