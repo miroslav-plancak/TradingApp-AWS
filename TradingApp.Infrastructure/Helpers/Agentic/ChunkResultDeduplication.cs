@@ -1,22 +1,20 @@
 using Anthropic.Models.Messages;
+using TradingApp.Infrastructure.Models.Agentic;
 using TradingApp.Infrastructure.Models.Retrieval;
 
 namespace TradingApp.Infrastructure.Helpers.Agentic
 {
     public static class ChunkResultDeduplication
     {
-        //TODO: extrac these params to a payload object
-        public static List<string> RemoveNowRedundantChunksForFile
-        (
-            string fileName,
-            List<MessageParam> messages,
-            object chunksByToolUseIdLock,
-            Dictionary<string, List<RetrievedChunk>> chunksByToolUseId
-        )
+        public static List<string> RemoveNowRedundantChunksForFile(RedundantChunkRemovalRequest request)
         {
+            var fileName = request.FileName;
+            var messages = request.Messages;
+            var chunksByToolUseId = request.ChunksByToolUseId;
+
             var removalsLog = new List<string>();
 
-            lock (chunksByToolUseIdLock)
+            lock (request.ChunksByToolUseIdLock)
             {
                 for (var messageIndex = 0; messageIndex < messages.Count; messageIndex++)
                 {

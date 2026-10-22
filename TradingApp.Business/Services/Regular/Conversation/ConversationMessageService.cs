@@ -70,5 +70,32 @@ namespace TradingApp.Business.Services.Regular.Conversation
                 throw new Exception("Failed to fetch conversation messages", ex);
             }
         }
+
+        public async Task DeleteConversationMessagesByConversationIdAsync(Guid conversationId)
+        {
+            _logger.LogInformation("ConversationMessagesDeletionStarted | ConversationId: {ConversationId}", conversationId);
+
+            try
+            {
+                var existingMessages = await GetConversationMessagesAsync(conversationId, null);
+
+                if (existingMessages.Count == 0)
+                {
+                    _logger.LogInformation("ConversationMessagesDeletionSkipped | NoMessagesFound | ConversationId: {ConversationId}", conversationId);
+                    return;
+                }
+
+                var deletedCount = await _conversationRepository.DeleteConversationMessagesByConversationIdAsync(conversationId);
+
+                _logger.LogInformation("ConversationMessagesDeletionSuccessful | ConversationId: {ConversationId} | DeletedCount: {DeletedCount}",
+                    conversationId, deletedCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ConversationMessagesDeletionFailed | ConversationId: {ConversationId} | Error: {Message}", conversationId, ex.Message);
+
+                throw new Exception("Failed to delete conversation messages", ex);
+            }
+        }
     }
 }

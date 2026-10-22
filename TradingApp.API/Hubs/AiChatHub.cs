@@ -25,6 +25,7 @@ namespace TradingApp.API.Hubs
     {
         private readonly IFileDebugLogger _fileDebugLogger;
         private readonly IConversationService _conversationService;
+        private readonly IConversationFullDeletionService _conversationFullDeletionService;
         private readonly IConversationMessageService _conversationMessageService;
         private readonly IConversationSummaryService _conversationSummaryService;
         private readonly IConversationCompactorService _conversationCompactorService;
@@ -35,6 +36,7 @@ namespace TradingApp.API.Hubs
             ILogger<AiChatHub> logger,
             IFileDebugLogger fileDebugLogger,
             IConversationService conversationService,
+            IConversationFullDeletionService conversationFullDeletionService,
             IConversationSummaryService conversationSummaryService,
             IConversationMessageService conversationMessageService,
             IConversationCompactorService conversationCompactorService,
@@ -43,6 +45,7 @@ namespace TradingApp.API.Hubs
         {
             _fileDebugLogger = fileDebugLogger;
             _conversationService = conversationService;
+            _conversationFullDeletionService = conversationFullDeletionService;
             _conversationMessageService = conversationMessageService;
             _conversationSummaryService = conversationSummaryService;
             _conversationCompactorService = conversationCompactorService;
@@ -79,6 +82,7 @@ namespace TradingApp.API.Hubs
             {
                 UserMessage = userMessage,
                 ConversationId = existingConversation.ConversationId,
+                IsNewConversation = isNewConversation,
                 ConversationMessagesHistory = conversationHistory,
                 CompactedSummary = existingConversation.CompactedSummary,
                 ToolCalledHandler = async (toolName) =>
@@ -121,8 +125,7 @@ namespace TradingApp.API.Hubs
 
                         if (isNewConversation)
                         {
-                            await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId); 
-                            //TODO: if we do not succeed writing the chunks that are orphaned into the DB, we can clean them up here for new conversation.
+                            await _conversationFullDeletionService.DeleteConversationAndAllItsEntitiesAsync(existingConversation.ConversationId); 
                             await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId, CancellationToken.None);
                         }
 
@@ -147,7 +150,8 @@ namespace TradingApp.API.Hubs
             {
                 if (isNewConversation)
                 {
-                    await _conversationService.DeleteConversationByIdAsync(existingConversation.ConversationId);
+                    await _conversationFullDeletionService.DeleteConversationAndAllItsEntitiesAsync(existingConversation.ConversationId);
+
                     if (!isCancellationRequested)
                     {
                         await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId, CancellationToken.None);

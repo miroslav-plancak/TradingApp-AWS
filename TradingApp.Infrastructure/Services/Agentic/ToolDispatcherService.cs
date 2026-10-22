@@ -10,6 +10,7 @@ using TradingApp.Infrastructure.Interfaces.Agentic;
 using TradingApp.Infrastructure.Interfaces.ConversationMemory;
 using TradingApp.Infrastructure.Interfaces.Retrieval;
 using TradingApp.Infrastructure.Models.Agentic;
+using TradingApp.Infrastructure.Models.ConversationMemory;
 using TradingApp.Infrastructure.Models.Ingestion;
 using TradingApp.Infrastructure.Models.Retrieval;
 
@@ -81,6 +82,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                     var toolExecutionContext = new ToolExecutionContext
                     {
                         ConversationId = context.Request.ConversationId,
+                        IsNewConversation = context.Request.IsNewConversation,
                         ToolUseId = toolUseBlock.ID,
                         ToolCallNumber = Interlocked.Increment(ref context.Counters.ToolCallNumber),
                         ToolName = toolName,
@@ -298,7 +300,12 @@ namespace TradingApp.Infrastructure.Services.Agentic
             }
 
             var reusableContextArtifacts = await _conversationReuseService.TryRetrieveReusableConversationArtifactsAsync(
-                context.ConversationId, query, ct);
+                new ReusableConversationArtifactsRequest
+                {
+                    ConversationId = context.ConversationId,
+                    UserMessage = query,
+                    IsNewConversation = context.IsNewConversation
+                }, ct);
 
             if (reusableContextArtifacts.ConversationChunks.Count == 0 && reusableContextArtifacts.ConversationFullFiles.Count == 0)
             {

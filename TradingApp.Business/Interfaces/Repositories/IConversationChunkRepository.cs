@@ -10,5 +10,6 @@ namespace TradingApp.Business.Interfaces.Repositories
     {
         Task<ConversationChunk> CreateConversationChunkAsync(ConversationChunk conversationChunk);
         Task<IEnumerable<ConversationChunk>> GetConversationChunksAsync(Guid conversationId, CancellationToken ct);
+        Task<int> DeleteConversationChunksByConversationIdAsync(Guid conversationId);
     }
 }

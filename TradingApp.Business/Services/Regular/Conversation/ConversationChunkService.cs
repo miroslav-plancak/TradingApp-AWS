@@ -87,5 +87,30 @@ namespace TradingApp.Business.Services.Regular.Conversation
                 return new List<CreatedConversationChunkResponseDTO>();
             }
         }
+
+        public async Task DeleteConversationChunksByConversationIdAsync(Guid conversationId)
+        {
+            _logger.LogInformation("ConversationChunksDeletionStarted | ConversationId: {ConversationId}", conversationId);
+
+            try
+            {
+                var existingChunks = await GetConversationChunksAsync(conversationId, CancellationToken.None);
+
+                if (existingChunks.Count == 0)
+                {
+                    _logger.LogInformation("ConversationChunksDeletionSkipped | NoChunksFound | ConversationId: {ConversationId}", conversationId);
+                    return;
+                }
+
+                var deletedCount = await _conversationChunkRepository.DeleteConversationChunksByConversationIdAsync(conversationId);
+
+                _logger.LogInformation("ConversationChunksDeletionSuccessful | ConversationId: {ConversationId} | DeletedCount: {DeletedCount}",
+                    conversationId, deletedCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ConversationChunksDeletionFailed | ConversationId: {ConversationId} | Error: {Message}", conversationId, ex.Message);
+            }
+        }
     }
 }

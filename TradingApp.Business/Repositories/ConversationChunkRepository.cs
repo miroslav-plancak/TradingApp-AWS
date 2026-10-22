@@ -113,5 +113,19 @@ namespace TradingApp.Business.Repositories
                 }, $"{nameof(GetConversationChunksAsync)}:FetchAll:{conversationId}", ct);
             }
         }
+
+        public async Task<int> DeleteConversationChunksByConversationIdAsync(Guid conversationId)
+        {
+            TradingDbContext tradingDbContextFactory = await _dbContextFactory.CreateDbContextAsync();
+
+            await using (tradingDbContextFactory)
+            {
+                return await _resiliencePolicyGuard.GuardViaResiliencePolicyAsync(async (policyCancellationToken) =>
+                    await tradingDbContextFactory.ConversationChunks
+                        .Where(x => x.ConversationId == conversationId)
+                        .ExecuteDeleteAsync(policyCancellationToken),
+                    $"{nameof(DeleteConversationChunksByConversationIdAsync)}:Delete:{conversationId}");
+            }
+        }
     }
 }

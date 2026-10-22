@@ -295,6 +295,12 @@ namespace TradingApp.Infrastructure
             return services;
         }
 
+        public static IServiceCollection AddConversationFullDeletionService(this IServiceCollection services)
+        {
+            services.AddScoped<IConversationFullDeletionService, ConversationFullDeletionService>();
+            return services;
+        }
+
         // ==================== Agentic ====================
 
         public static IServiceCollection AddAgenticLoopService(this IServiceCollection services)

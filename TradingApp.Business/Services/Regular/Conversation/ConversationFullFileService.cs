@@ -90,5 +90,29 @@ namespace TradingApp.Business.Services.Regular.Conversation
             }
         }
 
+        public async Task DeleteConversationFullFilesByConversationIdAsync(Guid conversationId)
+        {
+            _logger.LogInformation("ConversationFullFilesDeletionStarted | ConversationId: {ConversationId}", conversationId);
+
+            try
+            {
+                var existingFullFiles = await GetConversationFullFilesAsync(conversationId, CancellationToken.None);
+
+                if (existingFullFiles.Count == 0)
+                {
+                    _logger.LogInformation("ConversationFullFilesDeletionSkipped | NoFullFilesFound | ConversationId: {ConversationId}", conversationId);
+                    return;
+                }
+
+                var deletedCount = await _conversationFullFileRepository.DeleteConversationFullFilesByConversationIdAsync(conversationId);
+
+                _logger.LogInformation("ConversationFullFilesDeletionSuccessful | ConversationId: {ConversationId} | DeletedCount: {DeletedCount}",
+                    conversationId, deletedCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ConversationFullFilesDeletionFailed | ConversationId: {ConversationId} | Error: {Message}", conversationId, ex.Message);
+            }
+        }
     }
 }
