@@ -334,11 +334,14 @@ domain above, sharing only the DI container and resilience infrastructure.
 
 Retrieval is not a fixed upfront pipeline — the model drives it itself via tool calls.
 `AgenticLoopService.RunAgenticLoopAsync` runs a `StopReason`-driven loop: a response that comes back
-with `stop_reason: tool_use` has every `tool_use` block in it executed (today sequentially — concurrent
-execution for multiple blocks in one response is tracked as task `#77`, not yet built), the results get
-appended, and the loop sends another request; a response with `stop_reason: end_turn` ends the loop and
-its text is the final answer. The model decides per-turn whether to search at all, how many times, and
-whether a full file is worth fetching — there's no mandatory retrieval step before it can answer.
+with `stop_reason: tool_use` has every `tool_use` block in it handed to `IToolDispatcherService` and
+dispatched **concurrently** via `Task.WhenAll` (sequential dispatch was the original shape — switched
+over once real multi-tool-call responses started showing up in practice), the results get appended, and
+the loop sends another request; a response with `stop_reason: end_turn` ends the loop and its text is
+the final answer. A `stop_reason: max_tokens` response is retried once — continuing from whatever
+partial text it produced if any exists, otherwise retried unchanged — before the loop gives up and
+returns what it has. The model decides per-turn whether to search at all, how many times, and whether a
+full file is worth fetching — there's no mandatory retrieval step before it can answer.
 
 ```
 User question
@@ -346,8 +349,9 @@ User question
      ▼
 RunAgenticLoopAsync (StopReason-driven while loop, Claude Sonnet 5)
      │
-     ├──► stop_reason: tool_use ── execute every tool_use block in this response, append
-     │                              tool_results, send another request
+     ├──► stop_reason: tool_use ── dispatch every tool_use block in this response concurrently
+     │                              (Task.WhenAll via IToolDispatcherService), append tool_results,
+     │                              send another request
      │        ├─ decompose_query        — splits a compound question into focused sub-questions
      │        ├─ get_database_context   — checks this conversation's own persisted chunk/file pool first
      │        │                           (Haiku arbiters judge sufficiency — separately for chunks vs.
@@ -355,6 +359,9 @@ RunAgenticLoopAsync (StopReason-driven while loop, Claude Sonnet 5)
      │        ├─ search_knowledge_base  — one focused question in, ranked chunks out (pipeline below)
      │        ├─ get_full_file          — complete file content, guarded against redundant calls
      │        └─ get_all_indexed_files  — full corpus manifest: filename, description, IsFullyIndexed
+     │
+     ├──► stop_reason: max_tokens ── one retry: continue from the partial text if any exists, otherwise
+     │                                 retry unchanged; gives up and returns what it has after that
      │
      └──► stop_reason: end_turn ── the text in this response is the final answer, loop ends
 ```
@@ -401,7 +408,8 @@ misses on its own.
 
 | Service | Owns |
 |---|---|
-| `AgenticLoopService` | Drives the `StopReason`-based tool-calling loop; dispatches each `tool_use` block to its handler, enforces the safety mechanisms below |
+| `AgenticLoopService` | Drives the `StopReason`-based tool-calling loop, including the max_tokens continuation retry; hands every `tool_use` block in a response to `IToolDispatcherService`, dispatched concurrently via `Task.WhenAll` |
+| `IToolDispatcherService` / `ToolDispatcherService` | Owns the actual per-tool-call dispatch: the safety mechanisms below, each tool's handler method, and building the `tool_result` blocks the loop appends |
 | `AgenticToolDefinitions` (static) | The 5 tool schemas (name, description, JSON Schema input) sent to Claude every call |
 | `QueryRoutingService` | LLM-based BROAD/NARROW classification (Claude Haiku 4.5), feeds `search_knowledge_base`'s per-file cap |
 | `QueryDecompositionService` | LLM-based (Claude Haiku 4.5) splitting of a compound question into sub-questions — now called as the `decompose_query` tool, not an automatic upfront step |
@@ -414,14 +422,14 @@ misses on its own.
 | `CorpusManifestService` (read) / `ChunkIngestionService` (write) / `CorpusFileDescriptionService` | Behind `get_all_indexed_files` — per-file `IsFullyIndexed` flag plus a one-sentence Haiku-generated description, computed and persisted to Redis once at ingestion time, not per query |
 | `IFileDebugLogger` | Generic, reusable file-based debug logger — the agentic loop logs every real Anthropic round-trip and every tool call/result here, tagged `[Call #N]` |
 
-`AiChatHub.SendUserMessage(string userMessage, Guid? conversationId, Guid? clientRequestId)`
-(`TradingApp.API/Hubs/AiChatHub.cs`) is the orchestrating SignalR Hub method — `Task<string>`, **not
-streaming** (see [Streaming](#streaming-not-currently-wired-to-the-live-path) below) — resolving the
-conversation, loading its history, calling `AgenticLoopService.RunAgenticLoopAsync(...)` for the
-complete answer, persisting both the user message and the answer, then triggering compaction (below)
-before returning. Every tool-calling round-trip the loop needs happens server-side, inside that one
-call; the client sees nothing until the whole exchange — potentially several Anthropic requests deep —
-is finished.
+`AiChatHub.SendUserMessageAsync(string userMessage, Guid? conversationId, Guid? clientRequestId,
+CancellationToken cancellationToken)` (`TradingApp.API/Hubs/AiChatHub.cs`) is the orchestrating SignalR
+Hub method — `IAsyncEnumerable<string>`, genuinely streaming (see [Streaming](#streaming) below) —
+resolving the conversation, loading its history, driving `AgenticLoopService.RunAgenticLoopAsync(...)`'s
+own streamed output chunk by chunk, persisting both the user message and the answer once it's complete,
+then triggering compaction (below). Every intermediate tool-calling round-trip the loop needs happens
+server-side and is hidden from the client; only the final leg — the one that actually ends in
+`end_turn` — streams token by token to the caller.
 
 ### Agentic Tools: Guarding Against Wasted Calls
 
@@ -472,6 +480,17 @@ relevance floor, and file expansion entirely for that turn (see the pipeline dia
 previous turn's retrieved content is judged sufficient to answer a same-topic follow-up without re-running
 retrieval from scratch.
 
+When a turn fails outright (a non-retryable error, a genuine mid-turn exception, or the final answer
+coming back blank) on a conversation that was just created this same turn, `ConversationFullDeletionService`
+(`TradingApp.Infrastructure/Services/ConversationMemory/`) deletes the `Conversation` row together with
+every `ConversationMessage`/`ConversationChunk`/`ConversationFullFile` row already persisted against it.
+There's no FK/cascade relationship between these tables (matches this schema's existing convention, see
+Database Tables above), so without this a partial turn that managed to run a tool call or two before
+failing would leave real orphaned rows behind with no parent conversation to ever reference them again.
+Each of the three dependent-entity deletes is best-effort — catches and logs rather than rethrowing — so
+one failing independently doesn't block the others or the conversation row's own deletion, matching the
+same non-atomic trade-off already accepted for persisting this data in the first place.
+
 ### Conversation Compaction
 
 `ConversationCompactorService.CompactConversationAsync(conversationId, usage, maxTokens)` runs after every
@@ -498,47 +517,63 @@ from the Hub above: `GET /api/conversation` (list), `GET /api/conversation/{id}`
 outside the backend consumes them today; a debug/admin view over retrieved-chunk data would be a separate,
 deliberately-designed feature, not a byproduct of this controller.
 
-### Streaming (not currently wired to the live path)
+### Streaming
 
 Every outbound call in the pipeline (Redis, Voyage embed/rerank, the Anthropic router call, and every
 Anthropic call the agentic loop makes) is wrapped in a keyed Polly `IAsyncPolicy`, same
 retry-plus-circuit-breaker shape as the order-processing Lambdas above but with its own
 vendor-specific transient-exception classifier per resource (see
-[Resilience Policies](#resilience-policies-polly-retry--circuit-breaker)).
+[Resilience Policies](#resilience-policies-polly-retry--circuit-breaker)) — with a real user-initiated
+cancellation excluded from that classification everywhere a dropped SignalR connection can reach it, so
+a client disconnecting mid-turn aborts the chain immediately instead of the retry/circuit-breaker layer
+mistaking it for an ordinary transient failure and continuing to retry.
 
-The live `AiChatHub.SendUserMessage` does **not** stream — it's `Task<string>`, returning the complete
-answer in one shot once `AgenticLoopService.RunAgenticLoopAsync` finishes. Every tool-calling round-trip
-the loop needs happens server-side first; the client only ever sees the final response. This is a
-deliberate, temporary step back from the previous behavior: the pre-agentic implementation did stream
-token-by-token, but a streaming version of the *agentic* loop needs real structural work (intercepting a
-`tool_use`-terminated stream leg mid-stream instead of forwarding it, executing server-side, then
-opening a new leg — potentially several times — before real answer text ever reaches the client) and is
-tracked as its own task, not yet built.
+`AiChatHub.SendUserMessageAsync` streams the real agentic loop end to end. `AnthropicApiService` manually
+drives the Anthropic SDK's `IAsyncEnumerator` (C# forbids `yield` inside a `try` block that has a `catch`,
+CS1626, so a plain `await foreach` + `yield return` loop can't catch anything, hence driving the
+enumerator by hand), `AgenticLoopService.RunAgenticLoopAsync` streams each leg in turn, and `AiChatHub`
+streams that straight to the client. A leg that ends in `stop_reason: tool_use` is **not** forwarded —
+the loop intercepts it, dispatches the tool calls server-side (see above), and opens a new leg with the
+results appended, potentially several times; only the final leg, the one that ends in `end_turn`, ever
+reaches the client as live text. A connection dropping mid-turn is caught at every layer of that chain
+(`AnthropicApiService`, `AgenticLoopService`, `AiChatHub`) via a `CancellationToken` threaded from the
+SignalR disconnect event all the way down to the Anthropic/Voyage/Redis calls themselves — on a
+brand-new conversation, whatever the partial turn managed to persist before the disconnect gets swept
+together by `ConversationFullDeletionService` (see Conversation Persistence above) rather than leaving
+orphaned child rows behind.
 
-The old streaming mechanics (`AiChatHub.SendUserMessage_temp_disable`, currently dead code, disabled
-rather than deleted) manually drove the Anthropic SDK's `IAsyncEnumerator` at two layers — C# forbids
-`yield` inside a `try` block that has a `catch` (CS1626), so a plain `await foreach` + `yield return`
-loop had no way to catch anything, hence the manual enumerator-driving — with a retry-wrapped bootstrap
-phase until the first real text delta, a `ChatStreamFailureException` carrying whether a failure was
-retryable, and two SignalR side-channels (`ResponseTruncated`, `NonRetryableChatFailure`) the frontend
-used to show truncation/non-retryable-failure UI. **None of that currently fires** — the live agentic
-`SendUserMessage` never raises either side-channel, a known, tracked gap (the frontend below still
-listens for both, harmlessly inert). The full original mechanism, with traced scenarios, is preserved in
-`AiChatHubResilientStreaming.html` (see Full write-ups below) even though the live code path no longer
-uses it.
+A `max_tokens` leg (see the loop diagram above) is retried once rather than surfaced as a failure — the
+bootstrap phase of that retry is Polly-guarded until the first real content/stop-reason, same as every
+leg. `ResponseTruncated` fires only once the retry budget is genuinely exhausted; `UnexpectedStopReason`
+fires for every other non-covered `StopReason` (`Refusal`, `ModelContextWindowExceeded`) the loop has no
+dedicated handling for — split into two separate side-channels so the client isn't told a refusal was a
+truncation. `NonRetryableChatFailure` fires right before the terminal `HubException` for a failure Retry
+can never fix (bad API key, insufficient credits, malformed request) — no payload, since the exception
+message already carries it; this exists purely to gate the frontend's Retry button.
+`ConversationRolledBack` fires when a brand-new conversation (one `ConversationStarted` already handed an
+id for) gets deleted server-side, so the client knows to stop treating that id as live. `ToolCalled`
+fires live, once per dispatched tool call, so the UI can show which tool is running during a hidden
+intermediate leg.
+
+The earlier, now-superseded manual-enumerator streaming mechanism (built before the agentic rewrite, and
+deleted outright once this one replaced it rather than kept around as dead code) is preserved as a frozen
+historical reference in `AiChatHubResilientStreaming.html` (see Full write-ups below).
 
 ### Frontend (`TradingApp-Frontend`, `features/ai-chat/`)
 
 Angular chat UI over its own SignalR connection (`AssistantHubService`, separate from the order-events
-push Hub). `AssistantHubService.sendUserMessage()` calls the hub via `.invoke()`, not `.stream()` — it
-still returns an `Observable<string>` so the calling component didn't need to change, it just emits one
-`next()` carrying the complete answer instead of many incremental chunks. Answers render with VS Code
-Dark+-styled fenced code blocks and per-token syntax coloring (a hand-rolled C# tokenizer in
-`code-highlight.ts` — the same coloring applies to inline `` `code` `` spans as fenced blocks), plus
-copy-and-ask example prompts grounded in what's actually indexed. The truncation-notice banner and the
-error banner's conditional Retry-button-hiding are still wired to listen for `ResponseTruncated`/
-`NonRetryableChatFailure` (see Streaming above) but currently never fire, since the live agentic
-`SendUserMessage` path doesn't raise either — inert UI, not a bug, just not yet reconnected.
+push Hub). `AssistantHubService.sendUserMessage()` calls the hub via `.stream()`, matching the real
+streaming contract above — each emitted value is one text chunk, not a complete answer, and the
+component accumulates them itself. Answers render with VS Code Dark+-styled fenced code blocks and
+per-token syntax coloring (a hand-rolled C# tokenizer in `code-highlight.ts` — the same coloring applies
+to inline `` `code` `` spans as fenced blocks), plus copy-and-ask example prompts grounded in what's
+actually indexed. All five SignalR side-channels from Streaming above are wired and genuinely fire:
+`ResponseTruncated`/`UnexpectedStopReason` both route into the same truncation-notice banner (one
+concern either way, from the user's perspective — this answer ended in a way worth flagging),
+`NonRetryableChatFailure` hides the Retry button for a failure retrying can't fix,
+`ConversationRolledBack` clears the local `conversationId` so the next send mints a fresh one instead of
+reusing a row that no longer exists server-side, and `ToolCalled` drives a live "Calling: toolname" label
+in the typing indicator while a hidden intermediate leg is in flight.
 
 The conversation is fully multi-turn end to end, both backend and frontend. The `conversationId` from
 `ConversationStarted` is kept and resent on every subsequent message, and a `ConversationApiService` calls
@@ -553,8 +588,8 @@ Detailed, code-quoted design docs live in the sibling `fis learning/TradingApp-A
 learning-docs project, outside this repo) — `ChunkRetrievalStrategy.html` (every retrieval strategy and
 why it exists, still accurate for `search_knowledge_base`'s own internal pipeline),
 `AiChatHubResilientStreaming.html` (the pre-agentic streaming/error-handling mechanism, with traced
-scenarios — preserved as a frozen reference even though the live path no longer streams, see Streaming
-above), `AskStateMachineLiveTrace.html` (an interactive step-through of the old `SendUserMessage()`'s
+scenarios — preserved as a frozen historical reference; the live path streams again today, but via a
+structurally different mechanism built for the agentic loop, see Streaming above), `AskStateMachineLiveTrace.html` (an interactive step-through of the old `SendUserMessage()`'s
 real code next to its compiled state machine — filename predates the `Ask`→`SendUserMessage` rename),
 `AnthropicToolUseCheatSheet.html` and `AnthropicSdkModelTree.html` (the agentic tool-calling SDK shapes —
 `MessageCreateParams`/`Message`, the `ContentBlockParam`/`ContentBlock` unions, `StopReason` — every
