@@ -31,6 +31,31 @@ namespace TradingApp.Infrastructure.Services.Ingestion
             _database = _connectionMultiplexer.GetDatabase();
         }
 
+        public async Task EnsureChunkIndexExistsAsync()
+        {
+            try
+            {
+                await _database.ExecuteAsync("FT.CREATE", "idx:chunks",
+                    "ON", "HASH",
+                    "PREFIX", "1", "chunk:",
+                    "SCHEMA",
+                    "content", "TEXT",
+                    "sourceFile", "TAG",
+                    "chunkIndex", "NUMERIC",
+                    "totalChunkCount", "NUMERIC",
+                    "embedding", "VECTOR", "HNSW", "6",
+                        "TYPE", "FLOAT32",
+                        "DIM", "1024",
+                        "DISTANCE_METRIC", "COSINE");
+
+                _logger.LogInformation("Created Redis index idx:chunks.");
+            }
+            catch (RedisServerException ex) when (ex.Message.Contains("Index already exists", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("Redis index idx:chunks already exists - skipping creation.");
+            }
+        }
+
         public async Task PersistEntireSourceFilesCorpusAsync(string[] sourceFiles)
         {
             List<RawCorpusSourceFile> rawCorpusSourceFiles = [];
