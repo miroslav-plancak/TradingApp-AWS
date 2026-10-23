@@ -53,6 +53,8 @@ var sourceFiles = new[]
 
 var chunkIngestionService = serviceProvider.GetRequiredService<IChunkIngestionService>();
 
+await chunkIngestionService.EnsureChunkIndexExistsAsync();
+
 await chunkIngestionService.PersistEntireSourceFilesCorpusAsync(sourceFiles);
 
 var chunkedRecords = await chunkIngestionService.ReadAndChunkSourceFiles(sourceFiles);
