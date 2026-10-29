@@ -14,6 +14,7 @@ namespace TradingApp.Infrastructure.Models.Agentic
         public required Func<string, Task> ToolCalledHandler { get; set; }
         public required Func<string, Task> ResponseTruncatedHandler { get; set; }
         public required Func<StopReason, Task> UnexpectedStopReasonHandler { get; set; }
+        public required Func<Task> StreamedTextDiscardedHandler { get; set; }
         public required CancellationToken CancellationToken { get; set; }
     }
 }

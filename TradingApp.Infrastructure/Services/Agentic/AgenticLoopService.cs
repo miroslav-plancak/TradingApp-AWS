@@ -44,6 +44,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
             var maxTokensHandler = request.MaxTokensHandler;
             var responseTruncatedHandler = request.ResponseTruncatedHandler;
             var unexpectedStopReasonHandler = request.UnexpectedStopReasonHandler;
+            var streamedTextDiscardedHandler = request.StreamedTextDiscardedHandler;
             var cancellationToken = request.CancellationToken;
 
             _logger.LogInformation("RunAgenticLoopAsyncStarted | UserMessage:{UserMessage}", userMessage);
@@ -117,7 +118,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                 }
 
                 _logger.LogInformation("RunAgenticLoopStreamAsyncEnded | ApiCall #{ApiCallNumber} | StopReason: {StopReason}", apiCallNumber, stopReason);
-                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[streamed][ApiCall #{apiCallNumber}] Stream ended — StopReason: {stopReason}", "");
+                await _fileDebugLogger.LogSectionAsync("agentic-loop-trace", $"[streamed][ApiCall #{apiCallNumber}] Stream ended — StopReason: {stopReason}", "Ending stream...");
 
                 if (stopReason == StopReason.MaxTokens || stopReason == StopReason.ToolUse)
                 {
@@ -245,6 +246,13 @@ namespace TradingApp.Infrastructure.Services.Agentic
                                     await unexpectedStopReasonHandler(response.StopReason);
                                 }
 
+                                await streamedTextDiscardedHandler();
+
+                                if (response.StopReason == StopReason.EndTurn)
+                                {
+                                    yield return textBlock.Text;
+                                }
+
                                 yield break;
                             }
                         }
@@ -262,7 +270,8 @@ namespace TradingApp.Infrastructure.Services.Agentic
                             await unexpectedStopReasonHandler(response.StopReason);
                         }
 
-                        yield return "";
+                        await streamedTextDiscardedHandler();
+
                         yield break;
                     }
 
@@ -377,6 +386,17 @@ namespace TradingApp.Infrastructure.Services.Agentic
                         assistantContent.Add(new TextBlockParam(textblock.Text));
                     }
                 }
+                else if (block.TryPickThinking(out var thinkingBlock))
+                {
+                    lock (assistantContentLock)
+                    {
+                        assistantContent.Add(new ThinkingBlockParam 
+                        {
+                            Thinking = thinkingBlock.Thinking, 
+                            Signature = thinkingBlock.Signature
+                        });
+                    }
+                }
                 else if (block.TryPickToolUse(out var toolUseBlock))
                 {
                     lock (assistantContentLock)
@@ -431,7 +451,7 @@ namespace TradingApp.Infrastructure.Services.Agentic
                                 $"Chunk dedup after get_full_file: {fileName}",
                                 removalsLog.Count > 0 ? string.Join("\n", removalsLog) : "No prior chunks found for this file - nothing to dedup.");
 
-                           
+
                             lock (fetchedFullFileNamesLock)
                             {
                                 fetchedFullFileNames.Add(fileName);
