@@ -87,12 +87,17 @@ namespace TradingApp.API.Hubs
                 CompactedSummary = existingConversation.CompactedSummary,
                 ToolCalledHandler = async (toolName) =>
                 {
-                  await TryNotifyToolCalledAsync(Interlocked.Increment(ref toolUseCounter), toolName);
+                    await TryNotifyToolCalledAsync(Interlocked.Increment(ref toolUseCounter), toolName);
                 },
                 MaxTokensHandler = (result) => { maxTokens = result; return Task.CompletedTask; },
                 UsageHandler = (result) => { usage = result; return Task.CompletedTask; },
                 ResponseTruncatedHandler = async (result) => { await TryNotifyResponseTruncationAsync(result); },
                 UnexpectedStopReasonHandler = async (result) => { await TryNotifyUnexpectedStopReasonAsync(result.ToString()); },
+                StreamedTextDiscardedHandler = async () =>
+                {
+                    responseAccumulator.Clear();
+                    await TryNotifyResponseResetAsync();
+                },
                 CancellationToken = cancellationToken
             }).GetAsyncEnumerator(CancellationToken.None);
 
@@ -126,7 +131,7 @@ namespace TradingApp.API.Hubs
                         if (isNewConversation)
                         {
                             await _conversationFullDeletionService.DeleteConversationAndAllItsEntitiesAsync(existingConversation.ConversationId); 
-                            await Clients.Caller.SendAsync("ConversationRolledBack", existingConversation.ConversationId, CancellationToken.None);
+                            await TryNotifyConversationRolledBackAsync( existingConversation.ConversationId);
                         }
 
                         _logger.LogError(ex, "General error occured while itterating through anthropic streaming response.");
@@ -314,6 +319,30 @@ namespace TradingApp.API.Hubs
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to notify client of chat stream failure: {Mesage}", message);
+            }
+        }
+       
+        private async Task TryNotifyConversationRolledBackAsync(Guid conversationId)
+        {
+            try
+            {
+                await Clients.Caller.SendAsync("ConversationRolledBack", conversationId, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to notify client of conversation rolled back for conversationId: {ConversationId}", conversationId);
+            }
+        }
+
+        private async Task TryNotifyResponseResetAsync()
+        {
+            try
+            {
+                await Clients.Caller.SendAsync("ResponseReset", CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to notify client of response reset.");
             }
         }
 
